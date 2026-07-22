@@ -1,0 +1,9 @@
+import {
+  "Across2005/yimai_prophecy_moonbit" @lib,
+  "moonbitlang/core/json",
+  "moonbitlang/core/math",
+}
+
+options(
+  "is-main": true,
+)
