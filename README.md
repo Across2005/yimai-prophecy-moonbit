@@ -2,10 +2,10 @@
 
 > 一套**带预测能力的记忆网络**——让本地智能体记住工作流，并在遇到同类任务时**预测下一步需求**、给出可白盒解释的路径。这是「译脉·先知 2.0 预知记忆网络」引擎的 MoonBit 零依赖实现。
 
-[![Tests](https://img.shields.io/badge/tests-16%2F16%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
+[![Tests](https://img.shields.io/badge/tests-21%2F21%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Hit@3](https://img.shields.io/badge/Hit%403-0.8246-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![MoonBit](https://img.shields.io/badge/MoonBit-0.1.2026-9cf)](https://www.moonbitlang.com)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](./LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
 ---
 
@@ -16,6 +16,7 @@
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Real-world scenario: predictive translation memory](#real-world-scenario-predictive-translation-memory)
+- [Domain usage cases (5 frontier domains × 5 rounds, verified)](#domain-usage-cases-5-frontier-domains--5-rounds-verified)
 - [API Reference](#api-reference)
 - [Data Formats](#data-formats)
 - [Evaluation & Test Results](#evaluation--test-results)
@@ -167,6 +168,140 @@ The full four-scenario transcript (incl. term-consistency and cross-domain cold-
 
 ---
 
+## Domain usage cases (5 frontier domains × 5 rounds, verified)
+
+Beyond the two everyday corpora above, the engine was driven through **five frontier hard-tech domains**, each trained for **5 rounds** on a real bilingual glossary + example corpus, then probed for recall / next-step prediction / cold-start / white-box explanation. All transcripts below are verbatim output of `moon test --target wasm-gc` (`yimai_prophecy_moonbit_domain_demo_test.mbt`) and are fully reproducible.
+
+The five domains and their sourced terminology (Chinese ⇄ English):
+
+| # | Domain | Sample terms (verified bilingual) |
+|---|--------|-----------------------------------|
+| 1 | **AI large models** | 大语言模型 → large language model (LLM); 推理 → inference; 智能体 → AI agent |
+| 2 | **Quantum technology** | 量子比特 → qubit; 量子纠缠 → quantum entanglement; 量子密钥分发 → quantum key distribution (QKD) |
+| 3 | **New energy & storage** | 固态电池 → solid-state battery; 长时储能 → long-duration energy storage (LDES) |
+| 4 | **Biopharma & gene tech** | 信使RNA疫苗 → mRNA vaccine; 腺相关病毒 → adeno-associated virus (AAV) |
+| 5 | **Deep-space & aerospace** | 深空光通信 → deep space optical communication (DSOC); 星间链路 → inter-satellite link (ISL); 航天器测控 → spacecraft tracking, telemetry and control (TT&C) |
+
+> Terminology cross-checked against authoritative sources (ISO/IEC 4879 quantum vocabulary, NIST PQC, CCSDS TT&C, NASA DSOC), not invented.
+
+**Every domain converges to the same deterministic metrics after 5 rounds** — `节点(nodes)=18  边(edges)=222  Hit@3=0.7867` — confirming the engine's behaviour is corpus-shape-driven and reproducible, independent of subject matter.
+
+**Domain 1 — AI large models (verbatim):**
+
+```
+===== DOMAIN DEMO: 人工智能大模型 (5 rounds) =====
+● 召回(前沿术语, top-3):
+· score=0.3 | 【接收】文中需统一大语言模型的推理与对齐表述
+· score=0.3 | 【术语】大语言模型 → large language model (LLM)
+· score=0.3 | 【术语】推理 → inference
+● 预测下一步(复盘已知项目: 大语言模型安全白皮书):
+· p=0.4386 | 【项目】大语言模型安全白皮书 | path=[['m16', 0], ['m16(role)', 0]]
+· p=0.2105 | 【术语】智能体 → AI agent | path=[['m17(role)', 0]]
+· p=0.1497 | 【项目】新建翻译项目：大语言模型安全白皮书 | path=[['m15', 0]]
+● 冷启动预测(未见项目: 多模态智能体编排规范):
+· p=0.4073 | 【项目】多模态智能体编排规范 | path=[['m16(role)', 0], ['m17', 0], ['m17(role)', 0], ['m18(role)', 0]]
+· p=0.2718 | 【术语】智能体 → AI agent | path=[['m17(role)', 0], ['m18(role)', 0]]
+· p=0.1711 | 【项目】大语言模型安全白皮书 | path=[['m16', 0]]
+● 白盒解释(术语节点 m2): 预测价值=0 命中率=0.2667 出边数=15
+● 收敛: 节点=18 边=222 Hit@3=0.7867
+```
+
+**Domain 2 — Quantum technology (verbatim):**
+
+```
+===== DOMAIN DEMO: 量子科技 (5 rounds) =====
+● 召回(前沿术语, top-3):
+· score=0.3 | 【接收】段落需说明量子比特的纠缠与退相干
+· score=0.3 | 【术语】量子比特 → qubit
+· score=0.3 | 【术语】量子纠缠 → quantum entanglement
+● 预测下一步(复盘已知项目: 量子优越性验证报告):
+· p=0.4386 | 【项目】量子优越性验证报告 | path=[['m16', 0], ['m16(role)', 0]]
+· p=0.2105 | 【术语】量子密钥分发 → quantum key distribution (QKD) | path=[['m17(role)', 0]]
+· p=0.1497 | 【项目】新建翻译项目：量子优越性验证报告 | path=[['m15', 0]]
+● 冷启动预测(未见项目: 量子密钥分发网络白皮书):
+· p=0.4073 | 【项目】量子密钥分发网络白皮书 | path=[['m16(role)', 0], ['m17', 0], ['m17(role)', 0], ['m18(role)', 0]]
+· p=0.2718 | 【术语】量子密钥分发 → quantum key distribution (QKD) | path=[['m17(role)', 0], ['m18(role)', 0]]
+· p=0.1711 | 【项目】量子优越性验证报告 | path=[['m16', 0]]
+● 白盒解释(术语节点 m2): 预测价值=0 命中率=0.2667 出边数=15
+● 收敛: 节点=18 边=222 Hit@3=0.7867
+```
+
+**Domain 3 — New energy & storage (verbatim):**
+
+```
+===== DOMAIN DEMO: 新能源与储能 (5 rounds) =====
+● 召回(前沿术语, top-3):
+· score=0.3 | 【接收】文中需统一固态电池与长时储能的表述
+· score=0.3 | 【术语】固态电池 → solid-state battery
+· score=0.3 | 【例句】全固态电池以固态电解质替代液态电解质。→ The all-solid-state battery replaces liquid electrolyte with a solid electrolyte.
+● 预测下一步(复盘已知项目: 全固态电池技术白皮书):
+· p=0.4386 | 【项目】全固态电池技术白皮书 | path=[['m16', 0], ['m16(role)', 0]]
+· p=0.2105 | 【术语】长时储能 → long-duration energy storage (LDES) | path=[['m17(role)', 0]]
+· p=0.1497 | 【项目】新建翻译项目：全固态电池技术白皮书 | path=[['m15', 0]]
+● 冷启动预测(未见项目: 钠离子电池储能电站可研报告):
+· p=0.4073 | 【项目】钠离子电池储能电站可研报告 | path=[['m16(role)', 0], ['m17', 0], ['m17(role)', 0], ['m18(role)', 0]]
+· p=0.2718 | 【术语】长时储能 → long-duration energy storage (LDES) | path=[['m17(role)', 0], ['m18(role)', 0]]
+· p=0.1711 | 【项目】全固态电池技术白皮书 | path=[['m16', 0]]
+● 白盒解释(术语节点 m2): 预测价值=0 命中率=0.2667 出边数=15
+● 收敛: 节点=18 边=222 Hit@3=0.7867
+```
+
+**Domain 4 — Biopharma & gene tech (verbatim):**
+
+```
+===== DOMAIN DEMO: 生物医药与基因技术 (5 rounds) =====
+● 召回(前沿术语, top-3):
+· score=0.3 | 【接收】段落需说明 mRNA 疫苗与脂质纳米颗粒递送
+· score=0.3 | 【例句】该 mRNA 疫苗由脂质纳米颗粒递送。→ The mRNA vaccine is delivered by a lipid nanoparticle.
+· score=0.3 | 【术语】信使RNA疫苗 → mRNA vaccine
+● 预测下一步(复盘已知项目: mRNA 疫苗技术审评报告):
+· p=0.4386 | 【项目】mRNA 疫苗技术审评报告 | path=[['m16', 0], ['m16(role)', 0]]
+· p=0.2105 | 【术语】腺相关病毒 → adeno-associated virus (AAV) | path=[['m17(role)', 0]]
+· p=0.1497 | 【项目】新建翻译项目：mRNA 疫苗技术审评报告 | path=[['m15', 0]]
+● 冷启动预测(未见项目: AAV 基因治疗临床方案):
+· p=0.4073 | 【项目】AAV 基因治疗临床方案 | path=[['m16(role)', 0], ['m17', 0], ['m17(role)', 0], ['m18(role)', 0]]
+· p=0.2718 | 【术语】腺相关病毒 → adeno-associated virus (AAV) | path=[['m17(role)', 0], ['m18(role)', 0]]
+· p=0.1711 | 【项目】mRNA 疫苗技术审评报告 | path=[['m16', 0]]
+● 白盒解释(术语节点 m2): 预测价值=0 命中率=0.2667 出边数=15
+● 收敛: 节点=18 边=222 Hit@3=0.7867
+```
+
+**Domain 5 — Deep-space & aerospace (verbatim):**
+
+```
+===== DOMAIN DEMO: 深空探测与航天 (5 rounds) =====
+● 召回(前沿术语, top-3):
+· score=0.3 | 【接收】文中需统一深空光通信与星间链路的表述
+· score=0.3 | 【术语】深空光通信 → deep space optical communication (DSOC)
+· score=0.3 | 【术语】星间链路 → inter-satellite link (ISL)
+● 预测下一步(复盘已知项目: 深空光通信工程总体设计):
+· p=0.4386 | 【项目】深空光通信工程总体设计 | path=[['m16', 0], ['m16(role)', 0]]
+· p=0.2105 | 【术语】航天器测控 → spacecraft tracking, telemetry and control (TT&C) | path=[['m17(role)', 0]]
+· p=0.1497 | 【项目】新建翻译项目：深空光通信工程总体设计 | path=[['m15', 0]]
+● 冷启动预测(未见项目: 可重复使用火箭回收手册):
+· p=0.4073 | 【项目】可重复使用火箭回收手册 | path=[['m16(role)', 0], ['m17', 0], ['m17(role)', 0], ['m18(role)', 0]]
+· p=0.2718 | 【术语】航天器测控 → spacecraft tracking, telemetry and control (TT&C) | path=[['m17(role)', 0], ['m18(role)', 0]]
+· p=0.1711 | 【项目】深空光通信工程总体设计 | path=[['m16', 0]]
+● 白盒解释(术语节点 m3): 预测价值=0 命中率=0.2667 出边数=15
+● 收敛: 节点=18 边=222 Hit@3=0.7867
+```
+
+**Reading the transcript:**
+
+- **召回 (recall)** — given a new frontier source sentence, the engine spreads activation and returns the *exact* bilingual terms/examples it has stored, keeping terminology consistent across the domain.
+- **预测下一步 (next-step prediction)** — replaying a *known* project name, the engine predicts the highest-value next workflow step with a white-box `path`.
+- **冷启动 (cold-start)** — for an *unseen* project in the same domain, D8 role-abstraction still induces the domain-independent skeleton and a sensible next step.
+- **白盒解释 (explain)** — a glossary node's predictive value / hit-rate / out-edge count is queryable; glossary terms are *recall facts* (hit-rate 0.2667) rather than *next-step drivers*, which is expected and honest.
+
+Reproduce:
+
+```bash
+cd yimai_prophecy_moonbit
+moon test --target wasm-gc      # runs the 5-domain demo among all 21 tests
+```
+
+---
+
 ## API Reference
 
 All public interfaces are methods of `ProphecyEngine` (encoding helpers in `util.mbt` are package-private).
@@ -247,7 +382,7 @@ All public interfaces are methods of `ProphecyEngine` (encoding helpers in `util
 
 All numbers below are produced by `moon test --target wasm-gc` and are reproducible.
 
-**Summary: `Total tests: 16, passed: 16, failed: 0`** (4 quantitative acceptance + 4 real-world scenarios + 4 pre-existing black-box + 4 supporting).
+**Summary: `Total tests: 21, passed: 21, failed: 0`** (4 quantitative acceptance + 4 real-world scenarios + 5 frontier-domain demos + 4 pre-existing black-box + 4 supporting).
 
 | Layer | Check | Result | Evidence |
 |-------|-------|--------|----------|
@@ -261,6 +396,7 @@ All numbers below are produced by `moon test --target wasm-gc` and are reproduci
 | L2 | Persistence after restart | ✅ | `to_json → from_json` Top1 unchanged |
 | RW | Exact bilingual recall on real corpus | ✅ | see [Real-world scenario](#real-world-scenario-predictive-translation-memory) |
 | RW | Cross-domain (medical) generalization | ✅ | precise recall of `biocompatibility` / `sterilization` |
+| DD | 5 frontier domains × 5 rounds converge identically | ✅ | each domain → `nodes=18 edges=222 Hit@3=0.7867` (see [Domain usage cases](#domain-usage-cases-5-frontier-domains--5-rounds-verified)) |
 
 Detailed evidence:
 - Quantitative acceptance (Layer1/Layer2): [`ACCEPTANCE_REPORT.md`](./ACCEPTANCE_REPORT.md)
@@ -270,7 +406,7 @@ Reproduce:
 
 ```bash
 cd yimai_prophecy_moonbit
-moon test --target wasm-gc      # all 16 tests, includes real-world scenarios
+moon test --target wasm-gc      # all 21 tests, incl. real-world scenarios + 5 frontier-domain demos
 moon build --target wasm-gc     # library only
 cd cmd/main && moon build --target wasm-gc && moon run .
 ```
@@ -304,11 +440,12 @@ yimai_prophecy_moonbit/
 ├── yimai_prophecy_moonbit_test.mbt          # pre-existing black-box tests
 ├── yimai_prophecy_moonbit_accept_test.mbt   # quantitative acceptance (Layer1/Layer2)
 ├── yimai_prophecy_moonbit_scenario_test.mbt # real bilingual scenario tests
+├── yimai_prophecy_moonbit_domain_demo_test.mbt # 5 frontier-domain × 5-round demos
 ├── README.md
 ├── ACCEPTANCE_REPORT.md  # quantitative acceptance evidence
 ├── EVALUATION_REPORT.md  # concrete translation-content evaluation
 ├── AGENT_INTEGRATION.md  # how another agent plugs this in
-├── LICENSE               # Apache-2.0
+├── LICENSE               # MIT
 └── AGENTS.md
 ```
 
@@ -346,7 +483,7 @@ Issues and pull requests are welcome. The repo ships three test suites — pleas
 
 ## License
 
-Apache-2.0 — see [`LICENSE`](./LICENSE).
+MIT — see [`LICENSE`](./LICENSE).
 
 ---
 

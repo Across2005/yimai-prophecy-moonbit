@@ -17,7 +17,7 @@ readme = "README.mbt.md"
 
 repository = "https://github.com/Across2005/yimai_prophecy_moonbit"
 
-license = "Apache-2.0"
+license = "MIT"
 
 keywords = ["memory", "prediction", "translation", "moonbit", "hebbian", "explainable"]
 
