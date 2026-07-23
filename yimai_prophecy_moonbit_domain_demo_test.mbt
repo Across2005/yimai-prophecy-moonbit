@@ -312,3 +312,167 @@ test "领域五·深空探测与航天 五轮翻译实跑" {
   )
   inspect(true, content="true")
 }
+
+// ---------------------------------------------------------------------------
+// 领域六：文学理论（术语含 narratology / intertextuality / stream of consciousness /
+//   defamiliarization / free indirect discourse；来源：什克洛夫斯基陌生化、Genette 叙事学）
+// ---------------------------------------------------------------------------
+test "领域六·文学理论 五轮翻译实跑" {
+  let corpus : Array[(String, String)] = [
+    ("【项目】新建翻译项目：西方叙事学导论", "instruction"),
+    ("【术语】叙事学 → narratology", "fact"),
+    ("【术语】互文性 → intertextuality", "fact"),
+    ("【术语】意识流 → stream of consciousness", "fact"),
+    ("【术语】陌生化 → defamiliarization", "fact"),
+    ("【术语】自由间接引语 → free indirect discourse", "fact"),
+    ("【风格】术语须符合文学理论学术惯例，保留理论家译名", "preference"),
+    ("【例句】乔伊斯以意识流呈现人物的内心流动。→ Joyce renders the character's inner flow through stream of consciousness.", "fact"),
+    ("【例句】陌生化通过艺术手法使熟悉之物重新变得新奇。→ Defamiliarization renders the familiar strange through artistic device.", "fact"),
+    ("【指令】提取核心术语表(叙事/批评)", "instruction"),
+    ("【指令】对齐术语风格(文学学术)", "instruction"),
+    ("【指令】按章节分段翻译", "instruction"),
+    ("【指令】处理引文与理论家人名", "instruction"),
+    ("【指令】质检术语与一致性", "instruction"),
+    ("【指令】导出中英双语交付物", "instruction"),
+  ]
+  run_domain(
+    "文学理论",
+    corpus,
+    "文中需统一意识流与自由间接引语的译法",
+    "西方叙事学导论",
+    "后现代元小说研究文集",
+    "【术语】叙事学 → narratology",
+  )
+  inspect(true, content="true")
+}
+
+// ---------------------------------------------------------------------------
+// 领域七：哲学（术语含 phenomenology / epistemology / ontology / dialectic / teleology）
+// ---------------------------------------------------------------------------
+test "领域七·哲学 五轮翻译实跑" {
+  let corpus : Array[(String, String)] = [
+    ("【项目】新建翻译项目：现象学基本问题", "instruction"),
+    ("【术语】现象学 → phenomenology", "fact"),
+    ("【术语】认识论 → epistemology", "fact"),
+    ("【术语】本体论 → ontology", "fact"),
+    ("【术语】辩证法 → dialectic", "fact"),
+    ("【术语】目的论 → teleology", "fact"),
+    ("【风格】术语须严谨，区分形而上学/本体论等近义概念", "preference"),
+    ("【例句】现象学研究意识经验的结构。→ Phenomenology studies the structures of conscious experience.", "fact"),
+    ("【例句】认识论探讨知识的来源与界限。→ Epistemology examines the origin and limits of knowledge.", "fact"),
+    ("【指令】提取核心术语表(哲学分支)", "instruction"),
+    ("【指令】对齐术语风格(哲学学术)", "instruction"),
+    ("【指令】按章节分段翻译", "instruction"),
+    ("【指令】处理拉丁/德文原词与译注", "instruction"),
+    ("【指令】质检术语与一致性", "instruction"),
+    ("【指令】导出中英双语交付物", "instruction"),
+  ]
+  run_domain(
+    "哲学",
+    corpus,
+    "段落需统一现象学与认识论的表述",
+    "现象学基本问题",
+    "分析哲学中的心灵与意识",
+    "【术语】现象学 → phenomenology",
+  )
+  inspect(true, content="true")
+}
+
+// ---------------------------------------------------------------------------
+// 领域八：医学（术语含 evidence-based medicine / pathogenesis / prognosis /
+//   comorbidity / randomized controlled trial；标准循证医学术语）
+// ---------------------------------------------------------------------------
+test "领域八·医学 五轮翻译实跑" {
+  let corpus : Array[(String, String)] = [
+    ("【项目】新建翻译项目：循证医学临床指南", "instruction"),
+    ("【术语】循证医学 → evidence-based medicine (EBM)", "fact"),
+    ("【术语】发病机制 → pathogenesis", "fact"),
+    ("【术语】预后 → prognosis", "fact"),
+    ("【术语】合并症 → comorbidity", "fact"),
+    ("【术语】随机对照试验 → randomized controlled trial (RCT)", "fact"),
+    ("【风格】术语须符合药典/临床规范，剂量单位准确", "preference"),
+    ("【例句】该结论基于多项随机对照试验的证据。→ The conclusion is based on evidence from multiple randomized controlled trials.", "fact"),
+    ("【例句】合并症会显著影响患者的预后。→ Comorbidity significantly affects the patient's prognosis.", "fact"),
+    ("【指令】提取核心术语表(临床/循证)", "instruction"),
+    ("【指令】对齐术语风格(临床规范)", "instruction"),
+    ("【指令】按章节分段翻译", "instruction"),
+    ("【指令】处理剂量/禁忌/统计指标", "instruction"),
+    ("【指令】质检术语与一致性", "instruction"),
+    ("【指令】导出中英双语交付物", "instruction"),
+  ]
+  run_domain(
+    "医学",
+    corpus,
+    "文中需统一循证医学与随机对照试验的译法",
+    "循证医学临床指南",
+    "罕见病诊疗专家共识",
+    "【术语】循证医学 → evidence-based medicine (EBM)",
+  )
+  inspect(true, content="true")
+}
+
+// ---------------------------------------------------------------------------
+// 领域九：心理学（术语含 cognitive dissonance / attachment theory / working memory /
+//   Big Five personality traits / mindfulness；来源：Festinger、APA、DSM-5）
+// ---------------------------------------------------------------------------
+test "领域九·心理学 五轮翻译实跑" {
+  let corpus : Array[(String, String)] = [
+    ("【项目】新建翻译项目：认知心理学导论", "instruction"),
+    ("【术语】认知失调 → cognitive dissonance", "fact"),
+    ("【术语】依恋理论 → attachment theory", "fact"),
+    ("【术语】工作记忆 → working memory", "fact"),
+    ("【术语】大五人格特质 → Big Five personality traits", "fact"),
+    ("【术语】正念 → mindfulness", "fact"),
+    ("【风格】术语须符合 APA/DSM-5 口径，慎用日常口语义", "preference"),
+    ("【例句】认知失调指同时持有矛盾信念时的心理不适。→ Cognitive dissonance is the mental discomfort of holding contradictory beliefs simultaneously.", "fact"),
+    ("【例句】工作记忆是暂存并操作信息的有限容量系统。→ Working memory is a limited-capacity system that temporarily holds and manipulates information.", "fact"),
+    ("【指令】提取核心术语表(认知/临床)", "instruction"),
+    ("【指令】对齐术语风格(心理学学术)", "instruction"),
+    ("【指令】按章节分段翻译", "instruction"),
+    ("【指令】处理量表/统计/伦理表述", "instruction"),
+    ("【指令】质检术语与一致性", "instruction"),
+    ("【指令】导出中英双语交付物", "instruction"),
+  ]
+  run_domain(
+    "心理学",
+    corpus,
+    "段落需统一认知失调与工作记忆的译法",
+    "认知心理学导论",
+    "积极心理学与幸福感研究",
+    "【术语】认知失调 → cognitive dissonance",
+  )
+  inspect(true, content="true")
+}
+
+// ---------------------------------------------------------------------------
+// 领域十：神经科学（术语含 neuroplasticity / synapse / neurotransmitter /
+//   fMRI / default mode network；来源：Britannica、Hebb 理论、fMRI 文献）
+// ---------------------------------------------------------------------------
+test "领域十·神经科学 五轮翻译实跑" {
+  let corpus : Array[(String, String)] = [
+    ("【项目】新建翻译项目：神经可塑性研究综述", "instruction"),
+    ("【术语】神经可塑性 → neuroplasticity", "fact"),
+    ("【术语】突触 → synapse", "fact"),
+    ("【术语】神经递质 → neurotransmitter", "fact"),
+    ("【术语】功能性磁共振成像 → functional magnetic resonance imaging (fMRI)", "fact"),
+    ("【术语】默认模式网络 → default mode network (DMN)", "fact"),
+    ("【风格】术语须符合神经科学规范，缩写首次标注全称", "preference"),
+    ("【例句】神经可塑性使大脑能重组突触连接。→ Neuroplasticity enables the brain to reorganize its synaptic connections.", "fact"),
+    ("【例句】默认模式网络在思绪漫游时活跃。→ The default mode network is active during mind-wandering.", "fact"),
+    ("【指令】提取核心术语表(脑科学/成像)", "instruction"),
+    ("【指令】对齐术语风格(神经科学学术)", "instruction"),
+    ("【指令】按章节分段翻译", "instruction"),
+    ("【指令】处理脑区名与成像参数", "instruction"),
+    ("【指令】质检术语与一致性", "instruction"),
+    ("【指令】导出中英双语交付物", "instruction"),
+  ]
+  run_domain(
+    "神经科学",
+    corpus,
+    "文中需统一神经可塑性与突触的译法",
+    "神经可塑性研究综述",
+    "脑机接口与神经解码手册",
+    "【术语】神经可塑性 → neuroplasticity",
+  )
+  inspect(true, content="true")
+}

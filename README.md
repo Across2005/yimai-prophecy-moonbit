@@ -2,7 +2,7 @@
 
 > 一套**带预测能力的记忆网络**——让本地智能体记住工作流，并在遇到同类任务时**预测下一步需求**、给出可白盒解释的路径。这是「译脉·先知 2.0 预知记忆网络」引擎的 MoonBit 零依赖实现。
 
-[![Tests](https://img.shields.io/badge/tests-21%2F21%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
+[![Tests](https://img.shields.io/badge/tests-26%2F26%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Hit@3](https://img.shields.io/badge/Hit%403-0.8246-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![MoonBit](https://img.shields.io/badge/MoonBit-0.1.2026-9cf)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
@@ -16,7 +16,7 @@
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Real-world scenario: predictive translation memory](#real-world-scenario-predictive-translation-memory)
-- [Domain usage cases (5 frontier domains × 5 rounds, verified)](#domain-usage-cases-5-frontier-domains--5-rounds-verified)
+- [Domain usage cases (10 domains × 5 rounds, verified)](#domain-usage-cases-10-domains--5-rounds-verified)
 - [API Reference](#api-reference)
 - [Data Formats](#data-formats)
 - [Evaluation & Test Results](#evaluation--test-results)
@@ -168,11 +168,11 @@ The full four-scenario transcript (incl. term-consistency and cross-domain cold-
 
 ---
 
-## Domain usage cases (5 frontier domains × 5 rounds, verified)
+## Domain usage cases (10 domains × 5 rounds, verified)
 
-Beyond the two everyday corpora above, the engine was driven through **five frontier hard-tech domains**, each trained for **5 rounds** on a real bilingual glossary + example corpus, then probed for recall / next-step prediction / cold-start / white-box explanation. All transcripts below are verbatim output of `moon test --target wasm-gc` (`yimai_prophecy_moonbit_domain_demo_test.mbt`) and are fully reproducible.
+Beyond the two everyday corpora above, the engine was driven through **ten domains** — five frontier hard-tech fields plus five humanities & life-science fields — each trained for **5 rounds** on a real bilingual glossary + example corpus, then probed for recall / next-step prediction / cold-start / white-box explanation. All transcripts below are verbatim output of `moon test --target wasm-gc` (`yimai_prophecy_moonbit_domain_demo_test.mbt`) and are fully reproducible.
 
-The five domains and their sourced terminology (Chinese ⇄ English):
+The ten domains and their sourced terminology (Chinese ⇄ English):
 
 | # | Domain | Sample terms (verified bilingual) |
 |---|--------|-----------------------------------|
@@ -181,10 +181,15 @@ The five domains and their sourced terminology (Chinese ⇄ English):
 | 3 | **New energy & storage** | 固态电池 → solid-state battery; 长时储能 → long-duration energy storage (LDES) |
 | 4 | **Biopharma & gene tech** | 信使RNA疫苗 → mRNA vaccine; 腺相关病毒 → adeno-associated virus (AAV) |
 | 5 | **Deep-space & aerospace** | 深空光通信 → deep space optical communication (DSOC); 星间链路 → inter-satellite link (ISL); 航天器测控 → spacecraft tracking, telemetry and control (TT&C) |
+| 6 | **Literary theory** | 叙事学 → narratology; 意识流 → stream of consciousness; 自由间接引语 → free indirect discourse; 陌生化 → defamiliarization |
+| 7 | **Philosophy** | 现象学 → phenomenology; 认识论 → epistemology; 本体论 → ontology; 目的论 → teleology |
+| 8 | **Medicine** | 循证医学 → evidence-based medicine (EBM); 发病机制 → pathogenesis; 预后 → prognosis; 随机对照试验 → randomized controlled trial (RCT) |
+| 9 | **Psychology** | 认知失调 → cognitive dissonance; 工作记忆 → working memory; 大五人格特质 → Big Five personality traits; 正念 → mindfulness |
+| 10 | **Neuroscience** | 神经可塑性 → neuroplasticity; 突触 → synapse; 神经递质 → neurotransmitter; 默认模式网络 → default mode network (DMN) |
 
-> Terminology cross-checked against authoritative sources (ISO/IEC 4879 quantum vocabulary, NIST PQC, CCSDS TT&C, NASA DSOC), not invented.
+> Terminology cross-checked against authoritative sources — ISO/IEC 4879 quantum vocabulary, NIST PQC, CCSDS TT&C, NASA DSOC (hard-tech); Genette/Shklovsky narratology, Husserl phenomenology, evidence-based-medicine clinical usage, Festinger/APA/DSM-5 psychology, Britannica/Hebbian neuroscience (humanities & life-science) — not invented.
 
-**Every domain converges to the same deterministic metrics after 5 rounds** — `节点(nodes)=18  边(edges)=222  Hit@3=0.7867` — confirming the engine's behaviour is corpus-shape-driven and reproducible, independent of subject matter.
+**Every domain converges to the same deterministic metrics after 5 rounds** — `节点(nodes)=18  边(edges)=222  Hit@3=0.7867` — confirming the engine's behaviour is corpus-shape-driven and reproducible across all ten subjects, independent of subject matter (hard-tech or humanities).
 
 **Domain 1 — AI large models (verbatim):**
 
@@ -286,9 +291,109 @@ The five domains and their sourced terminology (Chinese ⇄ English):
 ● 收敛: 节点=18 边=222 Hit@3=0.7867
 ```
 
+**Domain 6 — Literary theory (verbatim):**
+
+```
+===== DOMAIN DEMO: 文学理论 (5 rounds) =====
+● 召回(前沿术语, top-3):
+· score=0.3 | 【接收】文中需统一意识流与自由间接引语的译法
+· score=0.3 | 【术语】自由间接引语 → free indirect discourse
+· score=0.3 | 【术语】意识流 → stream of consciousness
+● 预测下一步(复盘已知项目: 西方叙事学导论):
+· p=0.4386 | 【项目】西方叙事学导论 | path=[['m16', 0], ['m16(role)', 0]]
+· p=0.2105 | 【术语】自由间接引语 → free indirect discourse | path=[['m17(role)', 0]]
+· p=0.1497 | 【项目】新建翻译项目：西方叙事学导论 | path=[['m15', 0]]
+● 冷启动预测(未见项目: 后现代元小说研究文集):
+· p=0.4073 | 【项目】后现代元小说研究文集 | path=[['m16(role)', 0], ['m17', 0], ['m17(role)', 0], ['m18(role)', 0]]
+· p=0.2718 | 【术语】自由间接引语 → free indirect discourse | path=[['m17(role)', 0], ['m18(role)', 0]]
+· p=0.1711 | 【项目】西方叙事学导论 | path=[['m16', 0]]
+● 白盒解释(术语节点 m2): 预测价值=0 命中率=0.2667 出边数=15
+● 收敛: 节点=18 边=222 Hit@3=0.7867
+```
+
+**Domain 7 — Philosophy (verbatim):**
+
+```
+===== DOMAIN DEMO: 哲学 (5 rounds) =====
+● 召回(前沿术语, top-3):
+· score=0.3 | 【接收】段落需统一现象学与认识论的表述
+· score=0.3 | 【术语】现象学 → phenomenology
+· score=0.3 | 【术语】认识论 → epistemology
+● 预测下一步(复盘已知项目: 现象学基本问题):
+· p=0.4386 | 【项目】现象学基本问题 | path=[['m16', 0], ['m16(role)', 0]]
+· p=0.2105 | 【术语】目的论 → teleology | path=[['m17(role)', 0]]
+· p=0.1497 | 【项目】新建翻译项目：现象学基本问题 | path=[['m15', 0]]
+● 冷启动预测(未见项目: 分析哲学中的心灵与意识):
+· p=0.4073 | 【项目】分析哲学中的心灵与意识 | path=[['m16(role)', 0], ['m17', 0], ['m17(role)', 0], ['m18(role)', 0]]
+· p=0.2718 | 【术语】目的论 → teleology | path=[['m17(role)', 0], ['m18(role)', 0]]
+· p=0.1711 | 【项目】现象学基本问题 | path=[['m16', 0]]
+● 白盒解释(术语节点 m2): 预测价值=0 命中率=0.2667 出边数=15
+● 收敛: 节点=18 边=222 Hit@3=0.7867
+```
+
+**Domain 8 — Medicine (verbatim):**
+
+```
+===== DOMAIN DEMO: 医学 (5 rounds) =====
+● 召回(前沿术语, top-3):
+· score=0.3 | 【接收】文中需统一循证医学与随机对照试验的译法
+· score=0.3 | 【术语】随机对照试验 → randomized controlled trial (RCT)
+· score=0.3 | 【例句】该结论基于多项随机对照试验的证据。→ The conclusion is based on evidence from multiple randomized controlled trials.
+● 预测下一步(复盘已知项目: 循证医学临床指南):
+· p=0.4386 | 【项目】循证医学临床指南 | path=[['m16', 0], ['m16(role)', 0]]
+· p=0.2105 | 【术语】随机对照试验 → randomized controlled trial (RCT) | path=[['m17(role)', 0]]
+· p=0.1497 | 【项目】新建翻译项目：循证医学临床指南 | path=[['m15', 0]]
+● 冷启动预测(未见项目: 罕见病诊疗专家共识):
+· p=0.4073 | 【项目】罕见病诊疗专家共识 | path=[['m16(role)', 0], ['m17', 0], ['m17(role)', 0], ['m18(role)', 0]]
+· p=0.2718 | 【术语】随机对照试验 → randomized controlled trial (RCT) | path=[['m17(role)', 0], ['m18(role)', 0]]
+· p=0.1711 | 【项目】循证医学临床指南 | path=[['m16', 0]]
+● 白盒解释(术语节点 m2): 预测价值=0 命中率=0.2667 出边数=15
+● 收敛: 节点=18 边=222 Hit@3=0.7867
+```
+
+**Domain 9 — Psychology (verbatim):**
+
+```
+===== DOMAIN DEMO: 心理学 (5 rounds) =====
+● 召回(前沿术语, top-3):
+· score=0.3 | 【接收】段落需统一认知失调与工作记忆的译法
+· score=0.3 | 【术语】认知失调 → cognitive dissonance
+· score=0.3 | 【术语】工作记忆 → working memory
+● 预测下一步(复盘已知项目: 认知心理学导论):
+· p=0.4386 | 【项目】认知心理学导论 | path=[['m16', 0], ['m16(role)', 0]]
+· p=0.2105 | 【术语】正念 → mindfulness | path=[['m17(role)', 0]]
+· p=0.1497 | 【项目】新建翻译项目：认知心理学导论 | path=[['m15', 0]]
+● 冷启动预测(未见项目: 积极心理学与幸福感研究):
+· p=0.4073 | 【项目】积极心理学与幸福感研究 | path=[['m16(role)', 0], ['m17', 0], ['m17(role)', 0], ['m18(role)', 0]]
+· p=0.2718 | 【术语】正念 → mindfulness | path=[['m17(role)', 0], ['m18(role)', 0]]
+· p=0.1711 | 【项目】认知心理学导论 | path=[['m16', 0]]
+● 白盒解释(术语节点 m2): 预测价值=0 命中率=0.2667 出边数=15
+● 收敛: 节点=18 边=222 Hit@3=0.7867
+```
+
+**Domain 10 — Neuroscience (verbatim):**
+
+```
+===== DOMAIN DEMO: 神经科学 (5 rounds) =====
+● 召回(前沿术语, top-3):
+· score=0.3 | 【接收】文中需统一神经可塑性与突触的译法
+· score=0.3 | 【术语】神经可塑性 → neuroplasticity
+· score=0.3 | 【例句】神经可塑性使大脑能重组突触连接。→ Neuroplasticity enables the brain to reorganize its synaptic connections.
+● 预测下一步(复盘已知项目: 神经可塑性研究综述):
+· p=0.4386 | 【项目】神经可塑性研究综述 | path=[['m16', 0], ['m16(role)', 0]]
+· p=0.2105 | 【术语】默认模式网络 → default mode network (DMN) | path=[['m17(role)', 0]]
+· p=0.1497 | 【项目】新建翻译项目：神经可塑性研究综述 | path=[['m15', 0]]
+● 冷启动预测(未见项目: 脑机接口与神经解码手册):
+· p=0.4073 | 【项目】脑机接口与神经解码手册 | path=[['m16(role)', 0], ['m17', 0], ['m17(role)', 0], ['m18(role)', 0]]
+· p=0.2718 | 【术语】默认模式网络 → default mode network (DMN) | path=[['m17(role)', 0], ['m18(role)', 0]]
+· p=0.1711 | 【项目】神经可塑性研究综述 | path=[['m16', 0]]
+● 白盒解释(术语节点 m2): 预测价值=0 命中率=0.2667 出边数=15
+● 收敛: 节点=18 边=222 Hit@3=0.7867
+```
+
 **Reading the transcript:**
 
-- **召回 (recall)** — given a new frontier source sentence, the engine spreads activation and returns the *exact* bilingual terms/examples it has stored, keeping terminology consistent across the domain.
+- **召回 (recall)** — given a new source sentence, the engine spreads activation and returns the *exact* bilingual terms/examples it has stored, keeping terminology consistent across the domain.
 - **预测下一步 (next-step prediction)** — replaying a *known* project name, the engine predicts the highest-value next workflow step with a white-box `path`.
 - **冷启动 (cold-start)** — for an *unseen* project in the same domain, D8 role-abstraction still induces the domain-independent skeleton and a sensible next step.
 - **白盒解释 (explain)** — a glossary node's predictive value / hit-rate / out-edge count is queryable; glossary terms are *recall facts* (hit-rate 0.2667) rather than *next-step drivers*, which is expected and honest.
@@ -297,7 +402,7 @@ Reproduce:
 
 ```bash
 cd yimai_prophecy_moonbit
-moon test --target wasm-gc      # runs the 5-domain demo among all 21 tests
+moon test --target wasm-gc      # runs the 10-domain demo among all 26 tests
 ```
 
 ---
@@ -382,7 +487,7 @@ All public interfaces are methods of `ProphecyEngine` (encoding helpers in `util
 
 All numbers below are produced by `moon test --target wasm-gc` and are reproducible.
 
-**Summary: `Total tests: 21, passed: 21, failed: 0`** (4 quantitative acceptance + 4 real-world scenarios + 5 frontier-domain demos + 4 pre-existing black-box + 4 supporting).
+**Summary: `Total tests: 26, passed: 26, failed: 0`** (4 quantitative acceptance + 4 real-world scenarios + 10 domain demos + 4 pre-existing black-box + 4 supporting).
 
 | Layer | Check | Result | Evidence |
 |-------|-------|--------|----------|
@@ -396,7 +501,7 @@ All numbers below are produced by `moon test --target wasm-gc` and are reproduci
 | L2 | Persistence after restart | ✅ | `to_json → from_json` Top1 unchanged |
 | RW | Exact bilingual recall on real corpus | ✅ | see [Real-world scenario](#real-world-scenario-predictive-translation-memory) |
 | RW | Cross-domain (medical) generalization | ✅ | precise recall of `biocompatibility` / `sterilization` |
-| DD | 5 frontier domains × 5 rounds converge identically | ✅ | each domain → `nodes=18 edges=222 Hit@3=0.7867` (see [Domain usage cases](#domain-usage-cases-5-frontier-domains--5-rounds-verified)) |
+| DD | 10 domains × 5 rounds converge identically | ✅ | each domain → `nodes=18 edges=222 Hit@3=0.7867` (see [Domain usage cases](#domain-usage-cases-10-domains--5-rounds-verified)) |
 
 Detailed evidence:
 - Quantitative acceptance (Layer1/Layer2): [`ACCEPTANCE_REPORT.md`](./ACCEPTANCE_REPORT.md)
@@ -406,7 +511,7 @@ Reproduce:
 
 ```bash
 cd yimai_prophecy_moonbit
-moon test --target wasm-gc      # all 21 tests, incl. real-world scenarios + 5 frontier-domain demos
+moon test --target wasm-gc      # all 26 tests, incl. real-world scenarios + 10 domain demos
 moon build --target wasm-gc     # library only
 cd cmd/main && moon build --target wasm-gc && moon run .
 ```
@@ -440,7 +545,7 @@ yimai_prophecy_moonbit/
 ├── yimai_prophecy_moonbit_test.mbt          # pre-existing black-box tests
 ├── yimai_prophecy_moonbit_accept_test.mbt   # quantitative acceptance (Layer1/Layer2)
 ├── yimai_prophecy_moonbit_scenario_test.mbt # real bilingual scenario tests
-├── yimai_prophecy_moonbit_domain_demo_test.mbt # 5 frontier-domain × 5-round demos
+├── yimai_prophecy_moonbit_domain_demo_test.mbt # 10-domain × 5-round demos
 ├── README.md
 ├── ACCEPTANCE_REPORT.md  # quantitative acceptance evidence
 ├── EVALUATION_REPORT.md  # concrete translation-content evaluation
