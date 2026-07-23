@@ -15,7 +15,7 @@ version = "0.1.0"
 
 readme = "README.mbt.md"
 
-repository = "https://github.com/Across2005/yimai_prophecy_moonbit"
+repository = "https://github.com/Across2005/yimai-prophecy-moonbit"
 
 license = "MIT"
 
