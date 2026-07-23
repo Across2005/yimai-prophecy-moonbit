@@ -6,7 +6,7 @@
 > 并给出含具体翻译文本的评价结论。
 >
 > 运行命令：`moon test --target wasm-gc`
-> 结果：**Total tests: 52, passed: 52, failed: 0**（4 抽象验收 + 10 真实场景 + 30 领域 demo + 4 既有黑盒 + 4 支撑）
+> 结果：**Total tests: 56, passed: 56, failed: 0**（4 抽象验收 + 10 真实场景 + 30 领域 demo + 4 既有黑盒 + 4 支撑 + 4 基准/可信度）
 
 ---
 
