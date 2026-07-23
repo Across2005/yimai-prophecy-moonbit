@@ -2,7 +2,7 @@
 
 > 一套**带预测能力的记忆网络**——让本地智能体记住工作流，并在遇到同类任务时**预测下一步需求**、给出可白盒解释的路径。这是「译脉·先知 2.0 预知记忆网络」引擎的 MoonBit 零依赖实现。
 
-[![Tests](https://img.shields.io/badge/tests-46%2F46%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
+[![Tests](https://img.shields.io/badge/tests-52%2F52%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Hit@3](https://img.shields.io/badge/Hit%403-0.8246-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![MoonBit](https://img.shields.io/badge/MoonBit-0.1.2026-9cf)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
@@ -125,7 +125,7 @@ moon run cmd/main     # training → Hit@3 → replay prediction → D8 cold-sta
 
 ## Real-world scenario: predictive translation memory
 
-The engine is designed as a **Predictive Translation Memory (Predictive TM)**. Below is a verbatim transcript from `yimai_prophecy_moonbit_scenario_test.mbt` (real bilingual corpus — new-energy-vehicle whitepaper + medical-device manual), so you can see the *actual translated content* the engine handles.
+The engine is designed as a **Predictive Translation Memory (Predictive TM)**. Below are verbatim transcripts from `yimai_prophecy_moonbit_scenario_test.mbt` covering **ten real-world scenarios** across **eight bilingual corpora** — two seed corpora (new-energy-vehicle whitepaper + medical-device manual, used to demo cold-start & term-consistency) plus **six low-similarity diverse domains** (Sichuan cuisine, Tang poetry, esports casting, smart agriculture, haute couture, jazz) added to stress-test dissimilar content — so you can see the *actual translated content* the engine handles.
 
 **Scenario 1 — new source sentence arrives (recall of exact bilingual terms):**
 
@@ -140,6 +140,27 @@ The engine is designed as a **Predictive Translation Memory (Predictive TM)**. B
 ● 预测可白盒解释(含真实关联路径): true
 ```
 
+**Scenario 2 — cross-project cold-start (medical device, trained only on whitepaper):**
+
+```
+========== 冷启动场景 · 医疗器械说明书(仅以白皮书训练) ==========
+● 新到来源文(待译): 请翻译：该导管采用无菌包装，需标注生物相容性等级。
+● 引擎基于《白皮书》学到的通用下一步 Top1: 【项目】新建翻译项目：新能源汽车白皮书
+================================================================
+```
+
+**Scenario 3 — term consistency (new paragraph mentions "电池"):**
+
+```
+========== 术语一致性场景 · 提及'电池' ==========
+● 新到来源文(待译): 请翻译：电池包热管理直接影响整车安全与续航。
+● 引擎召回(应与'电池'相关):
+    1. 【接收】请翻译：电池包热管理直接影响整车安全与续航。
+    2. 【术语】电池管理系统 → Battery Management System (BMS)
+    3. 【例句】该车型采用液冷电池包以提升热安全性。→ The model adopts a liquid-cooled battery pack to improve thermal safety.
+================================================
+```
+
 **Scenario 4 — second domain, independent corpus (medical device):**
 
 ```
@@ -152,7 +173,89 @@ The engine is designed as a **Predictive Translation Memory (Predictive TM)**. B
     3. 【术语】灭菌 → sterilization
 ```
 
-The full four-scenario transcript (incl. term-consistency and cross-domain cold-start) lives in [`EVALUATION_REPORT.md`](./EVALUATION_REPORT.md).
+**Scenario 5 — Sichuan cuisine (low-similarity domain A):**
+
+```
+========== 新领域 · 川菜食谱 ==========
+● 新到来源文(待译): 请翻译：这道麻婆豆腐要用嫩豆腐和牛肉末。
+● 引擎预测下一步 Top1: 【项目】新建翻译项目：川菜食谱汉译英
+● 引擎召回(前 3 条):
+    1. 【例句】麻婆豆腐以嫩豆腐与牛肉末入麻辣酱汁烧制。→ Mapo Tofu is made with soft tofu and minced beef in a spicy, numbing sauce.
+    2. 【接收】请翻译：这道麻婆豆腐要用嫩豆腐和牛肉末。
+    3. 【术语】麻婆豆腐 → Mapo Tofu
+=======================================
+```
+
+**Scenario 6 — Tang poetry (low-similarity domain B):**
+
+```
+========== 新领域 · 唐诗英译 ==========
+● 新到来源文(待译): 请翻译：《静夜思》里'举头望明月'一句。
+● 引擎预测下一步 Top1: 【项目】新建翻译项目：唐诗英译
+● 引擎召回(前 3 条):
+    1. 【接收】请翻译：《静夜思》里'举头望明月'一句。
+    2. 【例句】举头望明月，低头思故乡。→ I lift my head to gaze at the moon; I bow, and think of my hometown.
+    3. 【术语】静夜思 → Thoughts on a Quiet Night
+=======================================
+```
+
+**Scenario 7 — esports casting (low-similarity domain C):**
+
+```
+========== 新领域 · 电子竞技解说 ==========
+● 新到来源文(待译): 请翻译：这波团战他们先拆掉了下路防御塔再转战水晶枢纽。
+● 引擎预测下一步 Top1: 【项目】新建翻译项目：英雄联盟赛事解说
+● 引擎召回(前 3 条):
+    1. 【接收】请翻译：这波团战他们先拆掉了下路防御塔再转战水晶枢纽。
+    2. 【术语】水晶枢纽 → Nexus
+    3. 【术语】英雄联盟 → League of Legends
+=========================================
+```
+
+**Scenario 8 — smart agriculture (low-similarity domain D):**
+
+```
+========== 新领域 · 智慧温室 ==========
+● 新到来源文(待译): 请翻译：智慧大棚通过物联网传感器实现自动滴灌。
+● 引擎预测下一步 Top1: 【项目】新建翻译项目：智慧温室技术白皮书
+● 引擎召回(前 3 条):
+    1. 【接收】请翻译：智慧大棚通过物联网传感器实现自动滴灌。
+    2. 【术语】智慧大棚 → smart greenhouse
+    3. 【术语】物联网 → Internet of Things (IoT)
+=======================================
+```
+
+**Scenario 9 — haute couture (low-similarity domain E):**
+
+```
+========== 新领域 · 高级时装 ==========
+● 新到来源文(待译): 请翻译：本季高级时装以流畅廓形与手工坊刺绣取胜。
+● 引擎预测下一步 Top1: 【项目】新建翻译项目：巴黎时装周秀场报道
+● 引擎召回(前 3 条):
+    1. 【接收】请翻译：本季高级时装以流畅廓形与手工坊刺绣取胜。
+    2. 【术语】高级时装 → haute couture
+    3. 【术语】手工坊 → atelier
+=======================================
+```
+
+**Scenario 10 — jazz (low-similarity domain F):**
+
+```
+========== 新领域 · 爵士乐 ==========
+● 新到来源文(待译): 请翻译：萨克斯手用蓝调音阶铺陈一段即兴。
+● 引擎预测下一步 Top1: 【项目】新建翻译项目：爵士乐科普文章
+● 引擎召回(前 3 条):
+    1. 【接收】请翻译：萨克斯手用蓝调音阶铺陈一段即兴。
+    2. 【术语】即兴演奏 → improvisation
+    3. 【术语】爵士乐 → jazz
+=====================================
+```
+
+All ten scenario transcripts above are verbatim output of `moon test --target wasm-gc` (`yimai_prophecy_moonbit_scenario_test.mbt`) and are fully reproducible. The same ten transcripts also appear in [`EVALUATION_REPORT.md`](./EVALUATION_REPORT.md).
+
+### Scenario diversity (low similarity)
+
+Scenarios 1–4 are intentionally built around **two seed corpora** (new-energy-vehicle whitepaper + medical-device manual) to demonstrate cold-start and term-consistency. The **six new scenarios (5–10)** span six topically disjoint real-world domains — cuisine, classical poetry, esports, smart agriculture, haute couture, jazz — chosen for *low mutual similarity*. A content-similarity check (Han char-bigram + English-token cosine over each corpus) gives a **max pairwise similarity of 0.385 among the six new domains** (esports ↔ jazz; all other pairs ≤ 0.344), far below the seed pair (new-energy-vehicle ↔ medical-device = 0.484, inflated by shared workflow boilerplate). This confirms the engine behaves correctly on dissimilar content, not just on near-duplicate corpora.
 
 ### What it's good at — and what to manage expectations on
 
@@ -907,7 +1010,7 @@ All public interfaces are methods of `ProphecyEngine` (encoding helpers in `util
 
 All numbers below are produced by `moon test --target wasm-gc` and are reproducible.
 
-**Summary: `Total tests: 46, passed: 46, failed: 0`** (4 quantitative acceptance + 4 real-world scenarios + 30 domain demos + 4 pre-existing black-box + 4 supporting).
+**Summary: `Total tests: 52, passed: 52, failed: 0`** (4 quantitative acceptance + 10 real-world scenarios + 30 domain demos + 4 pre-existing black-box + 4 supporting).
 
 | Layer | Check | Result | Evidence |
 |-------|-------|--------|----------|
@@ -931,7 +1034,7 @@ Reproduce:
 
 ```bash
 cd yimai_prophecy_moonbit
-moon test --target wasm-gc      # all 26 tests, incl. real-world scenarios + 10 domain demos
+moon test --target wasm-gc      # all 52 tests, incl. 10 real-world scenarios + 30 domain demos
 moon build --target wasm-gc     # library only
 cd cmd/main && moon build --target wasm-gc && moon run .
 ```

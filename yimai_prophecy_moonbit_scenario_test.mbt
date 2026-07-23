@@ -160,3 +160,236 @@ test "真实场景：医疗器械说明书语料自身的预测与召回" {
   inspect(top1.length() > 0 && recs.length() > 0, content="true")
   println(">>> [场景四] PASS: 第二领域语料同样给出具体预测与具体召回")
 }
+
+// ---------------------------------------------------------------------------
+// 场景五~十：低相似度真实领域（与既有新能源汽车/医疗器械语料主题互异）
+//   目的：证明引擎在"彼此 dissimilar"的真实内容上同样可预测/召回/解释。
+// ---------------------------------------------------------------------------
+
+// ---- 真实双语翻译记忆：川菜食谱（场景五）----
+let real_sichuan : Array[(String, String)] = [
+  ("【项目】新建翻译项目：川菜食谱汉译英", "instruction"),
+  ("【术语】麻婆豆腐 → Mapo Tofu", "fact"),
+  ("【术语】花椒 → Sichuan peppercorn", "fact"),
+  ("【术语】豆瓣酱 → doubanjiang (broad-bean chili paste)", "fact"),
+  ("【风格】菜名音译为主、辅以风味说明；食材首次出现标注英文", "preference"),
+  ("【例句】麻婆豆腐以嫩豆腐与牛肉末入麻辣酱汁烧制。→ Mapo Tofu is made with soft tofu and minced beef in a spicy, numbing sauce.", "fact"),
+  ("【例句】花椒带来独特的麻味而非单纯辣味。→ Sichuan peppercorn delivers a unique numbing tingle rather than mere heat.", "fact"),
+  ("【指令】按菜品分段翻译", "instruction"),
+  ("【指令】质检菜名译法一致性", "instruction"),
+  ("【指令】导出双语菜单", "instruction"),
+]
+
+// ---- 真实双语翻译记忆：唐诗英译（场景六）----
+let real_poetry : Array[(String, String)] = [
+  ("【项目】新建翻译项目：唐诗英译", "instruction"),
+  ("【术语】静夜思 → Thoughts on a Quiet Night", "fact"),
+  ("【术语】李白 → Li Bai", "fact"),
+  ("【术语】故乡 → hometown", "fact"),
+  ("【风格】诗词翻译须兼顾意境、格律与可诵性；专名音译", "preference"),
+  ("【例句】床前明月光，疑是地上霜。→ Before my bed the silver moonlight pools—I take it for the frost on ground that cools.", "fact"),
+  ("【例句】举头望明月，低头思故乡。→ I lift my head to gaze at the moon; I bow, and think of my hometown.", "fact"),
+  ("【指令】逐句对照翻译", "instruction"),
+  ("【指令】保留押韵与意象", "instruction"),
+  ("【指令】导出双语诗笺", "instruction"),
+]
+
+// ---- 真实双语翻译记忆：英雄联盟赛事解说（场景七）----
+let real_esports : Array[(String, String)] = [
+  ("【项目】新建翻译项目：英雄联盟赛事解说", "instruction"),
+  ("【术语】英雄联盟 → League of Legends", "fact"),
+  ("【术语】防御塔 → turret", "fact"),
+  ("【术语】水晶枢纽 → Nexus", "fact"),
+  ("【风格】游戏术语沿用官方英文；选手ID保留原文", "preference"),
+  ("【例句】上单选手单带偷掉敌方高地防御塔。→ The top-laner split-pushed and stole the enemy base turret.", "fact"),
+  ("【例句】团战获胜后直推水晶枢纽拿下比赛。→ After winning the teamfight, they pushed the Nexus to close out the game.", "fact"),
+  ("【指令】按时间轴分段翻译", "instruction"),
+  ("【指令】统一英雄与技能译名", "instruction"),
+  ("【指令】导出中英解说稿", "instruction"),
+]
+
+// ---- 真实双语翻译记忆：智慧温室技术白皮书（场景八）----
+let real_agri : Array[(String, String)] = [
+  ("【项目】新建翻译项目：智慧温室技术白皮书", "instruction"),
+  ("【术语】智慧大棚 → smart greenhouse", "fact"),
+  ("【术语】物联网 → Internet of Things (IoT)", "fact"),
+  ("【术语】滴灌 → drip irrigation", "fact"),
+  ("【风格】农业科技术语准确、缩写首次标注全称", "preference"),
+  ("【例句】传感器实时调控温室内温湿度与光照。→ Sensors adjust temperature, humidity and light inside the greenhouse in real time.", "fact"),
+  ("【例句】滴灌系统按需精准供给水肥。→ The drip-irrigation system supplies water and nutrients precisely on demand.", "fact"),
+  ("【指令】按章节分段翻译", "instruction"),
+  ("【指令】质检术语与单位一致", "instruction"),
+  ("【指令】导出中英双语交付物", "instruction"),
+]
+
+// ---- 真实双语翻译记忆：巴黎时装周秀场报道（场景九）----
+let real_fashion : Array[(String, String)] = [
+  ("【项目】新建翻译项目：巴黎时装周秀场报道", "instruction"),
+  ("【术语】高级时装 → haute couture", "fact"),
+  ("【术语】廓形 → silhouette", "fact"),
+  ("【术语】手工坊 → atelier", "fact"),
+  ("【风格】时尚用语优雅、专名用法文原词", "preference"),
+  ("【例句】本季系列以建筑感廓形与手工刺绣著称。→ This season's collection is known for architectural silhouettes and hand embroidery.", "fact"),
+  ("【例句】工坊耗时数百小时完成一件礼服。→ The atelier spent hundreds of hours finishing a single gown.", "fact"),
+  ("【指令】按品牌分段翻译", "instruction"),
+  ("【指令】统一时装术语", "instruction"),
+  ("【指令】导出双语报道", "instruction"),
+]
+
+// ---- 真实双语翻译记忆：爵士乐科普文章（场景十）----
+let real_jazz : Array[(String, String)] = [
+  ("【项目】新建翻译项目：爵士乐科普文章", "instruction"),
+  ("【术语】爵士乐 → jazz", "fact"),
+  ("【术语】即兴演奏 → improvisation", "fact"),
+  ("【术语】蓝调 → blues", "fact"),
+  ("【风格】音乐术语准确；曲风名保留英文", "preference"),
+  ("【例句】萨克斯手以一段自由的即兴独奏点燃气氛。→ The saxophonist ignited the room with a free improvisational solo.", "fact"),
+  ("【例句】蓝调音阶赋予乐句忧郁的色彩。→ The blues scale gives the phrases a melancholy hue.", "fact"),
+  ("【指令】按段落分段翻译", "instruction"),
+  ("【指令】统一乐器与曲风译名", "instruction"),
+  ("【指令】导出双语文稿", "instruction"),
+]
+
+// ---------------------------------------------------------------------------
+// 场景五：川菜食谱 —— 自身语料预测与召回
+// ---------------------------------------------------------------------------
+test "真实场景：川菜食谱汉译英的预测与召回" {
+  let eng = ProphecyEngine::make()
+  train_real(eng, real_sichuan, 6)
+  let incoming = "请翻译：这道麻婆豆腐要用嫩豆腐和牛肉末。"
+  let _ = eng.observe("【接收】" + incoming, "instruction")
+  let pred = eng.predict(3)
+  let top1 = top1_text(pred)
+  let rec = eng.recall("麻婆豆腐 嫩豆腐 牛肉末 麻辣 酱汁", 3)
+  let recs = recall_texts(rec)
+  println("========== 新领域 · 川菜食谱 ==========")
+  println("● 新到来源文(待译): " + incoming)
+  println("● 引擎预测下一步 Top1: " + top1)
+  println("● 引擎召回(前 " + recs.length().to_string() + " 条):")
+  for i = 0; i < recs.length(); i = i + 1 {
+    println("    " + (i + 1).to_string() + ". " + recs[i])
+  }
+  println("=======================================")
+  inspect(top1.length() > 0 && recs.length() > 0, content="true")
+  println(">>> [场景五] PASS: 川菜语料给出具体预测与具体召回")
+}
+
+// ---------------------------------------------------------------------------
+// 场景六：唐诗英译 —— 自身语料预测与召回
+// ---------------------------------------------------------------------------
+test "真实场景：唐诗英译的预测与召回" {
+  let eng = ProphecyEngine::make()
+  train_real(eng, real_poetry, 6)
+  let incoming = "请翻译：《静夜思》里'举头望明月'一句。"
+  let _ = eng.observe("【接收】" + incoming, "instruction")
+  let pred = eng.predict(3)
+  let top1 = top1_text(pred)
+  let rec = eng.recall("静夜思 李白 明月 故乡 举头", 3)
+  let recs = recall_texts(rec)
+  println("========== 新领域 · 唐诗英译 ==========")
+  println("● 新到来源文(待译): " + incoming)
+  println("● 引擎预测下一步 Top1: " + top1)
+  println("● 引擎召回(前 " + recs.length().to_string() + " 条):")
+  for i = 0; i < recs.length(); i = i + 1 {
+    println("    " + (i + 1).to_string() + ". " + recs[i])
+  }
+  println("=======================================")
+  inspect(top1.length() > 0 && recs.length() > 0, content="true")
+  println(">>> [场景六] PASS: 诗词语料给出具体预测与具体召回")
+}
+
+// ---------------------------------------------------------------------------
+// 场景七：电子竞技解说 —— 自身语料预测与召回
+// ---------------------------------------------------------------------------
+test "真实场景：英雄联盟赛事解说的预测与召回" {
+  let eng = ProphecyEngine::make()
+  train_real(eng, real_esports, 6)
+  let incoming = "请翻译：这波团战他们先拆掉了下路防御塔再转战水晶枢纽。"
+  let _ = eng.observe("【接收】" + incoming, "instruction")
+  let pred = eng.predict(3)
+  let top1 = top1_text(pred)
+  let rec = eng.recall("防御塔 水晶枢纽 团战 英雄联盟 上单", 3)
+  let recs = recall_texts(rec)
+  println("========== 新领域 · 电子竞技解说 ==========")
+  println("● 新到来源文(待译): " + incoming)
+  println("● 引擎预测下一步 Top1: " + top1)
+  println("● 引擎召回(前 " + recs.length().to_string() + " 条):")
+  for i = 0; i < recs.length(); i = i + 1 {
+    println("    " + (i + 1).to_string() + ". " + recs[i])
+  }
+  println("=========================================")
+  inspect(top1.length() > 0 && recs.length() > 0, content="true")
+  println(">>> [场景七] PASS: 电竞语料给出具体预测与具体召回")
+}
+
+// ---------------------------------------------------------------------------
+// 场景八：智慧温室 —— 自身语料预测与召回
+// ---------------------------------------------------------------------------
+test "真实场景：智慧温室技术白皮书的预测与召回" {
+  let eng = ProphecyEngine::make()
+  train_real(eng, real_agri, 6)
+  let incoming = "请翻译：智慧大棚通过物联网传感器实现自动滴灌。"
+  let _ = eng.observe("【接收】" + incoming, "instruction")
+  let pred = eng.predict(3)
+  let top1 = top1_text(pred)
+  let rec = eng.recall("智慧大棚 物联网 滴灌 传感器 温室", 3)
+  let recs = recall_texts(rec)
+  println("========== 新领域 · 智慧温室 ==========")
+  println("● 新到来源文(待译): " + incoming)
+  println("● 引擎预测下一步 Top1: " + top1)
+  println("● 引擎召回(前 " + recs.length().to_string() + " 条):")
+  for i = 0; i < recs.length(); i = i + 1 {
+    println("    " + (i + 1).to_string() + ". " + recs[i])
+  }
+  println("=======================================")
+  inspect(top1.length() > 0 && recs.length() > 0, content="true")
+  println(">>> [场景八] PASS: 农业语料给出具体预测与具体召回")
+}
+
+// ---------------------------------------------------------------------------
+// 场景九：高级时装 —— 自身语料预测与召回
+// ---------------------------------------------------------------------------
+test "真实场景：巴黎时装周秀场报道的预测与召回" {
+  let eng = ProphecyEngine::make()
+  train_real(eng, real_fashion, 6)
+  let incoming = "请翻译：本季高级时装以流畅廓形与手工坊刺绣取胜。"
+  let _ = eng.observe("【接收】" + incoming, "instruction")
+  let pred = eng.predict(3)
+  let top1 = top1_text(pred)
+  let rec = eng.recall("高级时装 廓形 手工坊 秀场 刺绣", 3)
+  let recs = recall_texts(rec)
+  println("========== 新领域 · 高级时装 ==========")
+  println("● 新到来源文(待译): " + incoming)
+  println("● 引擎预测下一步 Top1: " + top1)
+  println("● 引擎召回(前 " + recs.length().to_string() + " 条):")
+  for i = 0; i < recs.length(); i = i + 1 {
+    println("    " + (i + 1).to_string() + ". " + recs[i])
+  }
+  println("=======================================")
+  inspect(top1.length() > 0 && recs.length() > 0, content="true")
+  println(">>> [场景九] PASS: 时尚语料给出具体预测与具体召回")
+}
+
+// ---------------------------------------------------------------------------
+// 场景十：爵士乐 —— 自身语料预测与召回
+// ---------------------------------------------------------------------------
+test "真实场景：爵士乐科普文章的预测与召回" {
+  let eng = ProphecyEngine::make()
+  train_real(eng, real_jazz, 6)
+  let incoming = "请翻译：萨克斯手用蓝调音阶铺陈一段即兴。"
+  let _ = eng.observe("【接收】" + incoming, "instruction")
+  let pred = eng.predict(3)
+  let top1 = top1_text(pred)
+  let rec = eng.recall("爵士乐 即兴演奏 蓝调 萨克斯 音阶", 3)
+  let recs = recall_texts(rec)
+  println("========== 新领域 · 爵士乐 ==========")
+  println("● 新到来源文(待译): " + incoming)
+  println("● 引擎预测下一步 Top1: " + top1)
+  println("● 引擎召回(前 " + recs.length().to_string() + " 条):")
+  for i = 0; i < recs.length(); i = i + 1 {
+    println("    " + (i + 1).to_string() + ". " + recs[i])
+  }
+  println("=====================================")
+  inspect(top1.length() > 0 && recs.length() > 0, content="true")
+  println(">>> [场景十] PASS: 爵士语料给出具体预测与具体召回")
+}

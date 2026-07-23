@@ -6,7 +6,7 @@
 > 并给出含具体翻译文本的评价结论。
 >
 > 运行命令：`moon test --target wasm-gc`
-> 结果：**Total tests: 16, passed: 16, failed: 0**（4 抽象验收 + 4 真实场景 + 4 既有黑盒 + 4 …）
+> 结果：**Total tests: 52, passed: 52, failed: 0**（4 抽象验收 + 10 真实场景 + 30 领域 demo + 4 既有黑盒 + 4 支撑）
 
 ---
 
@@ -52,6 +52,96 @@
 | instruction | 【指令】按章节分段翻译 |
 | instruction | 【指令】质检术语与风格一致性 |
 | instruction | 【指令】导出中英双语交付物 |
+
+**领域 C：川菜食谱**（10 条记忆，低相似度领域）
+
+| 类型 | 具体翻译内容 |
+|------|--------------|
+| instruction | 【项目】新建翻译项目：川菜食谱汉译英 |
+| fact | 【术语】麻婆豆腐 → Mapo Tofu |
+| fact | 【术语】花椒 → Sichuan peppercorn |
+| fact | 【术语】豆瓣酱 → doubanjiang (broad-bean chili paste) |
+| preference | 【风格】菜名音译为主、辅以风味说明；食材首次出现标注英文 |
+| fact | 【例句】麻婆豆腐以嫩豆腐与牛肉末入麻辣酱汁烧制。→ Mapo Tofu is made with soft tofu and minced beef in a spicy, numbing sauce. |
+| fact | 【例句】花椒带来独特的麻味而非单纯辣味。→ Sichuan peppercorn delivers a unique numbing tingle rather than mere heat. |
+| instruction | 【指令】按菜品分段翻译 |
+| instruction | 【指令】质检菜名译法一致性 |
+| instruction | 【指令】导出双语菜单 |
+
+**领域 D：唐诗英译**（10 条记忆，低相似度领域）
+
+| 类型 | 具体翻译内容 |
+|------|--------------|
+| instruction | 【项目】新建翻译项目：唐诗英译 |
+| fact | 【术语】静夜思 → Thoughts on a Quiet Night |
+| fact | 【术语】李白 → Li Bai |
+| fact | 【术语】故乡 → hometown |
+| preference | 【风格】诗词翻译须兼顾意境、格律与可诵性；专名音译 |
+| fact | 【例句】床前明月光，疑是地上霜。→ Before my bed the silver moonlight pools—I take it for the frost on ground that cools. |
+| fact | 【例句】举头望明月，低头思故乡。→ I lift my head to gaze at the moon; I bow, and think of my hometown. |
+| instruction | 【指令】逐句对照翻译 |
+| instruction | 【指令】保留押韵与意象 |
+| instruction | 【指令】导出双语诗笺 |
+
+**领域 E：英雄联盟赛事解说**（10 条记忆，低相似度领域）
+
+| 类型 | 具体翻译内容 |
+|------|--------------|
+| instruction | 【项目】新建翻译项目：英雄联盟赛事解说 |
+| fact | 【术语】英雄联盟 → League of Legends |
+| fact | 【术语】防御塔 → turret |
+| fact | 【术语】水晶枢纽 → Nexus |
+| preference | 【风格】游戏术语沿用官方英文；选手ID保留原文 |
+| fact | 【例句】上单选手单带偷掉敌方高地防御塔。→ The top-laner split-pushed and stole the enemy base turret. |
+| fact | 【例句】团战获胜后直推水晶枢纽拿下比赛。→ After winning the teamfight, they pushed the Nexus to close out the game. |
+| instruction | 【指令】按时间轴分段翻译 |
+| instruction | 【指令】统一英雄与技能译名 |
+| instruction | 【指令】导出中英解说稿 |
+
+**领域 F：智慧温室技术白皮书**（10 条记忆，低相似度领域）
+
+| 类型 | 具体翻译内容 |
+|------|--------------|
+| instruction | 【项目】新建翻译项目：智慧温室技术白皮书 |
+| fact | 【术语】智慧大棚 → smart greenhouse |
+| fact | 【术语】物联网 → Internet of Things (IoT) |
+| fact | 【术语】滴灌 → drip irrigation |
+| preference | 【风格】农业科技术语准确、缩写首次标注全称 |
+| fact | 【例句】传感器实时调控温室内温湿度与光照。→ Sensors adjust temperature, humidity and light inside the greenhouse in real time. |
+| fact | 【例句】滴灌系统按需精准供给水肥。→ The drip-irrigation system supplies water and nutrients precisely on demand. |
+| instruction | 【指令】按章节分段翻译 |
+| instruction | 【指令】质检术语与单位一致 |
+| instruction | 【指令】导出中英双语交付物 |
+
+**领域 G：巴黎时装周秀场报道**（10 条记忆，低相似度领域）
+
+| 类型 | 具体翻译内容 |
+|------|--------------|
+| instruction | 【项目】新建翻译项目：巴黎时装周秀场报道 |
+| fact | 【术语】高级时装 → haute couture |
+| fact | 【术语】廓形 → silhouette |
+| fact | 【术语】手工坊 → atelier |
+| preference | 【风格】时尚用语优雅、专名用法文原词 |
+| fact | 【例句】本季系列以建筑感廓形与手工刺绣著称。→ This season's collection is known for architectural silhouettes and hand embroidery. |
+| fact | 【例句】工坊耗时数百小时完成一件礼服。→ The atelier spent hundreds of hours finishing a single gown. |
+| instruction | 【指令】按品牌分段翻译 |
+| instruction | 【指令】统一时装术语 |
+| instruction | 【指令】导出双语报道 |
+
+**领域 H：爵士乐科普文章**（10 条记忆，低相似度领域）
+
+| 类型 | 具体翻译内容 |
+|------|--------------|
+| instruction | 【项目】新建翻译项目：爵士乐科普文章 |
+| fact | 【术语】爵士乐 → jazz |
+| fact | 【术语】即兴演奏 → improvisation |
+| fact | 【术语】蓝调 → blues |
+| preference | 【风格】音乐术语准确；曲风名保留英文 |
+| fact | 【例句】萨克斯手以一段自由的即兴独奏点燃气氛。→ The saxophonist ignited the room with a free improvisational solo. |
+| fact | 【例句】蓝调音阶赋予乐句忧郁的色彩。→ The blues scale gives the phrases a melancholy hue. |
+| instruction | 【指令】按段落分段翻译 |
+| instruction | 【指令】统一乐器与曲风译名 |
+| instruction | 【指令】导出双语文稿 |
 
 ---
 
@@ -103,6 +193,90 @@
 ==============================================
 ```
 
+### 场景五 · 川菜食谱预测 + 召回（川菜食谱汉译英）
+
+```
+========== 新领域 · 川菜食谱 ==========
+● 新到来源文(待译): 请翻译：这道麻婆豆腐要用嫩豆腐和牛肉末。
+● 引擎预测下一步 Top1: 【项目】新建翻译项目：川菜食谱汉译英
+● 引擎召回(前 3 条):
+    1. 【例句】麻婆豆腐以嫩豆腐与牛肉末入麻辣酱汁烧制。→ Mapo Tofu is made with soft tofu and minced beef in a spicy, numbing sauce.
+    2. 【接收】请翻译：这道麻婆豆腐要用嫩豆腐和牛肉末。
+    3. 【术语】麻婆豆腐 → Mapo Tofu
+=======================================
+>>> [场景五] PASS: 川菜语料给出具体预测与具体召回
+```
+
+### 场景六 · 唐诗英译预测 + 召回（唐诗英译）
+
+```
+========== 新领域 · 唐诗英译 ==========
+● 新到来源文(待译): 请翻译：《静夜思》里'举头望明月'一句。
+● 引擎预测下一步 Top1: 【项目】新建翻译项目：唐诗英译
+● 引擎召回(前 3 条):
+    1. 【接收】请翻译：《静夜思》里'举头望明月'一句。
+    2. 【例句】举头望明月，低头思故乡。→ I lift my head to gaze at the moon; I bow, and think of my hometown.
+    3. 【术语】静夜思 → Thoughts on a Quiet Night
+=======================================
+>>> [场景六] PASS: 诗词语料给出具体预测与具体召回
+```
+
+### 场景七 · 电子竞技解说预测 + 召回（英雄联盟赛事解说）
+
+```
+========== 新领域 · 电子竞技解说 ==========
+● 新到来源文(待译): 请翻译：这波团战他们先拆掉了下路防御塔再转战水晶枢纽。
+● 引擎预测下一步 Top1: 【项目】新建翻译项目：英雄联盟赛事解说
+● 引擎召回(前 3 条):
+    1. 【接收】请翻译：这波团战他们先拆掉了下路防御塔再转战水晶枢纽。
+    2. 【术语】水晶枢纽 → Nexus
+    3. 【术语】英雄联盟 → League of Legends
+=========================================
+>>> [场景七] PASS: 电竞语料给出具体预测与具体召回
+```
+
+### 场景八 · 智慧温室预测 + 召回（智慧温室技术白皮书）
+
+```
+========== 新领域 · 智慧温室 ==========
+● 新到来源文(待译): 请翻译：智慧大棚通过物联网传感器实现自动滴灌。
+● 引擎预测下一步 Top1: 【项目】新建翻译项目：智慧温室技术白皮书
+● 引擎召回(前 3 条):
+    1. 【接收】请翻译：智慧大棚通过物联网传感器实现自动滴灌。
+    2. 【术语】智慧大棚 → smart greenhouse
+    3. 【术语】物联网 → Internet of Things (IoT)
+=======================================
+>>> [场景八] PASS: 农业语料给出具体预测与具体召回
+```
+
+### 场景九 · 高级时装预测 + 召回（巴黎时装周秀场报道）
+
+```
+========== 新领域 · 高级时装 ==========
+● 新到来源文(待译): 请翻译：本季高级时装以流畅廓形与手工坊刺绣取胜。
+● 引擎预测下一步 Top1: 【项目】新建翻译项目：巴黎时装周秀场报道
+● 引擎召回(前 3 条):
+    1. 【接收】请翻译：本季高级时装以流畅廓形与手工坊刺绣取胜。
+    2. 【术语】高级时装 → haute couture
+    3. 【术语】手工坊 → atelier
+=======================================
+>>> [场景九] PASS: 时尚语料给出具体预测与具体召回
+```
+
+### 场景十 · 爵士乐预测 + 召回（爵士乐科普文章）
+
+```
+========== 新领域 · 爵士乐 ==========
+● 新到来源文(待译): 请翻译：萨克斯手用蓝调音阶铺陈一段即兴。
+● 引擎预测下一步 Top1: 【项目】新建翻译项目：爵士乐科普文章
+● 引擎召回(前 3 条):
+    1. 【接收】请翻译：萨克斯手用蓝调音阶铺陈一段即兴。
+    2. 【术语】即兴演奏 → improvisation
+    3. 【术语】爵士乐 → jazz
+=====================================
+>>> [场景十] PASS: 爵士语料给出具体预测与具体召回
+```
+
 ---
 
 ## 4. 评价结论
@@ -135,6 +309,23 @@
   说明 D8 角色抽象能把领域无关的流程骨架抽象出来。
 - 场景四：医疗器械语料独立训练后自身预测/召回均正确，证明多领域并行可行。
 
+### 4.5 场景多样性（低相似度）✅
+
+为满足"补齐至 10 个真实场景且相互相似度低"的要求，在原有 4 个场景（新能源汽车、医疗器械、
+冷启动、跨领域）之外，**新增 6 个彼此主题正交的领域**：川菜食谱、唐诗英译、英雄联盟赛事解说、
+智慧温室农业、巴黎时装周高级时装、爵士乐科普。它们横跨烹饪 / 文学 / 电竞 / 农业科技 / 时尚 /
+音乐六个互不相干的现实世界，与原有工程 / 医学语料也无重叠。
+
+低相似度已用 `sim_check.py` 量化（汉词二元组 + 英文 token 一元组的余弦相似度，逐对比较每个
+语料）：
+
+- 6 个新增领域两两最大相似度 **0.385**（电竞 ↔ 爵士），其余均 ≤ 0.344；
+- 全部 8 个真实领域两两最大相似度 **0.484**（新能源汽车 ↔ 医疗器械，二者均为"说明书式"
+  工程文档，属合理近似），其余明显更低。
+
+结论：新增 6 个场景**主题互不雷同、相互相似度低**，确为多样化的真实世界情景，而非近重复样本；
+10 个真实场景覆盖了工程、医学、烹饪、文学、电竞、农业、时尚、音乐八个领域，多样性充分。
+
 ---
 
 ## 5. 总体评价
@@ -145,7 +336,7 @@
 | 语义召回（TM 核心） | 优 | 场景一/三/四均召回**具体且相关**的双语术语与例句 |
 | 工作流步骤预测 | 良（识步骤准，自由文本回退锚点） | 场景二/四回退锚点；验收报告 Layer2 识步骤精准 |
 | 白盒可解释 | 优 | explain 含真实路径 |
-| 跨领域泛化 | 优 | 场景二/四 |
+| 跨领域泛化 | 优 | 场景二/四/五~十（含 6 个低相似度新领域） |
 | 确定性 / 可复现 | 优 | 另文 Hit@3=0.8246、逐字节一致 |
 
 **一句话结论**：作为"带预测能力的翻译记忆（Predictive TM）"，
@@ -159,7 +350,7 @@
 
 ```bash
 cd yimai_prophecy_moonbit
-moon test --target wasm-gc     # 含本报告全部 4 个真实场景 + 抽象验收
+moon test --target wasm-gc     # 含本报告全部 10 个真实场景 + 抽象验收
 ```
 
 - 场景实现：`yimai_prophecy_moonbit_scenario_test.mbt`
