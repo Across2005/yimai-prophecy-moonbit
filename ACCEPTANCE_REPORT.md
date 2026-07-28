@@ -121,7 +121,7 @@ L2 各项的「Agent A 实际回复」均以 `println` 形式落盘于测试输�
 cd yimai_prophecy_moonbit
 moon test --target wasm-gc      # 跑全部验收（含本报告的 Layer1/Layer2）
 moon build --target wasm-gc     # 仅构建库
-cd cmd/main && moon build --target wasm-gc && moon run .   # 跑 Python 版对照演示
+cd cmd/main && moon build --target wasm-gc && moon run .   # 跑引擎本地演示
 ```
 
 ---

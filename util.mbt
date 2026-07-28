@@ -1,10 +1,10 @@
 // util.mbt —— 译脉·先知 2.0 (MoonBit) 编码层 + JSON 辅助
 // 零依赖：仅 moonbitlang/core/json 与 moonbitlang/core/math
-// 对应原 Python 版的 tokenize / tf_vector / cosine 与共享 JSON 构造逻辑。
+// 对应 D1–D8 规范的分词 / TF 向量 / 余弦与共享 JSON 构造逻辑。
 
-// ---- 算法常量（HEBB_LR 等权重参数在 engine.mbt 定义，与 Python 版逐项一致）----
+// ---- 算法常量（HEBB_LR 等权重参数在 engine.mbt 定义，按 D1–D8 规范设定）----
 
-// 停用词：中文功能词 + 英文停用词（与 Python 版一致）
+// 停用词：中文功能词 + 英文停用词（按 D1–D8 分词规范设定）
 let stop_words : Array[String] = [
   "的", "了", "和", "是", "在", "我", "你", "他", "她", "它", "们", "这", "那", "有",
   "就", "不", "也", "都", "一个", "上", "下", "中", "与", "及", "或", "把", "被", "给",
@@ -40,8 +40,29 @@ fn to_lower_ascii(s : String) -> String {
 }
 
 // 概念抽象·角色抽取：取文本前 4 字作为粗略类别键（跨主题稳定）
-fn role_of(text : String) -> String {
-  (text[:4]).to_owned()
+// 注意：须对短文本做长度钳制，否则 text[:4] 在 length<4 时抛异常
+pub fn role_of(text : String) -> String {
+  let n = text.length()
+  if n <= 4 {
+    text
+  } else {
+    (text[:4]).to_owned()
+  }
+}
+
+// 多粒度角色：前二 / 前四(保留，B2 冷启动依赖) / 前后各二
+// 返回所有可用粒度键，供 role_index / role_trans / D8 回退统一使用
+pub fn roles_of(text : String) -> Array[String] {
+  let n = text.length()
+  let out : Array[String] = []
+  if n >= 2 {
+    out.push(text[:2].to_owned())
+    if n >= 4 {
+      out.push(role_of(text))
+      out.push(text[:2].to_owned() + text[(n - 2):].to_owned())
+    }
+  }
+  out
 }
 
 // ---------------------------------------------------------------------------
@@ -49,7 +70,7 @@ fn role_of(text : String) -> String {
 // ---------------------------------------------------------------------------
 
 // 分词：ASCII [a-z0-9_]+ 段 + CJK 单字与相邻二元组；小写并去停用词。
-// 对应原 Python 版正则分词 + 中文 unigram/bigram 展开。
+// 对应 D1–D8 规范的正则分词 + 中文 unigram/bigram 展开。
 fn yimai_tokenize(text : String) -> Array[String] {
   let lower = to_lower_ascii(text)
   let toks : Array[String] = []
@@ -114,7 +135,7 @@ fn tf_vector(tokens : Array[String]) -> Map[String, Double] {
   out
 }
 
-// 余弦相似度（在 TF 向量上，等价于原 Python 版）
+// 余弦相似度（在 TF 向量上计算）
 fn cosine(a : Map[String, Double], b : Map[String, Double]) -> Double {
   if a.length() == 0 || b.length() == 0 {
     return 0.0
@@ -155,7 +176,7 @@ fn clamp01(x : Double) -> Double {
   }
 }
 
-// 四舍五入到 4 位小数（用于展示，对应 Python round(...,4)）
+// 四舍五入到 4 位小数（用于展示）
 fn r4(x : Double) -> Double {
   @math.round(x * 10000.0) / 10000.0
 }
@@ -168,6 +189,66 @@ fn arr_contains(arr : Array[String], s : String) -> Bool {
     }
   }
   false
+}
+
+// 双语字符级对齐（LCS 编辑脚本，等价于 Myers 差分的对齐结果）
+// 返回对齐序列：op 0=对齐 1=删A 2=插B；i/j 为 A/B 中的字符下标
+// 供术语/句段双语对齐热力图与对齐质量评估使用（纯算法，零依赖）
+pub fn align_diff(a : String, b : String) -> Array[(Int, Int, Int)] {
+  let n = a.length()
+  let m = b.length()
+  let dp : Array[Array[Int]] = []
+  let mut i = 0
+  while i <= n {
+    let row : Array[Int] = []
+    let mut j = 0
+    while j <= m {
+      row.push(0)
+      j = j + 1
+    }
+    dp.push(row)
+    i = i + 1
+  }
+  i = n - 1
+  while i >= 0 {
+    let mut j = m - 1
+    while j >= 0 {
+      if a[i] == b[j] {
+        dp[i][j] = dp[i + 1][j + 1] + 1
+      } else {
+        let down = dp[i + 1][j]
+        let right = dp[i][j + 1]
+        dp[i][j] = if down > right { down } else { right }
+      }
+      j = j - 1
+    }
+    i = i - 1
+  }
+  let out : Array[(Int, Int, Int)] = []
+  i = 0
+  let mut k = 0
+  while i < n && k < m {
+    if a[i] == b[k] {
+      out.push((0, i, k))
+      i = i + 1
+      k = k + 1
+    } else if dp[i + 1][k] >= dp[i][k + 1] {
+      out.push((1, i, k))
+      i = i + 1
+    } else {
+      out.push((2, i, k))
+      k = k + 1
+    }
+  }
+  while i < n {
+    out.push((1, i, k))
+    i = i + 1
+  }
+  while k < m {
+    out.push((2, i, k))
+    k = k + 1
+  }
+  out
 }
 
 // ---------------------------------------------------------------------------

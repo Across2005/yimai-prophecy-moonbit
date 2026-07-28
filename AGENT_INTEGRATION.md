@@ -20,19 +20,20 @@ cd yimai_prophecy_moonbit
 # 3) 验收（含真实翻译场景 + 抽象量化，全绿即代表引擎可用）
 moon test --target wasm-gc
 
-# 4) 跑 Python 原版对照演示（is-main 入口）
+# 4) 跑引擎本地演示（is-main 入口）
 cd cmd/main && moon build --target wasm-gc && moon run .
 ```
 
 Agent 可在自己的 MoonBit 工程中 `moon add Across2005/yimai_prophecy_moonbit`，
-直接调用 `ProphecyEngine` 的 16 个公开方法（make/remember/observe/recall/predict/
+直接调用 `ProphecyEngine` 的约 30 个公开方法（make/remember/observe/recall/predict/
 consolidate/restore/reward/explain/end_episode/hit_rate/stats_view/context_texts/
-last_context_id/to_json/from_json）。
+last_context_id/to_json/from_json，以及 set_domain_bias/inject_distillation/cl_step/
+set_attention/mark_term/explain_card/active_learning_candidates/wal_*/fed_* 等）。
 
 ## 接入方式 B：算法移植（Agent 不具备 MoonBit，但需内嵌能力）
 
-`engine.mbt` 为**纯标准库实现、零依赖、零 I/O**，算法与 Python 原版逐项对齐，
-可直接阅读后移植到 Python / TypeScript / Go 等宿主语言；
+`engine.mbt` 为**纯标准库实现、零依赖、零 I/O**，算法按 D1–D8 规范实现，
+可直接阅读后重新实现到 Python / TypeScript / Go 等宿主语言；
 常量（HEBB_LR、EDGE_DECAY、BETA 等）与 D1–D8 模块一一对应，移植成本低。
 这是当前"跨语言 Agent 装载"最可行的路径。
 
@@ -51,7 +52,7 @@ yimai-prophecy-moonbit/
 ├── AGENTS.md                       # Agent 协作约定
 ├── CODE_REVIEW.md                  # 代码审查记录
 ├── LICENSE                         # Apache-2.0
-├── cmd/main/main.mbt               # is-main 演示（Python 原版对照）
+├── cmd/main/main.mbt               # is-main 演示（引擎本地验证）
 ├── yimai_prophecy_moonbit_test.mbt            # 既有黑盒测试
 ├── yimai_prophecy_moonbit_accept_test.mbt     # 抽象量化验收（Layer1/Layer2）
 ├── yimai_prophecy_moonbit_scenario_test.mbt   # 真实双语场景模拟验收

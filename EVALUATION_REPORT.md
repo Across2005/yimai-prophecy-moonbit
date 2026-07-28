@@ -355,4 +355,4 @@ moon test --target wasm-gc     # 含本报告全部 10 个真实场景 + 抽象�
 
 - 场景实现：`yimai_prophecy_moonbit_scenario_test.mbt`
 - 量化验收：`yimai_prophecy_moonbit_accept_test.mbt`（见 ACCEPTANCE_REPORT.md）
-- 引擎实现：`engine.mbt`（零第三方依赖，算法与 Python 原版逐项对齐）
+- 引擎实现：`engine.mbt`（零第三方依赖，按 D1–D8 规范实现）

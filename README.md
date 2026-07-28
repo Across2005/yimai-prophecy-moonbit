@@ -2,7 +2,7 @@
 
 > 一套**带预测能力的记忆网络**——让本地智能体记住工作流，并在遇到同类任务时**预测下一步需求**、给出可白盒解释的路径。这是「译脉·先知 2.0 预知记忆网络」引擎的 MoonBit 零依赖实现。
 
-[![Tests](https://img.shields.io/badge/tests-56%2F56%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
+[![Tests](https://img.shields.io/badge/tests-71%2F71%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Hit@3](https://img.shields.io/badge/Hit%403-0.8246-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![vs Random](https://img.shields.io/badge/3.6x%20%3E%20random-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Leave-one-out](https://img.shields.io/badge/LOO%20generalization-100%25-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
@@ -40,6 +40,10 @@
 - **Deterministic & reproducible** — a logical clock replaces wall-clock time; identical call sequences yield byte-identical `to_json` output (no RNG).
 - **Zero third-party dependencies** — pure MoonBit core (`json` + `math` only); nothing to install beyond the `moon` toolchain.
 - **Serializable** — full engine state exports/imports as JSON for persistence and cross-session restore.
+- **Fast inference (快)** — role inverted-index (`role_members`) + per-source Top-8 pruning keep the hot path off full-graph scans; an LRU `pred_cache` short-circuits repeated `(context, k)` queries. See [roadmap status](./拓展路线图.md#八引擎侧实现状态追踪2026-07-28-更新).
+- **Accurate (准)** — second-order Markov (`trans2`, `P(w3|w1,w2)` blended at `λ=0.4`), multi-granularity role keys (前二/前四/前后各二), elastic forgetting (recency-aware edge decay), adaptive Hebbian LR, per-domain bias `ΔW` (LoRA-style), online contrastive learning (`cl_step`), and attention-gated edge weights in recall.
+- **Explainable & bilingual (美)** — `TermNode` (`mark_term`) boosts terminology recall with a +5.0 activation and a "term hit" flag; `explain_card` returns a white-box `activation_path` / `prediction_path` / `value_breakdown` JSON; `align_diff` gives a character-level LCS edit script for bilingual alignment.
+- **Incremental & collaborative (中/长周期)** — Write-Ahead Log (`wal_*`) for event-sourced replay, active-learning candidates by uncertainty + diversity, and federated increment export/import (`fed_*`) for cross-agent coordination.
 
 ---
 
@@ -51,12 +55,12 @@ The engine is a neuro-inspired memory network. Eight modules map directly to con
 |--------|-----------|--------------|
 | **D1 Synaptic graph** | Hebbian `w ← w + LR·(1−w)` | Co-occurrence creates edges; weights decay over time. |
 | **D2 Activation spread** | Multi-hop `a·w·decay` | Seed node → activate similar nodes → recall by spreading. |
-| **D3 Forward model** | 1st-order Markov `src→{dst:count}` | Predict next step by accumulating context-weighted transitions. |
+| **D3 Forward model** | 1st-order + 2nd-order Markov `src→{dst}` / `(w1,w2)→{w3}` | Predict next step by blending context-weighted 1st-order transitions with `λ·P(w3\|w1,w2)` (second-order). |
 | **D4 Value pricing** | `V = α·U_past + β·U_pred + γ·C_graph + δ·R − ε·Cost` | β=0.45 dominates — predicted-hit value ranks highest. |
 | **D5 Episode sequence** | episode log | Records sequences for consolidation replay. |
 | **D6 Consolidation** | prune + constraint-contract snapshot | Meta-cognitive `explore` control; contract roll-back via `restore`. |
 | **D7 Uncertainty** | distribution entropy | Emits `confidence` / `uncertainty`. |
-| **D8 Concept abstraction** | role-level transitions (cold-start) | First-4-chars role key induces cross-topic rules. |
+| **D8 Concept abstraction** | multi-granularity role transitions (cold-start) | 前二 / 前四 / 前后各二 role keys induce cross-topic rules. |
 
 **Why deterministic:** a `self.clock` (incremented on every `remember`/`observe`) substitutes wall-clock time, so results are reproducible and dependency-free. Because `REC_TAU` ≫ training steps, the recency term is ≈ 1.
 
@@ -927,7 +931,7 @@ Reproduce:
 
 ```bash
 cd yimai_prophecy_moonbit
-moon test --target wasm-gc      # runs the 30-domain demo among all 46 tests
+moon test --target wasm-gc      # runs the 30-domain demo among all 71 tests
 ```
 
 ---
@@ -954,6 +958,16 @@ All public interfaces are methods of `ProphecyEngine` (encoding helpers in `util
 | `last_context_id` | `() -> String` | Last node id in the context window. |
 | `to_json` | `() -> Json` | Export full engine state (persistence). |
 | `from_json` | `(data : Json) -> ProphecyEngine` | Restore engine state from JSON. |
+| `set_domain_bias` | `(role, delta : Double) -> Unit` | Inject/accumulate per-domain bias `ΔW` (LoRA-style). |
+| `inject_distillation` | `(table : Map[String, Double]) -> Unit` | Inject read-only distilled bias table (neural-symbolic distillation, consume-side). |
+| `cl_step` | `(anchor, positive, negative : String) -> Unit` | Online contrastive learning: strengthen (anchor,pos), suppress (anchor,neg). |
+| `set_attention` | `(alpha, beta : Double) -> Unit` | Toggle attention-gated edge weights in recall (default off). |
+| `mark_term` | `(mid : String) -> Bool` | Mark a node as terminology (TermNode): boost recall + flag for explain card. |
+| `explain_card` | `(mid : String) -> Json` | White-box explainable card: activation/prediction paths + value breakdown. |
+| `active_learning_candidates` | `(k : Int) -> Array[Json]` | Top-K uncertain + role-diverse nodes for human labeling. |
+| `wal_replay` | `() -> ProphecyEngine` | Rebuild engine from the Write-Ahead Log (event sourcing). |
+| `wal_export` / `wal_compact` / `wal_clear` / `wal_len` | `(…) -> Array[String] / Unit / Int` | WAL inspection & maintenance. |
+| `fed_export` / `fed_import` | `() -> Json` / `(added, updated : Int) -> Unit` | Federated increment counter export/import (coordinator merges weights). |
 
 ---
 
@@ -1012,7 +1026,7 @@ All public interfaces are methods of `ProphecyEngine` (encoding helpers in `util
 
 All numbers below are produced by `moon test --target wasm-gc` and are reproducible.
 
-**Summary: `Total tests: 56, passed: 56, failed: 0`** (4 quantitative acceptance + 10 real-world scenarios + 30 domain demos + 4 pre-existing black-box + 4 supporting + **4 benchmark/credibility**).
+**Summary: `Total tests: 71, passed: 71, failed: 0`** (4 quantitative acceptance + 10 real-world scenarios + 30 domain demos + 4 pre-existing black-box + 4 supporting + 4 benchmark/credibility + **15 roadmap regression (R1–R15)**).
 
 | Layer | Check | Result | Evidence |
 |-------|-------|--------|----------|
@@ -1031,6 +1045,7 @@ All numbers below are produced by `moon test --target wasm-gc` and are reproduci
 | **B2** | Leave-one-out generalization (true train/test split) | ✅ | 8/8 unseen-topic names still get correct next step via D8 role abstraction |
 | **B3** | Robustness under injected noise | ✅ | 2 unrelated observations don't break the learned next-step prediction |
 | **B4** | Quantified recall precision | ✅ | term query Top-3 hits the exact BMS term / liquid-cooled battery example |
+| RW | Roadmap regression (R1–R15) | ✅ | 15 targeted tests cover Phase0 contracts + Phase1–6 features; **R15** proves byte-identical `predict` across `to_json → from_json` (k=1/3/5) |
 
 ### Credibility hardening (why the 0.8246 number is trustworthy)
 
@@ -1052,7 +1067,7 @@ Reproduce:
 
 ```bash
 cd yimai_prophecy_moonbit
-moon test --target wasm-gc      # all 56 tests: 10 real-world scenarios + 30 domain demos + 4 benchmark/credibility
+moon test --target wasm-gc      # all 71 tests: 10 real-world scenarios + 30 domain demos + 4 benchmark/credibility + 15 roadmap regression
 moon build --target wasm-gc     # library only
 cd cmd/main && moon build --target wasm-gc && moon run .
 ```
@@ -1068,6 +1083,20 @@ cd cmd/main && moon build --target wasm-gc && moon run .
 - **State accumulates:** engine state changes continuously with `remember`/`observe`. For a clean start, call `make()` again or `restore()` from a snapshot.
 - **Predict fallback on free-form text:** as noted above, a brand-new source paragraph (no matching modelled step) makes `predict` return the highest-value anchor node. This is by design, not a defect — see [Real-world scenario](#real-world-scenario-predictive-translation-memory).
 - **Reported `Hit@3 = 0.8246` is credibility-checked (not asserted):** it now ships against a frequency-prior baseline (1.65×), a random baseline (3.57×), and a leave-one-out generalization test (8/8). See [Credibility hardening](#credibility-hardening-why-the-08246-number-is-trustworthy). These close the two classic pitfalls — *no baseline* and *train == test* — that otherwise make a high Hit@3 trivially achievable.
+
+---
+
+## 路线图实现状态（快·准·美）
+
+「译脉·先知 2.0 拓展路线图」的算法内核已在引擎侧全量落地：
+
+- **快（推理加速）** — 角色倒排索引 `role_members`、每源 Top-8 剪枝、LRU 预测缓存 `pred_cache`、Write-Ahead Log `wal_*` 事件溯源重放。
+- **准（预测精度）** — 多粒度角色键（前二 / 前四 / 前后各二）、二阶马尔可夫 `trans2`（`P(w3|w1,w2)` 以 λ=0.4 融合）、弹性遗忘（近因感知边权衰减）、自适应赫布学习率、领域偏置 ΔW（LoRA 风格）、在线对比学习 `cl_step`、召回注意力门控边权。
+- **美（可解释与双语）** — `TermNode`（`mark_term` 术语高亮 +5.0 激活）、`explain_card` 白盒激活/预测路径 + 价值拆解、字符级 LCS 双语对齐 `align_diff`、主动学习候选（不确定性 + 角色多样性）、联邦增量导出导入 `fed_*`。
+
+**验证**：`Total tests: 71, passed: 71, failed: 0`（含 15 项路线图专项回归 R1–R15）；三大约束契约 **Hit@3=0.8246 (>0.8)** ✅ ｜ **确定性逐字节一致** ✅ ｜ **JSON 往返 + 重启后预测一致** ✅。
+
+剩余项（外存 / CSR 持久化、ardot 译员工作台、联邦协调方 FedAvg、神经符号蒸馏训练管线、可视化记忆图谱）均为前端 / 外部服务衔接，数据接口已可消费。完整逐条状态见 [`拓展路线图.md` §八](./拓展路线图.md#八引擎侧实现状态追踪2026-07-28-更新)。
 
 ---
 
@@ -1113,11 +1142,11 @@ moon test --target wasm-gc        # green ⇒ engine is usable
 cd cmd/main && moon build --target wasm-gc && moon run .
 ```
 
-Then `moon add Across2005/yimai_prophecy_moonbit` and call any of the 16 `ProphecyEngine` methods.
+Then `moon add Across2005/yimai_prophecy_moonbit` and call any of the ~30 `ProphecyEngine` methods.
 
 **Path B — algorithm port (agent has no MoonBit but needs the capability in-process):**
 
-`engine.mbt` is pure-stdlib, zero-I/O, with constants (`HEBB_LR`, `EDGE_DECAY`, `BETA`, …) that map 1:1 to D1–D8. It ports cheaply to Python / TypeScript / Go by reading the source. This is currently the most practical route for cross-language agent loading.
+`engine.mbt` is pure-stdlib, zero-I/O, with constants (`HEBB_LR`, `EDGE_DECAY`, `BETA`, …) that map 1:1 to D1–D8. It can be reimplemented in Python / TypeScript / Go by reading the source. This is currently the most practical route for cross-language agent loading.
 
 Full guidance: [`AGENT_INTEGRATION.md`](./AGENT_INTEGRATION.md).
 

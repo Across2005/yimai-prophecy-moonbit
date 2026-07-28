@@ -13,10 +13,10 @@
 //   D7 不确定性&可解释 -> 置信度 + 激活/预测路径 (白盒)
 //   D8 概念抽象       -> 角色级转移，支撑冷启动泛化
 //
-// 与 Python 版逐项对齐；差异处：用逻辑时钟(self.clock)替代 wall-clock
-// 时间戳（确定性、零依赖），其余算法与常量完全一致。
+// 按 D1–D8 规范实现；差异处：用逻辑时钟(self.clock)替代 wall-clock
+// 时间戳（确定性、零依赖），算法与常量完全自洽。
 
-// ---- 算法常量（与 Python 版逐项一致）----
+// ---- 算法常量（按 D1–D8 规范设定）----
 const HEBB_LR : Double = 0.30      // 赫布学习率
 const EDGE_DECAY : Double = 0.95   // 边权衰减（固化重放）
 const MIN_EDGE : Double = 0.05     // 边权剪枝阈值
@@ -50,12 +50,14 @@ pub struct MemoryNode {
   mut predictive_value : Double
   mut hit_count : Int
   mut predict_count : Int
+  mut last_active : Double              // 最近一次被激活/命中（逻辑时钟），用于弹性遗忘的真实时差折扣
+  mut is_term : Bool                     // 术语节点（美：高初始激活 + 命中高亮，mark_term 置位）
 }
 
 // 引擎状态
 pub struct ProphecyEngine {
   mut memories : Map[String, MemoryNode]
-  transitions : Map[String, Map[String, Double]]      // D3 前向模型：src -> {dst: count}
+  mut transitions : Map[String, Map[String, Double]]    // D3 前向模型：src -> {dst: count}（固化前快照，F1 需回滚）
   mut episodes : Array[Array[String]]
   mut context : Array[String]                       // 当前上下文窗口 (最近 mids)
   mut stats_preds : Int
@@ -68,8 +70,23 @@ pub struct ProphecyEngine {
   mut explore : Double                              // 探索度[0,1]：元认知调控
   mut meta_hits : Array[Int]                        // 近期命中(0/1)滚动窗口
   mut snapshot : Option[Map[String, MemoryNode]]    // 固化前快照（约束契约）
-  role_trans : Map[String, Map[String, Double]]        // D8 角色级转移
+  mut snap_trans : Option[Map[String, Map[String, Double]]]  // 固化前转移快照（约束契约·F1）
+  mut snap_role : Option[Map[String, Map[String, Double]]]    // 固化前角色转移快照（约束契约·F1）
+  mut role_trans : Map[String, Map[String, Double]]      // D8 角色级转移（固化前快照，F1 需回滚）
   mut role_index : Map[String, String]              // 角色 -> 代表节点 id
+  // ---- 路线图拓展字段（内部态，不进入 to_json；from_json 后由 rebuild_* 重建）----
+  mut role_members : Map[String, Array[String]]   // 角色 -> 成员节点倒排索引（快：大图角色限定召回加速）
+  mut trans2 : Map[String, Map[String, Double]]     // 二阶马尔可夫：(w1\0w2) -> {w3: count}（准，#17 实现）
+  mut domain_bias : Map[String, Double]             // 领域偏置 ΔW（LoRA 式，按角色原型）（准，#19 实现）
+  mut hebb_lr : Double                             // 动态赫布学习率（#18 自适应，consolidate 中重赋值）
+  mut attn_alpha : Double                           // 注意力边权系数 α（#19，默认 0=关，set_attention 开启）
+  mut attn_beta : Double                            // 注意力边权系数 β（#19，角色匹配项）
+  mut pred_cache : Map[String, Json]               // 预测缓存 LRU（#16 快）
+  mut cache_epoch : Int                            // 引擎变更计数，失效预测缓存
+  cl_buf : Array[Json]                             // 在线对比学习缓冲（#19）
+  mut wal_log : Array[String]                      // 增量固化 WAL 日志（#21，事件溯源）
+  mut fed_add : Int                                // 联邦增量：新增节点计数
+  mut fed_upd : Int                                // 联邦增量：更新计数
   mut clock : Double                                // 逻辑时钟（替代 wall-clock）
 }
 
@@ -110,6 +127,58 @@ fn copy_memories(m : Map[String, MemoryNode]) -> Map[String, MemoryNode] {
     out.set(mid, mn)
   }
   out
+}
+
+// 转移表深拷贝（F1：固化前快照须独立副本，否则回滚会引用同一对象）
+fn copy_trans(t : Map[String, Map[String, Double]]) -> Map[String, Map[String, Double]] {
+  let out : Map[String, Map[String, Double]] =
+    Map::from_iter(([] : Array[(String, Map[String, Double])]).iter())
+  for a, d in t.iter2() {
+    let inner : Map[String, Double] = Map::from_iter(([] : Array[(String, Double)]).iter())
+    for b, c in d.iter2() {
+      inner.set(b, c)
+    }
+    out.set(a, inner)
+  }
+  out
+}
+
+// 角色倒排索引：增量维护（仅 ADD，避免误删；restore/prune 时整体重建）
+fn ProphecyEngine::role_members_add(self : ProphecyEngine, role : String, mid : String) -> Unit {
+  if role == "" {
+    return
+  }
+  match self.role_members.get(role) {
+    Some(arr) => {
+      if !arr_contains(arr, mid) {
+        arr.push(mid)
+      }
+    }
+    None => {
+      let a : Array[String] = [mid]
+      self.role_members.set(role, a)
+    }
+  }
+}
+
+fn ProphecyEngine::rebuild_role_members(self : ProphecyEngine) -> Unit {
+  self.role_members = Map::from_iter(([] : Array[(String, Array[String])]).iter())
+  for mid, m in self.memories.iter2() {
+    for rk in roles_of(m.text) {
+      self.role_members_add(rk, mid)
+    }
+  }
+}
+
+// 预测缓存失效（引擎被修改时调用，保证记忆更新后预测不过期）
+fn ProphecyEngine::invalidate_pred_cache(self : ProphecyEngine) -> Unit {
+  self.pred_cache = Map::from_iter(([] : Array[(String, Json)]).iter())
+  self.cache_epoch = self.cache_epoch + 1
+}
+
+// WAL：追加一条增量固化操作日志（#21）
+fn ProphecyEngine::wal_append(self : ProphecyEngine, line : String) -> Unit {
+  self.wal_log.push(line)
 }
 
 fn ProphecyEngine::edges_count(self : ProphecyEngine) -> Int {
@@ -219,6 +288,8 @@ fn node_to_json(m : MemoryNode) -> Json {
     ("predictive_value", num_json(m.predictive_value)),
     ("hit_count", num_json(m.hit_count.to_double())),
     ("predict_count", num_json(m.predict_count.to_double())),
+    ("last_active", num_json(m.last_active)),
+    ("is_term", if m.is_term { 1.0 } else { 0.0 }),
   ])
 }
 
@@ -237,6 +308,8 @@ fn node_from_json(j : Json) -> MemoryNode {
     predictive_value: get_num(j, "predictive_value"),
     hit_count: get_num(j, "hit_count").to_int(),
     predict_count: get_num(j, "predict_count").to_int(),
+    last_active: get_num(j, "last_active"),
+    is_term: get_num(j, "is_term") != 0.0,
   }
 }
 
@@ -246,6 +319,26 @@ fn memories_to_json(m : Map[String, MemoryNode]) -> Json {
     o.set(mid, node_to_json(mn))
   }
   o.to_json()
+}
+
+// 转移表序列化（F1 修复补全：快照三元组须随状态持久化，
+// 否则重载后 restore() 会回滚 memories 却不回滚 transitions/role_trans）
+fn trans_map_to_json(t : Map[String, Map[String, Double]]) -> Json {
+  let o : Map[String, Json] = Map::from_iter(([] : Array[(String, Json)]).iter())
+  for a, d in t.iter2() {
+    o.set(a, dmap_to_json(d))
+  }
+  o.to_json()
+}
+
+fn json_to_trans_map(j : Json) -> Map[String, Map[String, Double]] {
+  let out : Map[String, Map[String, Double]] =
+    Map::from_iter(([] : Array[(String, Map[String, Double])]).iter())
+  match j {
+    Json::Object(m) => for a, aj in m.iter2() { out.set(a, json_to_dmap(aj)) }
+    _ => ()
+  }
+  out
 }
 
 // ---------------------------------------------------------------------------
@@ -268,8 +361,22 @@ pub fn ProphecyEngine::make() -> ProphecyEngine {
     explore: 0.0,
     meta_hits: [],
     snapshot: None,
+    snap_trans: None,
+    snap_role: None,
     role_trans: Map::from_iter(([] : Array[(String, Map[String, Double])]).iter()),
     role_index: Map::from_iter(([] : Array[(String, String)]).iter()),
+    role_members: Map::from_iter(([] : Array[(String, Array[String])]).iter()),
+    trans2: Map::from_iter(([] : Array[(String, Map[String, Double])]).iter()),
+    domain_bias: Map::from_iter(([] : Array[(String, Double)]).iter()),
+    hebb_lr: HEBB_LR,
+    attn_alpha: 0.0,
+    attn_beta: 0.0,
+    pred_cache: Map::from_iter(([] : Array[(String, Json)]).iter()),
+    cache_epoch: 0,
+    cl_buf: [],
+    wal_log: [],
+    fed_add: 0,
+    fed_upd: 0,
     clock: 0.0,
   }
 }
@@ -306,9 +413,17 @@ pub fn ProphecyEngine::remember(
     m.vec = vec
     m.use_count = m.use_count + 1
     m.last_used = self.clock
+    m.last_active = self.clock
     self.role_index.set(role_of(text), best)
+    for rk in roles_of(text) {
+      self.role_index.set(rk, best)
+      self.role_members_add(rk, best)
+    }
     self.memories.set(best, m)
     self._wire(best, ctx)
+    self.wal_append("remember" + WAL_SEP + best + WAL_SEP + text + WAL_SEP + mtype)
+    self.invalidate_pred_cache()
+    self.fed_upd = self.fed_upd + 1
     return best
   }
   let mid = self._new_id()
@@ -319,17 +434,26 @@ pub fn ProphecyEngine::remember(
     vec,
     created: self.clock,
     last_used: self.clock,
+    last_active: self.clock,
     use_count: 1,
     feedback: 0.0,
     edges: Map::from_iter(([] : Array[(String, Double)]).iter()),
     predictive_value: 0.0,
     hit_count: 0,
     predict_count: 0,
+    is_term: false,
   }
   self.role_index.set(role_of(text), mid)
+  for rk in roles_of(text) {
+    self.role_index.set(rk, mid)
+    self.role_members_add(rk, mid)
+  }
+  self.wal_append("remember" + WAL_SEP + mid + WAL_SEP + text + WAL_SEP + mtype)
+  self.invalidate_pred_cache()
   self.memories.set(mid, node)
   self._wire(mid, ctx)
   self.stats_remembers = self.stats_remembers + 1
+  self.fed_add = self.fed_add + 1
   mid
 }
 
@@ -350,11 +474,11 @@ fn ProphecyEngine::_wire(self : ProphecyEngine, mid : String, ctx : Array[String
       Some(_) => {
         let m = self.memories[mid]
         let w = match m.edges.get(a) { Some(x) => x; None => 0.0 }
-        m.edges.set(a, clamp01(w + HEBB_LR * (1.0 - w)))
+        m.edges.set(a, clamp01(w + self.hebb_lr * (1.0 - w)))
         self.memories.set(mid, m)
         let na = self.memories[a]
         let w2 = match na.edges.get(mid) { Some(x) => x; None => 0.0 }
-        na.edges.set(mid, clamp01(w2 + HEBB_LR * (1.0 - w2)))
+        na.edges.set(mid, clamp01(w2 + self.hebb_lr * (1.0 - w2)))
         self.memories.set(a, na)
       }
     }
@@ -431,7 +555,12 @@ pub fn ProphecyEngine::recall(
   // 扩散
   let mut act : Map[String, Double] = Map::from_iter(([] : Array[(String, Double)]).iter())
   for s in seeds {
-    act.set(s, 1.0)
+    // 术语节点高初始激活（+5.0），使其在联想召回中优先浮出（美：术语命中高亮）
+    let boost = match self.memories.get(s) {
+      Some(m) => if m.is_term { 5.0 } else { 1.0 }
+      None => 1.0
+    }
+    act.set(s, boost)
   }
   for _step = 0; _step < SPREAD_STEPS; _step = _step + 1 {
     let newm : Map[String, Double] = Map::from_iter(([] : Array[(String, Double)]).iter())
@@ -442,7 +571,20 @@ pub fn ProphecyEngine::recall(
       match self.memories.get(nid) {
         Some(m) =>
           for nb, w in m.edges.iter2() {
-            let contrib = a * w * SPREAD_DECAY
+            // 注意力边权：相似度 + 角色匹配调制扩散（attn_alpha/beta=0 时退化为原行为）
+            let attn = if self.attn_alpha == 0.0 && self.attn_beta == 0.0 {
+              1.0
+            } else {
+              match self.memories.get(nb) {
+                Some(nbm) => {
+                  let simqn = cosine(qvec, nbm.vec)
+                  let rmatch = if role_of(m.text) == role_of(nbm.text) { 1.0 } else { 0.0 }
+                  @math.exp(self.attn_alpha * simqn + self.attn_beta * rmatch)
+                }
+                None => 1.0
+              }
+            }
+            let contrib = a * w * SPREAD_DECAY * attn
             if contrib > 0.01 {
               let cur = match newm.get(nb) { Some(x) => x; None => 0.0 }
               newm.set(nb, if contrib > cur { contrib } else { cur })
@@ -488,6 +630,38 @@ pub fn ProphecyEngine::recall(
 // ---------------------------------------------------------------------------
 
 pub fn ProphecyEngine::predict(self : ProphecyEngine, k : Int) -> Json {
+  // 快：预测缓存 LRU（相同上下文签名且引擎未变更时直接返回，跳过转移聚合）
+  let ckeyb = StringBuilder()
+  for i = 0; i < self.context.length(); i = i + 1 {
+    if i > 0 {
+      ckeyb.write_char('|')
+    }
+    ckeyb.write_string(self.context[i])
+  }
+  let ckey = ckeyb.to_string() + "|k" + k.to_string()
+  match self.pred_cache.get(ckey) {
+    Some(cached) => {
+      let out = get_obj(cached, "out")
+      let topk = get_str_arr(cached, "topk")
+      if topk.length() > 0 {
+        self.stats_preds = self.stats_preds + 1
+        self.last_pred = topk
+      } else {
+        self.last_pred = []
+      }
+      for d in topk {
+        match self.memories.get(d) {
+          Some(m) => {
+            m.predict_count = m.predict_count + 1
+            self.memories.set(d, m)
+          }
+          None => ()
+        }
+      }
+      return out
+    }
+    None => ()
+  }
   let act : Map[String, Double] = Map::from_iter(([] : Array[(String, Double)]).iter())
   let n = self.context.length()
   let exp = 2.0 - self.explore               // 元认知：探索度高时降低幂次->更广利用
@@ -515,7 +689,23 @@ pub fn ProphecyEngine::predict(self : ProphecyEngine, k : Int) -> Json {
           tot = tot + c
         }
         let tt0 = if tot == 0.0 { 1.0 } else { tot }
+        // 快：每源 Top-K(=8) 剪枝候选，大图下显著降低聚合开销（≤8 时不触发，保证小图行为不变）
+        let keep : Array[String] = []
+        if trans.length() > 8 {
+          let allc : Array[(String, Double)] = []
+          for dst, c in trans.iter2() {
+            allc.push((dst, c))
+          }
+          sort_sd(allc)
+          let kp = if 8 < allc.length() { 8 } else { allc.length() }
+          for i = 0; i < kp; i = i + 1 {
+            keep.push(allc[i].0)
+          }
+        }
         for dst, c in trans.iter2() {
+          if keep.length() > 0 && !arr_contains(keep, dst) {
+            continue
+          }
           let p = c / tt0
           let cur = match score.get(dst) { Some(x) => x; None => 0.0 }
           score.set(dst, cur + aw * p)
@@ -534,47 +724,103 @@ pub fn ProphecyEngine::predict(self : ProphecyEngine, k : Int) -> Json {
       None => 1.0
     }
     // D8 概念抽象回退：具体转移稀疏(冷启动)时用角色级规律补位
-    // 注意：无具体转移时 tt=1.0，同样进入回退（对应 Python 的 get(a, {})）
+    // 注意：无具体转移时 tt=1.0，同样进入回退（对应 D8 角色级补位的空转移兜底）
     if tt <= 1.0 {
       match self.memories.get(a) {
         Some(na) => {
-          let ra = role_of(na.text)
-          match self.role_trans.get(ra) {
-            Some(rtrans) => {
-              let mut rtot = 0.0
-              for _, c in rtrans.iter2() {
-                rtot = rtot + c
-              }
-              let rtt = if rtot == 0.0 { 1.0 } else { rtot }
-              for rb, c in rtrans.iter2() {
-                match self.role_index.get(rb) {
-                  Some(tgt) =>
-                    match self.memories.get(tgt) {
-                      Some(_) => {
-                        let rp = c / rtt
-                        let cur = match score.get(tgt) { Some(x) => x; None => 0.0 }
-                        score.set(tgt, cur + aw * rp * 0.5)
-                        let arr = match path.get(tgt) {
-                          Some(x) => x
-                          None => {
-                            let na : Array[Json] = []
-                            path.set(tgt, na)
-                            na
+          for ra in roles_of(na.text) {
+            if ra == "" {
+              continue
+            }
+            match self.role_trans.get(ra) {
+              Some(rtrans) => {
+                let mut rtot = 0.0
+                for _, c in rtrans.iter2() {
+                  rtot = rtot + c
+                }
+                let rtt = if rtot == 0.0 { 1.0 } else { rtot }
+                for rb, c in rtrans.iter2() {
+                  match self.role_index.get(rb) {
+                    Some(tgt) =>
+                      match self.memories.get(tgt) {
+                        Some(_) => {
+                          let rp = c / rtt
+                          let cur = match score.get(tgt) { Some(x) => x; None => 0.0 }
+                          score.set(tgt, cur + aw * rp * 0.5)
+                          let arr = match path.get(tgt) {
+                            Some(x) => x
+                            None => {
+                              let na2 : Array[Json] = []
+                              path.set(tgt, na2)
+                              na2
+                            }
                           }
+                          arr.push(obj([("from", str_json(a + "(role:" + ra + ")")), ("p", num_json(r4(rp)))]))
                         }
-                        arr.push(obj([("from", str_json(a + "(role)")), ("p", num_json(r4(rp)))]))
+                        None => ()
                       }
-                      None => ()
-                    }
-                  None => ()
+                    None => ()
+                  }
                 }
               }
+              None => ()
             }
-            None => ()
           }
         }
         None => ()
       }
+    }
+  }
+  // 二阶马尔可夫：以最近一对 (prev2, prev1) 作上下文，叠加 P(w3|w1,w2)
+  let nctx = self.context.length()
+  if nctx >= 2 {
+    let p1 = self.context[nctx - 1]
+    let p2 = self.context[nctx - 2]
+    let key2 = p2 + "::" + p1
+    match self.trans2.get(key2) {
+      Some(t2) => {
+        let mut tot2 = 0.0
+        for _, c in t2.iter2() {
+          tot2 = tot2 + c
+        }
+        let tt2 = if tot2 == 0.0 { 1.0 } else { tot2 }
+        let lam = 0.4
+        for w3, c in t2.iter2() {
+          let p = c / tt2
+          let cur = match score.get(w3) { Some(x) => x; None => 0.0 }
+          score.set(w3, cur + lam * p)
+          let arr = match path.get(w3) {
+            Some(x) => x
+            None => {
+              let na3 : Array[Json] = []
+              path.set(w3, na3)
+              na3
+            }
+          }
+          arr.push(obj([("from", str_json(p2 + ">" + p1 + "(2nd)")), ("p", num_json(r4(p)))]))
+        }
+      }
+      None => ()
+    }
+  }
+  // 领域偏置 ΔW：按目标节点多粒度角色原型注入先验（LoRA 式；初值为 0 不影响基线）
+  let sbias : Array[String] = []
+  for d, _ in score.iter2() {
+    sbias.push(d)
+  }
+  for d in sbias {
+    match self.memories.get(d) {
+      Some(mn) => {
+        let mut bias = 0.0
+        for rk in roles_of(mn.text) {
+          bias = bias + (match self.domain_bias.get(rk) { Some(x) => x; None => 0.0 })
+        }
+        if bias != 0.0 {
+          let cur = match score.get(d) { Some(x) => x; None => 0.0 }
+          score.set(d, cur + bias)
+        }
+      }
+      None => ()
     }
   }
   // 归一化
@@ -618,11 +864,14 @@ pub fn ProphecyEngine::predict(self : ProphecyEngine, k : Int) -> Json {
       None => ()
     }
   }
-  // D7 不确定性：整体分布熵
+  // D7 不确定性：基于【全量归一化分布】的熵
+  //    （F3：原实现仅取 Top-K，极端偏态分布下严重低估不确定性）
   let mut entropy = 0.0
-  for i = 0; i < lim; i = i + 1 {
+  for i = 0; i < ranked.length(); i = i + 1 {
     let p = ranked[i].1
-    entropy = entropy - p * @math.ln(p + 0.000000001)
+    if p > 0.0 {
+      entropy = entropy - p * @math.ln(p + 0.000000001)
+    }
   }
   let preds : Array[Json] = []
   for i = 0; i < lim; i = i + 1 {
@@ -638,11 +887,13 @@ pub fn ProphecyEngine::predict(self : ProphecyEngine, k : Int) -> Json {
       None => ()
     }
   }
-  obj([
+  let out = obj([
     ("predictions", arr_json(preds)),
     ("confidence", num_json(if preds.length() > 0 { r4(ranked[0].1) } else { 0.0 })),
     ("uncertainty", num_json(r4(entropy))),
   ])
+  self.pred_cache.set(ckey, obj([("out", out), ("topk", arr_json(topk.map(fn(s) { str_json(s) })))]))
+  out
 }
 
 // ---------------------------------------------------------------------------
@@ -662,15 +913,27 @@ pub fn ProphecyEngine::observe(
     match self.memories.get(prev) {
       Some(_) => {
         inc_trans(self.transitions, prev, mid)
-        // D8 概念抽象：同时记录角色级转移
+        // 二阶马尔可夫：最近一对 (prev2, prev) -> mid
+        if self.context.length() >= 2 {
+          let prev2 = self.context[self.context.length() - 2]
+          inc_trans(self.trans2, prev2 + "::" + prev, mid)
+        }
+        // D8 概念抽象：同时记录多粒度角色级转移
         match self.memories.get(prev) {
           Some(pn) =>
             match self.memories.get(mid) {
               Some(mn) => {
-                let ra = role_of(pn.text)
-                let rb = role_of(mn.text)
-                if ra != "" && rb != "" {
-                  inc_trans(self.role_trans, ra, rb)
+                let ras = roles_of(pn.text)
+                let rbs = roles_of(mn.text)
+                for ra in ras {
+                  if ra == "" {
+                    continue
+                  }
+                  for rb in rbs {
+                    if rb != "" {
+                      inc_trans(self.role_trans, ra, rb)
+                    }
+                  }
                 }
               }
               None => ()
@@ -686,13 +949,14 @@ pub fn ProphecyEngine::observe(
     let hit = arr_contains(self.last_pred, mid)
     if hit {
       self.stats_hits = self.stats_hits + 1
-      match self.memories.get(mid) {
-        Some(m) => {
-          m.hit_count = m.hit_count + 1
-          self.memories.set(mid, m)
+        match self.memories.get(mid) {
+          Some(m) => {
+            m.hit_count = m.hit_count + 1
+            m.last_active = self.clock
+            self.memories.set(mid, m)
+          }
+          None => ()
         }
-        None => ()
-      }
     }
     self.meta_hits.push(if hit { 1 } else { 0 })
     if self.meta_hits.length() > 200 {
@@ -705,6 +969,9 @@ pub fn ProphecyEngine::observe(
   if self.context.length() > CTX_WINDOW {
     let _ = self.context.remove(0)
   }
+  self.wal_append("observe" + WAL_SEP + mid + WAL_SEP + text + WAL_SEP + mtype)
+  self.fed_upd = self.fed_upd + 1
+  self.invalidate_pred_cache()
   mid
 }
 
@@ -766,24 +1033,31 @@ fn ProphecyEngine::_recompute_values(self : ProphecyEngine) -> Unit {
 // ---------------------------------------------------------------------------
 
 pub fn ProphecyEngine::consolidate(self : ProphecyEngine, prune : Bool) -> Json {
-  // 0. 约束契约：固化前对记忆做快照，支持回滚
+  // 0. 约束契约：固化前对记忆/转移/角色转移做快照，支持回滚
+  //    （F1：三者须一致回滚，否则记忆与转移表错位导致预测失真）
   self.snapshot = Some(copy_memories(self.memories))
+  self.snap_trans = Some(copy_trans(self.transitions))
+  self.snap_role = Some(copy_trans(self.role_trans))
   // 1. 边衰减 + 剪枝
   for mid, m in self.memories.iter2() {
     let new_edges : Map[String, Double] =
       Map::from_iter(([] : Array[(String, Double)]).iter())
     for nb, w in m.edges.iter2() {
-      let nw = w * EDGE_DECAY
+      // 弹性遗忘：边随「节点真实时差」加速衰减（陈旧关联更快淡出，新鲜关联保持）
+      let gap = self.clock - m.last_active
+      let recency = if gap < 0.0 { 1.0 } else { @math.exp(-gap / REC_TAU) }
+      let eff_decay = EDGE_DECAY * (0.5 + 0.5 * recency) // ∈ (0, EDGE_DECAY] ⊂ (0,1)
+      let nw = w * eff_decay
       if nw >= MIN_EDGE && self.memories.contains(nb) {
         new_edges.set(nb, nw)
       }
     }
-    // 对齐 Python：无论是否剪枝都写回衰减后的边权（否则 EDGE_DECAY 在干净网络上形同虚设）
+    // 对齐 D1–D8 规范：无论是否剪枝都写回衰减后的边权（否则 EDGE_DECAY 在干净网络上形同虚设）
     let m2 = m
     m2.edges = new_edges
     self.memories.set(mid, m2)
   }
-  // 2. 转移计数衰减（对齐 Python：缓慢衰减，权重 < 0.5 的转移被丢弃）
+  // 2. 转移计数衰减（对齐 D1–D8 规范：缓慢衰减，权重 < 0.5 的转移被丢弃）
   for a, d in self.transitions.iter2() {
     let newd : Map[String, Double] = Map::from_iter(([] : Array[(String, Double)]).iter())
     for dst, c in d.iter2() {
@@ -842,6 +1116,24 @@ pub fn ProphecyEngine::consolidate(self : ProphecyEngine, prune : Bool) -> Json 
     hr = s.to_double() / recent.length().to_double()
   }
   self.explore = clamp01(max0(0.0, (0.6 - hr) * 2.0))
+  // 自适应学习率：近期命中率驱动（高→更快适应，低→更稳）
+  let target_lr = if hr > 0.8 {
+    HEBB_LR * 1.2
+  } else if hr < 0.5 {
+    HEBB_LR * 0.6
+  } else {
+    HEBB_LR
+  }
+  self.hebb_lr = if target_lr < 0.05 {
+    0.05
+  } else if target_lr > 0.95 {
+    0.95
+  } else {
+    target_lr
+  }
+  self.invalidate_pred_cache()
+  self.rebuild_role_members()
+  self.fed_upd = self.fed_upd + 1
   self.stats_evolutions = self.stats_evolutions + 1
   obj([
     ("pruned", num_json(removed.to_double())),
@@ -856,7 +1148,19 @@ pub fn ProphecyEngine::restore(self : ProphecyEngine) -> Json {
   match self.snapshot {
     Some(s) => {
       self.memories = s
+      match self.snap_trans {
+        Some(st) => self.transitions = st
+        None => ()
+      }
+      match self.snap_role {
+        Some(sr) => self.role_trans = sr
+        None => ()
+      }
       self.snapshot = None
+      self.snap_trans = None
+      self.snap_role = None
+      self.invalidate_pred_cache()
+      self.rebuild_role_members()
       obj([("ok", true.to_json()), ("nodes", num_json(self.memories.length().to_double()))])
     }
     None => obj([("ok", false.to_json()), ("reason", str_json("no snapshot"))])
@@ -885,10 +1189,286 @@ pub fn ProphecyEngine::reward(
       m2.feedback = 0.7 * m2.feedback + 0.3 * s
       self.memories.set(mid, m2)
       self._recompute_values()
+      self.invalidate_pred_cache()
+      self.fed_upd = self.fed_upd + 1
       true
     }
     None => false
   }
+}
+
+// ---------------------------------------------------------------------------
+// #19 准：领域偏置 ΔW / 在线对比学习 / 注意力边权（对外接口）
+// ---------------------------------------------------------------------------
+
+// 领域偏置 ΔW：按角色原型注入先验（外部蒸馏 / 对比学习收敛后写入）
+pub fn ProphecyEngine::set_domain_bias(
+  self : ProphecyEngine,
+  role : String,
+  delta : Double,
+) -> Unit {
+  if role == "" {
+    return
+  }
+  self.domain_bias.set(role, delta)
+  self.invalidate_pred_cache()
+}
+
+// 在线对比学习单步：增强 (anchor,positive)，抑制 (anchor,negative)
+// 调用方可据 D7 不确定性动态调节 lr；高不确定时对比信号更强
+pub fn ProphecyEngine::cl_step(
+  self : ProphecyEngine,
+  anchor : String,
+  positive : String,
+  negative : String,
+) -> Unit {
+  match self.memories.get(anchor) {
+    Some(a) => {
+      let w = match a.edges.get(positive) { Some(x) => x; None => 0.0 }
+      a.edges.set(positive, clamp01(w + self.hebb_lr))
+      self.memories.set(anchor, a)
+    }
+    None => ()
+  }
+  match self.memories.get(positive) {
+    Some(p) => {
+      let w = match p.edges.get(anchor) { Some(x) => x; None => 0.0 }
+      p.edges.set(anchor, clamp01(w + self.hebb_lr))
+      self.memories.set(positive, p)
+    }
+    None => ()
+  }
+  match self.memories.get(anchor) {
+    Some(a) => {
+      let w = match a.edges.get(negative) { Some(x) => x; None => 0.0 }
+      a.edges.set(negative, clamp01(w - self.hebb_lr * 0.5))
+      self.memories.set(anchor, a)
+    }
+    None => ()
+  }
+  self.cl_buf.push(
+    obj([("anchor", str_json(anchor)), ("pos", str_json(positive)), ("neg", str_json(negative))]),
+  )
+  self.invalidate_pred_cache()
+}
+
+// 注意力边权开关（默认关；ardot 工作台按场景开启以强化语义召回）
+pub fn ProphecyEngine::set_attention(
+  self : ProphecyEngine,
+  alpha : Double,
+  beta : Double,
+) -> Unit {
+  self.attn_alpha = alpha
+  self.attn_beta = beta
+}
+
+// ---- #20 美：TermNode + 可解释推理卡片 ----
+
+// 标记术语节点：高亮 + 高初始激活（召回优先），并刷新时效
+pub fn ProphecyEngine::mark_term(self : ProphecyEngine, mid : String) -> Bool {
+  match self.memories.get(mid) {
+    Some(m) => {
+      m.is_term = true
+      m.last_active = self.clock
+      self.memories.set(mid, m)
+      self.invalidate_pred_cache()
+      self.fed_upd = self.fed_upd + 1
+      true
+    }
+    None => false
+  }
+}
+
+// 可解释推理卡片：对外契约 JSON（激活路径 / 预测路径 / 价值拆解），供 CLI/前端无耦合消费
+pub fn ProphecyEngine::explain_card(self : ProphecyEngine, mid : String) -> Json {
+  match self.memories.get(mid) {
+    Some(m) => {
+      self._recompute_values()
+      // 激活路径：谁连到它（入边）
+      let in_edges : Array[Json] = []
+      for omid, om in self.memories.iter2() {
+        match om.edges.get(mid) {
+          Some(w) => in_edges.push(obj([("from", str_json(omid)), ("w", num_json(r4(w)))]))
+          None => ()
+        }
+      }
+      // 预测路径：它预测什么（出边转移）
+      let out_preds : Array[Json] = []
+      match self.transitions.get(mid) {
+        Some(t) =>
+          for dst, c in t.iter2() {
+            out_preds.push(obj([("to", str_json(dst)), ("count", num_json(c))]))
+          }
+        None => ()
+      }
+      // 价值拆解（D4 各项）
+      let u_freq = m.use_count.to_double() / (m.use_count.to_double() + 5.0)
+      let dt = self.clock - m.last_used
+      let u_rec = if dt < 0.0 { 1.0 } else { clamp01(@math.exp(-dt / REC_TAU)) }
+      let u_fb = clamp01((m.feedback + 1.0) / 2.0)
+      let u_past = 0.5 * u_freq + 0.3 * u_rec + 0.2 * u_fb
+      let hr = if m.predict_count > 0 {
+        m.hit_count.to_double() / m.predict_count.to_double()
+      } else {
+        0.0
+      }
+      let mut tot = 0.0
+      match self.transitions.get(mid) {
+        Some(tr) => for _, c in tr.iter2() { tot = tot + c }
+        None => ()
+      }
+      let out_str = min1(tot / (tot + 10.0))
+      let u_pred = 0.6 * hr + 0.4 * out_str
+      let mut esum = 0.0
+      for _, w in m.edges.iter2() {
+        esum = esum + w
+      }
+      let c_graph = min1(esum / 5.0)
+      obj([
+        ("id", str_json(mid)),
+        ("text", str_json(m.text)),
+        ("is_term", m.is_term.to_json()),
+        ("activation_path", arr_json(in_edges)),
+        ("prediction_path", arr_json(out_preds)),
+        (
+          "value_breakdown",
+          obj([
+            ("u_freq", num_json(r4(u_freq))),
+            ("u_recency", num_json(r4(u_rec))),
+            ("u_feedback", num_json(r4(u_fb))),
+            ("u_past", num_json(r4(u_past))),
+            ("u_pred", num_json(r4(u_pred))),
+            ("c_graph", num_json(r4(c_graph))),
+            ("predictive_value", num_json(r4(m.predictive_value))),
+          ]),
+        ),
+      ])
+    }
+    None => obj([("error", str_json("unknown id"))])
+  }
+}
+
+// ---- #21 中/长期：WAL 增量固化 / 主动学习 / 联邦 / 蒸馏 ----
+const WAL_SEP : String = "\u0001"
+
+// 从 WAL 重放重建引擎（事件溯源：仅重放 remember/observe 原子事件）
+pub fn ProphecyEngine::wal_replay(self : ProphecyEngine) -> ProphecyEngine {
+  let e = ProphecyEngine::make()
+  for line in self.wal_log {
+    let parts = line.split(WAL_SEP).to_array()
+    // 记录格式: op␁mid␁text␁mtype（␁ = WAL_SEP）
+    if parts.length() >= 4 {
+      let op = parts[0].to_owned()
+      let text = parts[2].to_owned()
+      let mtype = parts[3].to_owned()
+      if op == "observe" {
+        let _ = e.observe(text, mtype)
+      } else if op == "remember" {
+        let _ = e.remember(text, mtype, [])
+      }
+    }
+  }
+  e
+}
+
+pub fn ProphecyEngine::wal_export(self : ProphecyEngine) -> Array[String] {
+  self.wal_log
+}
+
+pub fn ProphecyEngine::wal_compact(self : ProphecyEngine, keep : Int) -> Unit {
+  if self.wal_log.length() > keep {
+    let start = self.wal_log.length() - keep
+    let kept : Array[String] = []
+    for i = start; i < self.wal_log.length(); i = i + 1 {
+      kept.push(self.wal_log[i])
+    }
+    self.wal_log = kept
+  }
+}
+
+pub fn ProphecyEngine::wal_clear(self : ProphecyEngine) -> Unit {
+  self.wal_log = []
+}
+
+pub fn ProphecyEngine::wal_len(self : ProphecyEngine) -> Int {
+  self.wal_log.length()
+}
+
+// 主动学习候选：高不确定(低命中/低使用) + 角色多样性
+pub fn ProphecyEngine::active_learning_candidates(
+  self : ProphecyEngine,
+  k : Int,
+) -> Array[Json] {
+  self._recompute_values()
+  let pairs : Array[(String, Double)] = []
+  for mid, m in self.memories.iter2() {
+    let hr = if m.predict_count > 0 {
+      m.hit_count.to_double() / m.predict_count.to_double()
+    } else {
+      0.0
+    }
+    let unc = 1.0 - hr
+    let nov = 1.0 - clamp01(m.use_count.to_double() / 5.0)
+    pairs.push((mid, 0.6 * unc + 0.4 * nov))
+  }
+  sort_sd(pairs)
+  let seen_role : Map[String, Int] = Map::from_iter(([] : Array[(String, Int)]).iter())
+  let out : Array[Json] = []
+  for i = 0; i < pairs.length(); i = i + 1 {
+    if out.length() >= k {
+      break
+    }
+    let mid = pairs[i].0
+    match self.memories.get(mid) {
+      Some(m) => {
+        let rk = role_of(m.text)
+        // 角色多样性：已覆盖角色延后选取，优先保证覆盖面
+        if seen_role.contains(rk) && out.length() < k && seen_role.length() < k {
+          continue
+        }
+        seen_role.set(rk, 1)
+        out.push(
+          obj([
+            ("id", str_json(mid)),
+            ("text", str_json(m.text)),
+            ("uncertainty", num_json(r4(pairs[i].1))),
+            ("role", str_json(rk)),
+          ]),
+        )
+      }
+      None => ()
+    }
+  }
+  out
+}
+
+// 联邦：增量导出（供 FedAvg 聚合的对端差异计数）
+pub fn ProphecyEngine::fed_export(self : ProphecyEngine) -> Json {
+  obj([
+    ("added", num_json(self.fed_add.to_double())),
+    ("updated", num_json(self.fed_upd.to_double())),
+  ])
+}
+
+// 联邦：增量导入（合并对端聚合后的计数；权重合并由协调方完成）
+pub fn ProphecyEngine::fed_import(self : ProphecyEngine, added : Int, updated : Int) -> Unit {
+  self.fed_add = self.fed_add + added
+  self.fed_upd = self.fed_upd + updated
+  self.invalidate_pred_cache()
+}
+
+// 蒸馏：注入只读领域偏置表（LoRA ΔW），供 predict 先验增强
+pub fn ProphecyEngine::inject_distillation(
+  self : ProphecyEngine,
+  table : Map[String, Double],
+) -> Unit {
+  for rk, dv in table.iter2() {
+    if rk != "" {
+      let cur = match self.domain_bias.get(rk) { Some(x) => x; None => 0.0 }
+      self.domain_bias.set(rk, cur + dv)
+    }
+  }
+  self.invalidate_pred_cache()
 }
 
 // ---------------------------------------------------------------------------
@@ -1009,6 +1589,8 @@ pub fn ProphecyEngine::to_json(self : ProphecyEngine) -> Json {
       arr_json(self.episodes.map(fn(ep) { arr_json(ep.map(fn(s) { str_json(s) })) })),
     ),
     ("context", arr_json(self.context.map(fn(s) { str_json(s) }))),
+    ("cur_episode", arr_json(self.cur_episode.map(fn(s) { str_json(s) }))),
+    ("last_pred", arr_json(self.last_pred.map(fn(s) { str_json(s) }))),
     (
       "stats",
       obj([
@@ -1023,6 +1605,14 @@ pub fn ProphecyEngine::to_json(self : ProphecyEngine) -> Json {
     ("clock", num_json(self.clock)),
     ("meta_hits", arr_json(self.meta_hits.map(fn(x) { num_json(x.to_double()) }))),
     ("snapshot", match self.snapshot { Some(s) => memories_to_json(s); None => obj([]) }),
+    ("snap_trans", match self.snap_trans { Some(t) => trans_map_to_json(t); None => obj([]) }),
+    ("snap_role", match self.snap_role { Some(t) => trans_map_to_json(t); None => obj([]) }),
+    ("trans2", trans_map_to_json(self.trans2)),
+    ("domain_bias", dmap_to_json(self.domain_bias)),
+    ("hebb_lr", num_json(self.hebb_lr)),
+    ("attn_alpha", num_json(self.attn_alpha)),
+    ("attn_beta", num_json(self.attn_beta)),
+    ("wal_log", arr_json(self.wal_log.map(fn(s) { str_json(s) }))),
     ("role_trans", role_map.to_json()),
     ("role_index", smap_to_json(self.role_index)),
   ])
@@ -1040,6 +1630,8 @@ pub fn ProphecyEngine::from_json(data : Json) -> ProphecyEngine {
   }
   e.episodes = parse_episodes(get_arr_j(data, "episodes"))
   e.context = get_str_arr(data, "context")
+  e.cur_episode = get_str_arr(data, "cur_episode")
+  e.last_pred = get_str_arr(data, "last_pred")
   match get_obj(data, "stats") {
     Json::Object(m) => {
       e.stats_preds = match m.get("preds") { Some(Json::Number(n, ..)) => n.to_int(); _ => 0 }
@@ -1072,10 +1664,37 @@ pub fn ProphecyEngine::from_json(data : Json) -> ProphecyEngine {
       }
     _ => e.snapshot = None
   }
+  let sjt = get_obj(data, "snap_trans")
+  match sjt {
+    Json::Object(m) =>
+      if m.length() > 0 {
+        e.snap_trans = Some(json_to_trans_map(sjt))
+      } else {
+        e.snap_trans = None
+      }
+    _ => e.snap_trans = None
+  }
+  let sjr = get_obj(data, "snap_role")
+  match sjr {
+    Json::Object(m) =>
+      if m.length() > 0 {
+        e.snap_role = Some(json_to_trans_map(sjr))
+      } else {
+        e.snap_role = None
+      }
+    _ => e.snap_role = None
+  }
   match get_obj(data, "role_trans") {
     Json::Object(m) => for a, aj in m.iter2() { e.role_trans.set(a, json_to_dmap(aj)) }
     _ => ()
   }
   e.role_index = json_to_smap(get_obj(data, "role_index"))
+  e.trans2 = json_to_trans_map(get_obj(data, "trans2"))
+  e.domain_bias = json_to_dmap(get_obj(data, "domain_bias"))
+  e.hebb_lr = get_num(data, "hebb_lr")
+  e.attn_alpha = get_num(data, "attn_alpha")
+  e.attn_beta = get_num(data, "attn_beta")
+  e.wal_log = get_str_arr(data, "wal_log")
+  e.rebuild_role_members()
   e
 }

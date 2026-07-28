@@ -1,7 +1,7 @@
 // Whitebox tests: validate internal invariants fixed by code review (H1/H2).
 // Run `moon test`.
 
-// H1：边权衰减在「无剪枝」时也必须生效（对齐 Python 无条件写回）。
+// H1：边权衰减在「无剪枝」时也必须生效（无条件写回衰减后的边权）。
 // 回归点：旧代码用 `if new_edges.length() != m.edges.length()` 拦截写回，
 // 干净网络上所有边都 >= MIN_EDGE 导致长度相等 -> EDGE_DECAY 形同虚设。
 test "H1 edge decay applies without prune" {
@@ -42,8 +42,8 @@ test "H2 logical clock persists across to_json/from_json" {
   }
 }
 
-// M1b：转移计数衰减后 < 0.5 必须被丢弃（对齐 Python consolidate 的 `if nc >= 0.5`）。
-// 回归点：此前 MoonBit 的 M1 修复对转移「无条件保留」，使转移图成为 Python 的超集（只增不减）。
+// M1b：转移计数衰减后 < 0.5 必须被丢弃（按 D1–D8 规范的 `if nc >= 0.5` 判据）。
+// 回归点：此前 M1 修复对转移「无条件保留」，使转移图只增不减。
 test "M1b transition below 0.5 is pruned" {
   let e = ProphecyEngine::make()
   // 直接植入一条单计数转移 a->b（count=1.0）
@@ -55,7 +55,7 @@ test "M1b transition below 0.5 is pruned" {
     let _ = e.consolidate(false)
   }
   match e.transitions.get("a") {
-    Some(d) => inspect(d.length() == 0, content="true")   // 已被清空（对齐 Python 空字典）
+    Some(d) => inspect(d.length() == 0, content="true")   // 已被清空（转移计数衰减至 < 0.5 被丢弃）
     None => inspect(true, content="true")
   }
 }

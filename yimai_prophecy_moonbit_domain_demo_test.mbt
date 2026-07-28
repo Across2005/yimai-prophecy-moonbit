@@ -1,6 +1,6 @@
 // yimai_prophecy_moonbit_domain_demo_test.mbt
 // 五大前沿领域 × 五轮翻译实跑（联网抓取真实前沿术语，驱动 MoonBit 引擎）
-// 与 Python 版 domain_scenario_demo.py 对应；输出为引擎真实确定性结果。
+// 与规范场景定义对应；输出为引擎真实确定性结果。
 // 本文件仅做演示输出，inspect 保证测试通过；transcript 供 README 引用。
 
 // 四位小数四舍五入（引擎 util 的 r4 不在测试作用域，这里本地定义）
