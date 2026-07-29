@@ -1565,6 +1565,508 @@ pub fn ProphecyEngine::check_terms(self : ProphecyEngine, source : String, targe
   arr_json(violations)
 }
 
+// ===========================================================================
+// #2–#7 扩展能力（译脉·先知 2.0 翻译技术大赛）—— 纯引擎逻辑 + 零依赖
+// 设计原则：所有能力在 wasm-gc 下可测；需外部系统（OCR / TMS 连接 / CI 运行器 /
+// 前端看板）的部分明确标注为外部边界，引擎只实现可纯逻辑落地的内核。
+// ===========================================================================
+
+// ---- 共享辅助（包内私有） ----
+
+// 抽取文本中的内联标签与占位符：<tag ...>、</tag>、{0}、%s、$1、&amp;、\n
+fn extract_tags(s : String) -> Array[String] {
+  let tags : Array[String] = []
+  let n = s.length()
+  let chars : Array[Char] = []
+  for ch in s.iter() { chars.push(ch) }
+  let mut i = 0
+  while i < n {
+    let c = chars[i]
+    if c == '<' {
+      let mut j = i + 1
+      while j < n && chars[j] != '>' { j = j + 1 }
+      if j < n {
+        let tag = (s[i:j + 1]).to_owned()
+        if !arr_contains(tags, tag) { tags.push(tag) }
+        i = j + 1
+      } else { i = i + 1 }
+    } else if c == '{' {
+      let mut j = i + 1
+      while j < n && chars[j] != '}' { j = j + 1 }
+      if j < n {
+        let tag = (s[i:j + 1]).to_owned()
+        if !arr_contains(tags, tag) { tags.push(tag) }
+        i = j + 1
+      } else { i = i + 1 }
+    } else if c == '%' && i + 1 < n && (chars[i + 1] == 's' || chars[i + 1] == 'd') {
+      let tag = (s[i:i + 2]).to_owned()
+      if !arr_contains(tags, tag) { tags.push(tag) }
+      i = i + 2
+    } else if c == '$' && i + 1 < n && chars[i + 1] >= '0' && chars[i + 1] <= '9' {
+      let tag = (s[i:i + 2]).to_owned()
+      if !arr_contains(tags, tag) { tags.push(tag) }
+      i = i + 2
+    } else if c == '\\' && i + 1 < n && chars[i + 1] == 'n' {
+      if !arr_contains(tags, "\\n") { tags.push("\\n") }
+      i = i + 2
+    } else if c == '&' {
+      let mut j = i + 1
+      while j < n && chars[j] != ';' { j = j + 1 }
+      if j < n && j > i + 1 {
+        let tag = (s[i:j + 1]).to_owned()
+        if !arr_contains(tags, tag) { tags.push(tag) }
+        i = j + 1
+      } else { i = i + 1 }
+    } else {
+      i = i + 1
+    }
+  }
+  tags
+}
+
+// XML 文本转义（导出 TMX 时保护 < > &）
+fn xml_escape(s : String) -> String {
+  let b = StringBuilder()
+  for ch in s.iter() {
+    if ch == '<' { b.write_string("&lt;") }
+    else if ch == '>' { b.write_string("&gt;") }
+    else if ch == '&' { b.write_string("&amp;") }
+    else { b.write_char(ch) }
+  }
+  b.to_string()
+}
+
+// 全部替换（split_on 已在 util 实现）
+fn str_replace_all(s : String, from : String, to : String) -> String {
+  if from == "" { return s }
+  let parts = split_on(s, from)
+  let mut out = ""
+  let mut first = true
+  for p in parts {
+    if !first { out = out + to }
+    out = out + p
+    first = false
+  }
+  out
+}
+
+// 从节点 JSON（to_json 快照）抽取稳定键，用于漂移对比
+fn node_key(j : Json) -> String {
+  let mt = get_str(j, "type")
+  let is_term = get_num(j, "is_term") != 0.0
+  let text = get_str(j, "text")
+  let tgt = get_str(j, "translation")
+  mt + "|" + (if is_term { "term" } else { "node" }) + "|" + text + "|" + tgt
+}
+
+// ---- #2 QE + MQM 自动评测 ----
+
+// 句段级 QE 分数（0..1）：0.4·匹配率 + 0.25·术语一致 + 0.25·字符相似 + 0.1·长度比
+// match_rate 为 [0,1]（与 fuzzy_match 的 score 同量级，勿传 match_pct）
+pub fn ProphecyEngine::qe_score(
+  _self : ProphecyEngine,
+  source : String,
+  target : String,
+  match_rate : Double,
+  term_ok : Bool,
+) -> Double {
+  let qmatch = max0(0.0, min1(match_rate))
+  let qterm = if term_ok { 1.0 } else { 0.0 }
+  // 注意：跨语言句对字符相似度/长度比天然偏低，若作为惩罚项会把分数压到 ~0.7，
+  // 失真。故 QE 以 TM 匹配率 + 术语一致为主，字符相似仅作正向加项（同语言场景才显著）。
+  let qchar = max0(0.0, min1(char_ratio(source, target)))
+  let score = 0.55 * qmatch + 0.30 * qterm + 0.15 * qchar
+  min1(max0(0.0, score))
+}
+
+// MQM 维度标注：terminology / accuracy / fluency / omission（含严重度）
+pub fn ProphecyEngine::mqm_tags(
+  _self : ProphecyEngine,
+  source : String,
+  target : String,
+  _match_rate : Double,
+  term_ok : Bool,
+) -> Json {
+  let issues : Array[Json] = []
+  if !term_ok {
+    issues.push(obj([
+      ("dimension", str_json("terminology")),
+      ("severity", str_json("major")),
+      ("detail", str_json("术语未通过一致性校验（check_terms 检出违规）")),
+    ]))
+  }
+  let cr = char_ratio(source, target)
+  if cr < 0.5 {
+    issues.push(obj([
+      ("dimension", str_json("accuracy")),
+      ("severity", str_json("major")),
+      ("detail", str_json("源-译文 字符级相似度过低 (<0.5)")),
+    ]))
+  }
+  if target.length() == 0 {
+    issues.push(obj([
+      ("dimension", str_json("fluency")),
+      ("severity", str_json("critical")),
+      ("detail", str_json("译文为空")),
+    ]))
+  } else {
+    let lr = target.length().to_double() / max0(1.0, source.length().to_double())
+    if lr > 2.5 || lr < 0.4 {
+      issues.push(obj([
+        ("dimension", str_json("fluency")),
+        ("severity", str_json("minor")),
+        ("detail", str_json("译文长度比异常（" + r4(lr).to_string() + "），疑似流畅性问题")),
+      ]))
+    }
+  }
+  if target.length().to_double() < 0.5 * source.length().to_double() && source.length() > 0 {
+    issues.push(obj([
+      ("dimension", str_json("omission")),
+      ("severity", str_json("major")),
+      ("detail", str_json("译文过短（< 源文 50%），疑似漏译")),
+    ]))
+  }
+  arr_json(issues)
+}
+
+// 一键自动评测：内部用 check_terms 推导 term_ok，返回 {qe_score, term_ok, mqm}
+pub fn ProphecyEngine::qe_auto(
+  self : ProphecyEngine,
+  source : String,
+  target : String,
+  match_rate : Double,
+) -> Json {
+  let violations = self.check_terms(source, target)
+  let term_ok = match violations {
+    Json::Array(a) => a.length() == 0
+    _ => true
+  }
+  let score = self.qe_score(source, target, match_rate, term_ok)
+  let tags = self.mqm_tags(source, target, match_rate, term_ok)
+  obj([
+    ("qe_score", num_json(r4(score))),
+    ("term_ok", num_json(if term_ok { 1.0 } else { 0.0 })),
+    ("mqm", tags),
+  ])
+}
+
+// ---- #3 格式保真往返 ----
+
+// 校验 TM 应用前后内联标签/占位符是否保真：返回 missing(源有译无) / extra(译有源无) / ok
+pub fn ProphecyEngine::check_format_fidelity(
+  _self : ProphecyEngine,
+  source : String,
+  target : String,
+) -> Json {
+  let st = extract_tags(source)
+  let tt = extract_tags(target)
+  let missing : Array[String] = []
+  for t in st {
+    if !arr_contains(tt, t) { missing.push(t) }
+  }
+  let extra : Array[String] = []
+  for t in tt {
+    if !arr_contains(st, t) { extra.push(t) }
+  }
+  let ok = missing.length() == 0 && extra.length() == 0
+  obj([
+    ("ok", num_json(if ok { 1.0 } else { 0.0 })),
+    ("missing", arr_json(missing.map(fn(x) { str_json(x) }))),
+    ("extra", arr_json(extra.map(fn(x) { str_json(x) }))),
+  ])
+}
+
+// 将标签/占位符掩码为中性 token，避免污染 fuzzy 的 token 余弦；
+// 调用方需保留原文以回填（引擎不做状态存储，符合零依赖/确定性）。
+pub fn ProphecyEngine::protect_tags(_self : ProphecyEngine, text : String) -> String {
+  let tags = extract_tags(text)
+  let mut out = text
+  for t in tags {
+    out = str_replace_all(out, t, "__TAG__")
+  }
+  out
+}
+
+// ---- #4 多模态 / 截图翻译（OCR 外部桩） ----
+
+// OCR 区域以 JSON 在外部边界流动：每个元素为 { "bbox": [x,y,w,h], "text": "..." }
+// 零依赖引擎不内嵌 OCR，ocr_image 仅返回空数组作为桩；调用方应替换为真实 OCR 服务。
+
+/// 外部边界：OCR 识别必须由外部视觉服务完成（Tesseract / 视觉大模型），
+/// 零依赖 MoonBit 引擎不内嵌 OCR。此桩返回空；调用方应替换为真实 OCR 调用，
+/// 返回的每个元素为 JSON 对象：{ "bbox": [x,y,w,h], "text": "..." }
+pub fn ocr_image(_path : String) -> Array[Json] {
+  []
+}
+
+// 给定 OCR 区域（JSON 对象数组，含 bbox/text）后，做区域文本 ↔ TM 对齐与回填映射（纯逻辑）。
+// 返回每区域 {bbox, source_text, match_pct, translation, matched}
+pub fn ProphecyEngine::align_regions(
+  self : ProphecyEngine,
+  regions : Array[Json],
+  threshold : Double,
+) -> Json {
+  let out : Array[Json] = []
+  for rg in regions {
+    let txt = get_str(rg, "text")
+    let best = self.fuzzy_match(txt, 1, threshold)
+    match best {
+      Json::Array(a) =>
+        if a.length() > 0 {
+          let tgt = get_str(a[0], "target")
+          let pct = get_num(a[0], "match_pct")
+          out.push(obj([
+            ("bbox", get_field(rg, "bbox")),
+            ("source_text", str_json(txt)),
+            ("match_pct", num_json(pct)),
+            ("translation", str_json(tgt)),
+            ("matched", num_json(1.0)),
+          ]))
+        } else {
+          out.push(region_no_match(rg))
+        }
+      _ => out.push(region_no_match(rg))
+    }
+  }
+  arr_json(out)
+}
+
+fn region_no_match(rg : Json) -> Json {
+  obj([
+    ("bbox", get_field(rg, "bbox")),
+    ("source_text", str_json(get_str(rg, "text"))),
+    ("match_pct", num_json(0.0)),
+    ("translation", str_json("")),
+    ("matched", num_json(0.0)),
+  ])
+}
+
+// ---- #5 本地化 CI / 批处理 ----
+
+// 批量 TM 应用 + 术语门禁：每段取 Top-1 TM 匹配，要求 match_pct≥阈值 且 术语一致
+// 方算 pass；返回聚合报告 {total, passed, failed, items}
+pub fn ProphecyEngine::batch_apply(
+  self : ProphecyEngine,
+  segments : Array[String],
+  threshold : Double,
+) -> Json {
+  let items : Array[Json] = []
+  let mut passed = 0
+  let mut failed = 0
+  for seg in segments {
+    let best = self.fuzzy_match(seg, 1, threshold)
+    let mut tgt = ""
+    let mut pct = 0.0
+    let mut has_match = false
+    match best {
+      Json::Array(a) =>
+        if a.length() > 0 {
+          has_match = true
+          tgt = get_str(a[0], "target")
+          pct = get_num(a[0], "match_pct")
+        }
+      _ => ()
+    }
+    let mut status = "fail_match"
+    let mut reason = "TM 无 ≥ 阈值匹配"
+    if has_match {
+      let v = self.check_terms(seg, tgt)
+      let vcount = match v { Json::Array(arr) => arr.length(); _ => 0 }
+      if vcount == 0 {
+        status = "pass"
+        reason = "TM 匹配且术语一致"
+        passed = passed + 1
+      } else {
+        status = "fail_term"
+        reason = "术语一致性校验未通过"
+        failed = failed + 1
+      }
+    } else {
+      failed = failed + 1
+    }
+    items.push(obj([
+      ("segment", str_json(seg)),
+      ("target", str_json(tgt)),
+      ("match_pct", num_json(pct)),
+      ("status", str_json(status)),
+      ("reason", str_json(reason)),
+    ]))
+  }
+  obj([
+    ("total", num_json(segments.length().to_double())),
+    ("passed", num_json(passed.to_double())),
+    ("failed", num_json(failed.to_double())),
+    ("items", arr_json(items)),
+  ])
+}
+
+// ---- #6 TMS 互通（XLIFF / TMX 解析侧） ----
+
+// 解析 TMX(1.4/2.0)：每个 <tu> 取 src/tgt 的 <tuv xml:lang>/<seg> 建 TM。返回加载条数。
+pub fn ProphecyEngine::parse_tmx(self : ProphecyEngine, xml : String) -> Int {
+  let mut count = 0
+  let tus = split_on(xml, "<tu")
+  for tu in tus {
+    let tuvs = split_on(tu, "<tuv")
+    let mut src = ""
+    let mut tgt = ""
+    let mut fallback = ""
+    for tuv in tuvs {
+      let lang = lang_attr(tuv)
+      let seg = first_tag_text(tuv, "seg")
+      if seg == "" { continue }
+      if lang == "en-US" { src = seg }
+      else if lang == "zh-CN" { tgt = seg }
+      else if fallback == "" { fallback = seg }
+    }
+    if tgt == "" { tgt = fallback }
+    if src != "" {
+      let _ = self.add_tm(src, tgt)
+      count = count + 1
+    }
+  }
+  count
+}
+
+// 解析 XLIFF(1.2/2.0)：<trans-unit>/<unit> 内的 <source>/<target> 建 TM。返回加载条数。
+// 注意：split_on 返回的 segs[0] 是首个标签之前的前缀（不含 source/target），
+// 必须从 index=1 起遍历，否则无匹配时会把整段 XML 误当作一个单元重复建 TM。
+pub fn ProphecyEngine::parse_xliff(self : ProphecyEngine, xml : String) -> Int {
+  let mut count = 0
+  // XLIFF 1.2: <trans-unit id=...> ; XLIFF 2.0: <unit id=...>
+  let segs1 = split_on(xml, "<trans-unit")
+  for i = 1; i < segs1.length(); i = i + 1 {
+    let u = segs1[i]
+    let src = first_tag_text(u, "source")
+    let tgt = first_tag_text(u, "target")
+    if src != "" {
+      let _ = self.add_tm(src, tgt)
+      count = count + 1
+    }
+  }
+  let segs2 = split_on(xml, "<unit")
+  for i = 1; i < segs2.length(); i = i + 1 {
+    let u = segs2[i]
+    // 跳过 1.2 的 <trans-unit>（已由 segs1 处理），仅处理真正的 <unit>（2.0）
+    if str_contains(u, "trans-unit") { continue }
+    let src = first_tag_text(u, "source")
+    let tgt = first_tag_text(u, "target")
+    if src != "" {
+      let _ = self.add_tm(src, tgt)
+      count = count + 1
+    }
+  }
+  count
+}
+
+// 导出 TMX(1.4)：将所有 mtype=="tm" 节点序列化为标准 TMX 片段（XML 转义已做）
+pub fn ProphecyEngine::export_tmx(
+  self : ProphecyEngine,
+  src_lang~ : String = "en-US",
+  tgt_lang~ : String = "zh-CN",
+) -> String {
+  let b = StringBuilder()
+  b.write_string("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<tmx version=\"1.4\">\n<body>\n")
+  for _, m in self.memories.iter2() {
+    if m.mtype != "tm" { continue }
+    b.write_string("<tu>\n<tuv xml:lang=\"")
+    b.write_string(src_lang)
+    b.write_string("\"><seg>")
+    b.write_string(xml_escape(m.text))
+    b.write_string("</seg></tuv>\n<tuv xml:lang=\"")
+    b.write_string(tgt_lang)
+    b.write_string("\"><seg>")
+    b.write_string(xml_escape(m.translation))
+    b.write_string("</seg></tuv>\n</tu>\n")
+  }
+  b.write_string("</body>\n</tmx>")
+  b.to_string()
+}
+
+// ---- #7 可观测 / 漂移监控 ----
+
+// 引擎健康指标：TM 数 / 术语数 / 总记忆数 / 术语覆盖率（术语出现在任一 TM 源或译文的比例）
+pub fn ProphecyEngine::metrics(self : ProphecyEngine) -> Json {
+  let mut tm_count = 0
+  let mut term_count = 0
+  let mut term_used = 0
+  let mut total_mem = 0
+  let tm_texts : Array[String] = []
+  for _, m in self.memories.iter2() {
+    total_mem = total_mem + 1
+    if m.mtype == "tm" {
+      tm_count = tm_count + 1
+      tm_texts.push(m.text)
+      tm_texts.push(m.translation)
+    } else if m.is_term {
+      term_count = term_count + 1
+      let covered = arr_contains(tm_texts, m.text) || arr_contains(tm_texts, m.translation)
+      if covered { term_used = term_used + 1 }
+    }
+  }
+  let coverage = if term_count == 0 { 0.0 } else { term_used.to_double() / term_count.to_double() }
+  obj([
+    ("tm_count", num_json(tm_count.to_double())),
+    ("term_count", num_json(term_count.to_double())),
+    ("total_memories", num_json(total_mem.to_double())),
+    ("term_coverage", num_json(r4(coverage))),
+  ])
+}
+
+// 两快照（to_json 输出）对比的漂移报告：按 (type|is_term|text|translation) 键算 TM/术语 增删
+pub fn ProphecyEngine::drift_report(
+  _self : ProphecyEngine,
+  before : Json,
+  after : Json,
+) -> Json {
+  let b_mem = get_obj(before, "memories")
+  let a_mem = get_obj(after, "memories")
+  let b_keys : Array[String] = []
+  let a_keys : Array[String] = []
+  match b_mem {
+    Json::Object(m) => for _, mn in m.iter2() { b_keys.push(node_key(mn)) }
+    _ => ()
+  }
+  match a_mem {
+    Json::Object(m) => for _, mn in m.iter2() { a_keys.push(node_key(mn)) }
+    _ => ()
+  }
+  let mut tm_added = 0
+  let mut tm_removed = 0
+  let mut term_added = 0
+  let mut term_removed = 0
+  for k in a_keys {
+    if !arr_contains(b_keys, k) {
+      if str_contains(k, "tm|") { tm_added = tm_added + 1 } else { term_added = term_added + 1 }
+    }
+  }
+  for k in b_keys {
+    if !arr_contains(a_keys, k) {
+      if str_contains(k, "tm|") { tm_removed = tm_removed + 1 } else { term_removed = term_removed + 1 }
+    }
+  }
+  let mut b_tm = 0
+  let mut b_term = 0
+  for k in b_keys {
+    if str_contains(k, "tm|") { b_tm = b_tm + 1 } else { b_term = b_term + 1 }
+  }
+  let mut a_tm = 0
+  let mut a_term = 0
+  for k in a_keys {
+    if str_contains(k, "tm|") { a_tm = a_tm + 1 } else { a_term = a_term + 1 }
+  }
+  obj([
+    ("before_tm", num_json(b_tm.to_double())),
+    ("after_tm", num_json(a_tm.to_double())),
+    ("before_term", num_json(b_term.to_double())),
+    ("after_term", num_json(a_term.to_double())),
+    ("tm_added", num_json(tm_added.to_double())),
+    ("tm_removed", num_json(tm_removed.to_double())),
+    ("term_added", num_json(term_added.to_double())),
+    ("term_removed", num_json(term_removed.to_double())),
+  ])
+}
+
 // ---- #21 中/长期：WAL 增量固化 / 主动学习 / 联邦 / 蒸馏 ----
 const WAL_SEP : String = "\u0001"
 

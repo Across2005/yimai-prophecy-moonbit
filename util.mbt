@@ -455,19 +455,19 @@ fn term_hit(text : String, term : String) -> Bool {
 // JSON 构造 / 访问辅助（复用 AL-world 风格，零依赖 moonbitlang/core/json）
 // ---------------------------------------------------------------------------
 
-fn str_json(s : String) -> Json {
+pub fn str_json(s : String) -> Json {
   s.to_json()
 }
 
-fn num_json(d : Double) -> Json {
+pub fn num_json(d : Double) -> Json {
   d.to_json()
 }
 
-fn arr_json(items : Array[Json]) -> Json {
+pub fn arr_json(items : Array[Json]) -> Json {
   items.to_json()
 }
 
-fn obj(pairs : Array[(String, Json)]) -> Json {
+pub fn obj(pairs : Array[(String, Json)]) -> Json {
   Map::from_iter(pairs.iter()).to_json()
 }
 
@@ -526,6 +526,18 @@ fn get_str_arr(j : Json, key : String) -> Array[String] {
         _ => []
       }
     _ => []
+  }
+}
+
+// 取对象任意字段为原始 Json（缺省空对象），用于原样透传数组/嵌套结构
+fn get_field(j : Json, key : String) -> Json {
+  match j {
+    Json::Object(m) =>
+      match m.get(key) {
+        Some(v) => v
+        _ => obj([])
+      }
+    _ => obj([])
   }
 }
 
