@@ -55,6 +55,16 @@ pub struct MemoryNode {
   translation : String                   // TM 译文 / TB 目标术语（#22 TM/TB 一等公民）
 }
 
+// 预测价值分解（D4）的命名返回值：供 _recompute_values 与 explain_card 共用，避免 8 元组位置歧义
+priv struct ValueBreakdown {
+  u_freq : Double
+  u_rec : Double
+  u_fb : Double
+  u_past : Double
+  u_pred : Double
+  c_graph : Double
+}
+
 // 引擎状态
 pub struct ProphecyEngine {
   mut memories : Map[String, MemoryNode]
@@ -223,46 +233,14 @@ fn parse_episodes(a : Array[Json]) -> Array[Array[String]] {
   out
 }
 
-// 排序：Array[(String, Double)] 按值降序（选择排序，零依赖）
-fn sort_sd(arr : Array[(String, Double)]) -> Unit {
+// 泛型降序排序（选择排序，零依赖）：按 key 抽取的数值字段对 arr 做原地降序重排。
+// 统一取代原 sort_sd / sort_si / sort_scored 三份近重复的选型排序，
+// 以及 fuzzy_match / concordance 内联的插入排序。
+fn[T] sort_desc_by_key(arr : Array[T], key : (T) -> Double) -> Unit {
   for i = 0; i < arr.length(); i = i + 1 {
     let mut bi = i
     for j = i + 1; j < arr.length(); j = j + 1 {
-      if arr[j].1 > arr[bi].1 {
-        bi = j
-      }
-    }
-    if bi != i {
-      let t = arr[i]
-      arr[i] = arr[bi]
-      arr[bi] = t
-    }
-  }
-}
-
-// 排序：Array[(String, Int)] 按值降序
-fn sort_si(arr : Array[(String, Int)]) -> Unit {
-  for i = 0; i < arr.length(); i = i + 1 {
-    let mut bi = i
-    for j = i + 1; j < arr.length(); j = j + 1 {
-      if arr[j].1 > arr[bi].1 {
-        bi = j
-      }
-    }
-    if bi != i {
-      let t = arr[i]
-      arr[i] = arr[bi]
-      arr[bi] = t
-    }
-  }
-}
-
-// 排序：Array[(String, Double, Double, Array[Json])] 按第 2 项(score)降序
-fn sort_scored(arr : Array[(String, Double, Double, Array[Json])]) -> Unit {
-  for i = 0; i < arr.length(); i = i + 1 {
-    let mut bi = i
-    for j = i + 1; j < arr.length(); j = j + 1 {
-      if arr[j].1 > arr[bi].1 {
+      if key(arr[j]) > key(arr[bi]) {
         bi = j
       }
     }
@@ -521,7 +499,7 @@ pub fn ProphecyEngine::recall(
     for mid, m in self.memories.iter2() {
       scored.push((mid, cosine(qvec, m.vec)))
     }
-    sort_sd(scored)
+    sort_desc_by_key(scored, fn(x){ x.1 })
     let out : Array[Json] = []
     let lim = if k < scored.length() { k } else { scored.length() }
     for i = 0; i < lim; i = i + 1 {
@@ -546,12 +524,12 @@ pub fn ProphecyEngine::recall(
     for mid, m in self.memories.iter2() {
       all.push((mid, m.use_count))
     }
-    sort_si(all)
+    sort_desc_by_key(all, fn(x){ x.1.to_double() })
     for i = 0; i < 3 && i < all.length(); i = i + 1 {
       sims.push((all[i].0, 0.05))
     }
   }
-  sort_sd(sims)
+  sort_desc_by_key(sims, fn(x){ x.1 })
   let seeds : Array[String] = []
   for i = 0; i < 3 && i < sims.length(); i = i + 1 {
     seeds.push(sims[i].0)
@@ -616,7 +594,7 @@ pub fn ProphecyEngine::recall(
       None => ()
     }
   }
-  sort_scored(scored)
+  sort_desc_by_key(scored, fn(x){ x.1 })
   let out : Array[Json] = []
   let lim = if k < scored.length() { k } else { scored.length() }
   for i = 0; i < lim; i = i + 1 {
@@ -700,7 +678,7 @@ pub fn ProphecyEngine::predict(self : ProphecyEngine, k : Int) -> Json {
           for dst, c in trans.iter2() {
             allc.push((dst, c))
           }
-          sort_sd(allc)
+          sort_desc_by_key(allc, fn(x){ x.1 })
           let kp = if 8 < allc.length() { 8 } else { allc.length() }
           for i = 0; i < kp; i = i + 1 {
             keep.push(allc[i].0)
@@ -846,7 +824,7 @@ pub fn ProphecyEngine::predict(self : ProphecyEngine, k : Int) -> Json {
   for d, v in score.iter2() {
     ranked.push((d, v))
   }
-  sort_sd(ranked)
+  sort_desc_by_key(ranked, fn(x){ x.1 })
   let topk : Array[String] = []
   let lim = if k < ranked.length() { k } else { ranked.length() }
   for i = 0; i < lim; i = i + 1 {
@@ -990,42 +968,56 @@ pub fn ProphecyEngine::end_episode(self : ProphecyEngine) -> Unit {
 // D4 预测价值定价
 // ---------------------------------------------------------------------------
 
-fn ProphecyEngine::_recompute_values(self : ProphecyEngine) -> Unit {
-  let mut max_uc = 1
-  for _, m in self.memories.iter2() {
-    if m.use_count > max_uc {
-      max_uc = m.use_count
-    }
+// 节点命中率：predict_count>0 时取 hit/predict，否则 0（多处复用的确定性公式）
+fn hit_rate_of(m : MemoryNode) -> Double {
+  if m.predict_count > 0 {
+    m.hit_count.to_double() / m.predict_count.to_double()
+  } else {
+    0.0
   }
+}
+
+// 预测价值分解（D4）。单一事实源，供 _recompute_values（写回 predictive_value）
+// 与 explain_card（白盒展示）共用，消除原先两处重复的内联计算。
+fn ProphecyEngine::value_breakdown(
+  self : ProphecyEngine,
+  m : MemoryNode,
+) -> ValueBreakdown {
   let now = self.clock
+  let u_freq = m.use_count.to_double() / (m.use_count.to_double() + 5.0)
+  let dt = now - m.last_used
+  let u_rec = if dt < 0.0 { 1.0 } else { clamp01(@math.exp(-dt / REC_TAU)) }
+  let u_fb = clamp01((m.feedback + 1.0) / 2.0)
+  let u_past = 0.5 * u_freq + 0.3 * u_rec + 0.2 * u_fb
+  let hr = hit_rate_of(m)
+  let mut tot = 0.0
+  match self.transitions.get(m.id) {
+    Some(trans) => for _, c in trans.iter2() { tot = tot + c }
+    None => ()
+  }
+  let out_str = min1(tot / (tot + 10.0))
+  let u_pred = 0.6 * hr + 0.4 * out_str
+  let mut esum = 0.0
+  for _, w in m.edges.iter2() {
+    esum = esum + w
+  }
+  let c_graph = min1(esum / 5.0)
+  {
+    u_freq: u_freq,
+    u_rec: u_rec,
+    u_fb: u_fb,
+    u_past: u_past,
+    u_pred: u_pred,
+    c_graph: c_graph,
+  }
+}
+
+fn ProphecyEngine::_recompute_values(self : ProphecyEngine) -> Unit {
   for mid, m in self.memories.iter2() {
-    let u_freq = m.use_count.to_double() / (m.use_count.to_double() + 5.0)
-    let dt = now - m.last_used
-    let u_rec = if dt < 0.0 { 1.0 } else { clamp01(@math.exp(-dt / REC_TAU)) }
-    let u_fb = clamp01((m.feedback + 1.0) / 2.0)
-    let u_past = 0.5 * u_freq + 0.3 * u_rec + 0.2 * u_fb
-    // U_pred（主导项）
-    let hr = if m.predict_count > 0 {
-      m.hit_count.to_double() / m.predict_count.to_double()
-    } else {
-      0.0
-    }
-    let mut tot = 0.0
-    match self.transitions.get(mid) {
-      Some(trans) => for _, c in trans.iter2() { tot = tot + c }
-      None => ()
-    }
-    let out_str = min1(tot / (tot + 10.0))
-    let u_pred = 0.6 * hr + 0.4 * out_str
-    // C_graph 网络中心性
-    let mut esum = 0.0
-    for _, w in m.edges.iter2() {
-      esum = esum + w
-    }
-    let c_graph = min1(esum / 5.0)
-    let r = u_fb
+    let vb = self.value_breakdown(m)
     let cost = @math.ln(1.0 + self.memories.length().to_double()) / 20.0
-    let vval = ALPHA * u_past + BETA * u_pred + GAMMA * c_graph + DELTA * r - EPS * cost
+    let vval =
+      ALPHA * vb.u_past + BETA * vb.u_pred + GAMMA * vb.c_graph + DELTA * vb.u_fb - EPS * cost
     let m2 = m
     m2.predictive_value = clamp01(if vval > 0.0 { vval } else { 0.0 })
     self.memories.set(mid, m2)
@@ -1305,29 +1297,8 @@ pub fn ProphecyEngine::explain_card(self : ProphecyEngine, mid : String) -> Json
           }
         None => ()
       }
-      // 价值拆解（D4 各项）
-      let u_freq = m.use_count.to_double() / (m.use_count.to_double() + 5.0)
-      let dt = self.clock - m.last_used
-      let u_rec = if dt < 0.0 { 1.0 } else { clamp01(@math.exp(-dt / REC_TAU)) }
-      let u_fb = clamp01((m.feedback + 1.0) / 2.0)
-      let u_past = 0.5 * u_freq + 0.3 * u_rec + 0.2 * u_fb
-      let hr = if m.predict_count > 0 {
-        m.hit_count.to_double() / m.predict_count.to_double()
-      } else {
-        0.0
-      }
-      let mut tot = 0.0
-      match self.transitions.get(mid) {
-        Some(tr) => for _, c in tr.iter2() { tot = tot + c }
-        None => ()
-      }
-      let out_str = min1(tot / (tot + 10.0))
-      let u_pred = 0.6 * hr + 0.4 * out_str
-      let mut esum = 0.0
-      for _, w in m.edges.iter2() {
-        esum = esum + w
-      }
-      let c_graph = min1(esum / 5.0)
+      // 价值拆解（D4 各项）：复用 value_breakdown 单一事实源，与 _recompute_values 完全一致
+      let vb = self.value_breakdown(m)
       obj([
         ("id", str_json(mid)),
         ("text", str_json(m.text)),
@@ -1337,12 +1308,12 @@ pub fn ProphecyEngine::explain_card(self : ProphecyEngine, mid : String) -> Json
         (
           "value_breakdown",
           obj([
-            ("u_freq", num_json(r4(u_freq))),
-            ("u_recency", num_json(r4(u_rec))),
-            ("u_feedback", num_json(r4(u_fb))),
-            ("u_past", num_json(r4(u_past))),
-            ("u_pred", num_json(r4(u_pred))),
-            ("c_graph", num_json(r4(c_graph))),
+            ("u_freq", num_json(r4(vb.u_freq))),
+            ("u_recency", num_json(r4(vb.u_rec))),
+            ("u_feedback", num_json(r4(vb.u_fb))),
+            ("u_past", num_json(r4(vb.u_past))),
+            ("u_pred", num_json(r4(vb.u_pred))),
+            ("c_graph", num_json(r4(vb.c_graph))),
             ("predictive_value", num_json(r4(m.predictive_value))),
           ]),
         ),
@@ -1397,16 +1368,8 @@ pub fn ProphecyEngine::fuzzy_match(self : ProphecyEngine, query : String, k : In
       cands.push((mid, score, sim_tok, sim_ch))
     }
   }
-  let sorted : Array[(String, Double, Double, Double)] = []
-  for c in cands {
-    let mut j = 0
-    let mut ins = false
-    while j < sorted.length() {
-      if c.1 > sorted[j].1 { sorted.insert(j, c); ins = true; break }
-      j = j + 1
-    }
-    if !ins { sorted.push(c) }
-  }
+  sort_desc_by_key(cands, fn(c){ c.1 })
+  let sorted = cands
   let lim = if k > sorted.length() { sorted.length() } else { k }
   let out : Array[Json] = []
   let mut i = 0
@@ -1446,16 +1409,8 @@ pub fn ProphecyEngine::concordance(self : ProphecyEngine, term : String, k : Int
     if hits == 0 && str_contains(m.text, term) { hits = 1 }
     if hits > 0 { cands.push((mid, hits)) }
   }
-  let sorted : Array[(String, Int)] = []
-  for c in cands {
-    let mut j = 0
-    let mut ins = false
-    while j < sorted.length() {
-      if c.1 > sorted[j].1 { sorted.insert(j, c); ins = true; break }
-      j = j + 1
-    }
-    if !ins { sorted.push(c) }
-  }
+  sort_desc_by_key(cands, fn(c){ c.1.to_double() })
+  let sorted = cands
   let lim = if k > sorted.length() { sorted.length() } else { k }
   let out : Array[Json] = []
   let mut i = 0
@@ -2141,16 +2096,12 @@ pub fn ProphecyEngine::active_learning_candidates(
   self._recompute_values()
   let pairs : Array[(String, Double)] = []
   for mid, m in self.memories.iter2() {
-    let hr = if m.predict_count > 0 {
-      m.hit_count.to_double() / m.predict_count.to_double()
-    } else {
-      0.0
-    }
+    let hr = hit_rate_of(m)
     let unc = 1.0 - hr
     let nov = 1.0 - clamp01(m.use_count.to_double() / 5.0)
     pairs.push((mid, 0.6 * unc + 0.4 * nov))
   }
-  sort_sd(pairs)
+  sort_desc_by_key(pairs, fn(x){ x.1 })
   let seen_role : Map[String, Int] = Map::from_iter(([] : Array[(String, Int)]).iter())
   let out : Array[Json] = []
   for i = 0; i < pairs.length(); i = i + 1 {
@@ -2217,11 +2168,7 @@ pub fn ProphecyEngine::inject_distillation(
 pub fn ProphecyEngine::explain(self : ProphecyEngine, mid : String) -> Json {
   match self.memories.get(mid) {
     Some(m) => {
-      let hr = if m.predict_count > 0 {
-        m.hit_count.to_double() / m.predict_count.to_double()
-      } else {
-        0.0
-      }
+      let hr = hit_rate_of(m)
       let via : Array[Json] = []
       for nb, w in m.edges.iter2() {
         via.push(obj([("to", str_json(nb)), ("w", num_json(r4(w)))]))
