@@ -1,0 +1,17 @@
+你是一位资深代码审计与软件架构专家。请对以下「译脉·先知 2.0」MoonBit 预知记忆网络(PMN)引擎的代码审计候选发现进行多模型交叉验证与综合研判。
+
+【项目背景】纯标准库 MoonBit 0.1 实现，零第三方依赖。核心数据结构 ProphecyEngine：memories(Map 记忆节点图，节点含加权突触边 edges)、transitions(一阶马尔可夫转移)、role_trans(角色级转移 D8)、context(上下文窗口)、meta_hits(命中滚动窗口)、snapshot(固化前快照)。对外 API：remember / recall / predict / observe / consolidate / restore / reward / explain / to_json / from_json。设计目标：记忆不仅要"翻得对"，还要快、准、美。
+
+【候选审计发现】
+F1（中/正确性）：restore 只回滚 memories，不回滚 transitions。consolidate 会衰减并剪枝 transitions（engine.mbt 第787-796行），但快照只捕获 memories（第770行），restore 仅执行 self.memories = s（第858行）。若 consolidate(true) 后执行 restore，被剪枝节点的转移永久丢失，预测模型与回滚前不一致，破坏了"约束契约回滚"语义。
+F2（中/数据持久化）：to_json 不序列化 cur_episode 与 last_pred（第1004-1027行），from_json 也不恢复。运行中尚未结束的一集(episode)在序列化/重启时静默丢失。现有往返一致性测试（accept_test 第163-177行）因该字段本就不在 JSON 中而"假通过"。
+F3（中/可解释性）：predict 的 uncertainty = 仅对 top-k 个预测项求熵（第622-626行），但概率已对全部 dst 归一化。D7 模块声称"整体分布熵"，实际只覆盖头部，系统性低估不确定性。
+F4（中低/性能）：remember 每次与全部记忆做余弦（第296-302行），recall / consolidate 均为线性扫描，无向量索引，整体 O(n²)。记忆规模大时不可扩展。
+F5（低）：observe 先 clock+1（第657行）再调用 remember 又 clock+1（第292行），每次 observe 时钟+2，使 REC_TAU 时效尺度翻倍（仅影响衰减速度，不影响相对排序）。
+F6（低/可维护性）：engine.mbt 与 cmd/main/main.mbt 各自重复实现 JSON 取值辅助函数（如 get_str 与 jstr 等）。
+
+【请输出】
+1. 逐条判定：真实严重度（升级/维持/降级）与理由，并标注是否有确凿代码证据（行号）。
+2. 是否还有上述清单未覆盖、值得关注的隐患（如并发安全、浮点数值稳定性、CJK 分词边界、JSON 反序列化健壮性）。
+3. 按"快 / 准 / 美"目标排序的修复路线图，指出最高杠杆（投入小、收益大）的一项修复。
+请用中文，条理清晰、结论可操作。

@@ -52,6 +52,7 @@ pub struct MemoryNode {
   mut predict_count : Int
   mut last_active : Double              // 最近一次被激活/命中（逻辑时钟），用于弹性遗忘的真实时差折扣
   mut is_term : Bool                     // 术语节点（美：高初始激活 + 命中高亮，mark_term 置位）
+  translation : String                   // TM 译文 / TB 目标术语（#22 TM/TB 一等公民）
 }
 
 // 引擎状态
@@ -290,6 +291,7 @@ fn node_to_json(m : MemoryNode) -> Json {
     ("predict_count", num_json(m.predict_count.to_double())),
     ("last_active", num_json(m.last_active)),
     ("is_term", if m.is_term { 1.0 } else { 0.0 }),
+    ("translation", str_json(m.translation)),
   ])
 }
 
@@ -310,6 +312,7 @@ fn node_from_json(j : Json) -> MemoryNode {
     predict_count: get_num(j, "predict_count").to_int(),
     last_active: get_num(j, "last_active"),
     is_term: get_num(j, "is_term") != 0.0,
+    translation: get_str(j, "translation"),
   }
 }
 
@@ -442,6 +445,7 @@ pub fn ProphecyEngine::remember(
     hit_count: 0,
     predict_count: 0,
     is_term: false,
+    translation: "",
   }
   self.role_index.set(role_of(text), mid)
   for rk in roles_of(text) {
@@ -1346,6 +1350,219 @@ pub fn ProphecyEngine::explain_card(self : ProphecyEngine, mid : String) -> Json
     }
     None => obj([("error", str_json("unknown id"))])
   }
+}
+
+// ---- #22 TM/TB 一等公民：翻译记忆检索 + 术语库强制对齐 ----
+// 设计：TM 条目 mtype="tm"（text=源, translation=译文）；TB 术语 mtype="term"（text=源术语, translation=目标术语）。
+// 二者分离：fuzzy_match/concordance 只检索 tm；enforce_terms/check_terms 只扫 term。
+
+// 加入一条翻译记忆（源 -> 译文），复用 tokenize/tf_vector 建索引
+pub fn ProphecyEngine::add_tm(self : ProphecyEngine, src : String, tgt : String) -> String {
+  let mid = self._new_id()
+  let vec = tf_vector(yimai_tokenize(src))
+  let node : MemoryNode = {
+    id: mid,
+    text: src,
+    mtype: "tm",
+    vec,
+    created: self.clock,
+    last_used: self.clock,
+    last_active: self.clock,
+    use_count: 1,
+    feedback: 0.0,
+    edges: Map::from_iter(([] : Array[(String, Double)]).iter()),
+    predictive_value: 0.0,
+    hit_count: 0,
+    predict_count: 0,
+    is_term: false,
+    translation: tgt,
+  }
+  self.memories.set(mid, node)
+  self.invalidate_pred_cache()
+  self.fed_add = self.fed_add + 1
+  mid
+}
+
+// TM 模糊匹配：Top-K（按匹配率降序）。匹配率 = 0.7·token余弦 + 0.3·字符级比率。
+// 对齐 Trados 实践：低于 threshold（建议阈值 0.70；MoonBit 无默认参数，调用方需显式传入）视为无匹配；返回匹配率%与分项相似度。
+pub fn ProphecyEngine::fuzzy_match(self : ProphecyEngine, query : String, k : Int, threshold : Double) -> Json {
+  let qv = tf_vector(yimai_tokenize(query))
+  let cands : Array[(String, Double, Double, Double)] = []
+  for mid, m in self.memories.iter2() {
+    if m.mtype != "tm" { continue }
+    let sim_tok = cosine(qv, m.vec)
+    let sim_ch = char_ratio(query, m.text)
+    let score = 0.7 * sim_tok + 0.3 * sim_ch
+    if score >= threshold {
+      cands.push((mid, score, sim_tok, sim_ch))
+    }
+  }
+  let sorted : Array[(String, Double, Double, Double)] = []
+  for c in cands {
+    let mut j = 0
+    let mut ins = false
+    while j < sorted.length() {
+      if c.1 > sorted[j].1 { sorted.insert(j, c); ins = true; break }
+      j = j + 1
+    }
+    if !ins { sorted.push(c) }
+  }
+  let lim = if k > sorted.length() { sorted.length() } else { k }
+  let out : Array[Json] = []
+  let mut i = 0
+  while i < lim {
+    let (mid, score, st, sc) = sorted[i]
+    match self.memories.get(mid) {
+      Some(m) =>
+        out.push(obj([
+          ("id", str_json(mid)),
+          ("source", str_json(m.text)),
+          ("target", str_json(m.translation)),
+          ("score", num_json(r4(score))),
+          ("match_pct", num_json(r4(score * 100.0))),
+          ("sim_token", num_json(r4(st))),
+          ("sim_char", num_json(r4(sc))),
+        ]))
+      None => ()
+    }
+    i = i + 1
+  }
+  arr_json(out)
+}
+
+// Concordance 检索：返回含查询词的所有 TM 句段（按词/串出现次数打分）。
+// 注意：concordance 的命中度是"词出现度"，与 fuzzy_match 的相似度算法不同（见调研结论）。
+pub fn ProphecyEngine::concordance(self : ProphecyEngine, term : String, k : Int) -> Json {
+  let q = yimai_tokenize(term)
+  let qkey = if q.length() > 0 { q[0] } else { term }
+  let cands : Array[(String, Int)] = []
+  for mid, m in self.memories.iter2() {
+    if m.mtype != "tm" { continue }
+    let toks = yimai_tokenize(m.text)
+    let mut hits = 0
+    for t in toks {
+      if t == qkey { hits = hits + 1 }
+    }
+    if hits == 0 && str_contains(m.text, term) { hits = 1 }
+    if hits > 0 { cands.push((mid, hits)) }
+  }
+  let sorted : Array[(String, Int)] = []
+  for c in cands {
+    let mut j = 0
+    let mut ins = false
+    while j < sorted.length() {
+      if c.1 > sorted[j].1 { sorted.insert(j, c); ins = true; break }
+      j = j + 1
+    }
+    if !ins { sorted.push(c) }
+  }
+  let lim = if k > sorted.length() { sorted.length() } else { k }
+  let out : Array[Json] = []
+  let mut i = 0
+  while i < lim {
+    let (mid, hits) = sorted[i]
+    match self.memories.get(mid) {
+      Some(m) =>
+        out.push(obj([
+          ("id", str_json(mid)),
+          ("source", str_json(m.text)),
+          ("target", str_json(m.translation)),
+          ("hits", num_json(hits.to_double())),
+        ]))
+      None => ()
+    }
+    i = i + 1
+  }
+  arr_json(out)
+}
+
+// 解析 TBX(ISO 30042) 术语库，建立术语节点（text=源术语, translation=目标术语）。
+// 支持 TBX 2.0 <ntig><termGrp><term> 与简化 <tig><term>。
+// 语言感知：按各 langSet 的 xml:lang 取值（默认源=en-US、目标=zh-CN）；
+// 无 xml:lang 时按文档顺序兜底（首 langSet 为源，次为译文）。返回加载的概念条目数。
+pub fn ProphecyEngine::load_tbx(
+  self : ProphecyEngine,
+  xml : String,
+  src_lang~ : String = "en-US",
+  tgt_lang~ : String = "zh-CN"
+) -> Int {
+  let mut count = 0
+  let entries = split_on(xml, "<termEntry")
+  for e in entries {
+    let langs = split_on(e, "<langSet")
+    let mut src_term = ""
+    let mut tgt_term = ""
+    let mut fallback_tgt = ""
+    for ls in langs {
+      let lang = lang_attr(ls)
+      let term = first_tag_text(ls, "term")
+      if term == "" { continue }
+      if lang == src_lang { src_term = term }
+      else if lang == tgt_lang { tgt_term = term }
+      else if fallback_tgt == "" { fallback_tgt = term }
+    }
+    if tgt_term == "" { tgt_term = fallback_tgt }
+    if src_term != "" {
+      let mid = self._new_id()
+      let node : MemoryNode = {
+        id: mid,
+        text: src_term,
+        mtype: "term",
+        vec: tf_vector(yimai_tokenize(src_term)),
+        created: self.clock,
+        last_used: self.clock,
+        last_active: self.clock,
+        use_count: 1,
+        feedback: 0.0,
+        edges: Map::from_iter(([] : Array[(String, Double)]).iter()),
+        predictive_value: 0.0,
+        hit_count: 0,
+        predict_count: 0,
+        is_term: true,
+        translation: tgt_term,
+      }
+      self.memories.set(mid, node)
+      self.invalidate_pred_cache()
+      count = count + 1
+    }
+  }
+  count
+}
+
+// 术语强制对齐：扫描文本，返回所有命中已知术语的位置与译文（翻译时高亮/锁定）。
+// 用 term_hit 做词边界判定，避免 log⊂logical 这类子串误报。
+pub fn ProphecyEngine::enforce_terms(self : ProphecyEngine, text : String) -> Json {
+  let out : Array[Json] = []
+  for mid, m in self.memories.iter2() {
+    if !m.is_term { continue }
+    if term_hit(text, m.text) {
+      out.push(obj([
+        ("term", str_json(m.text)),
+        ("translation", str_json(m.translation)),
+        ("mid", str_json(mid)),
+      ]))
+    }
+  }
+  arr_json(out)
+}
+
+// 术语一致性校验：源文识别到的术语，其译文是否出现在译文中；返回违规项。
+// 源/译文均用 term_hit 做边界判定，保证拉丁文术语不会因子串包含而误判。
+pub fn ProphecyEngine::check_terms(self : ProphecyEngine, source : String, target : String) -> Json {
+  let violations : Array[Json] = []
+  for mid, m in self.memories.iter2() {
+    if !m.is_term { continue }
+    if term_hit(source, m.text) && m.translation != "" {
+      if !term_hit(target, m.translation) {
+        violations.push(obj([
+          ("term", str_json(m.text)),
+          ("expected", str_json(m.translation)),
+          ("mid", str_json(mid)),
+        ]))
+      }
+    }
+  }
+  arr_json(violations)
 }
 
 // ---- #21 中/长期：WAL 增量固化 / 主动学习 / 联邦 / 蒸馏 ----

@@ -251,6 +251,206 @@ pub fn align_diff(a : String, b : String) -> Array[(Int, Int, Int)] {
   out
 }
 
+// ---- TM/TB 辅助：字符串相似度与极简 TBX 解析（零依赖） ----
+
+pub fn levenshtein(a : String, b : String) -> Int {
+  let n = a.length()
+  let m = b.length()
+  if n == 0 { return m }
+  if m == 0 { return n }
+  let mut prev : Array[Int] = []
+  let mut i = 0
+  while i <= m {
+    prev.push(i)
+    i = i + 1
+  }
+  let mut cur : Array[Int] = []
+  i = 0
+  while i <= m {
+    cur.push(0)
+    i = i + 1
+  }
+  let mut x = 0
+  while x < n {
+    cur[0] = x + 1
+    let mut y = 0
+    while y < m {
+      let cost = if a[x] == b[y] { 0 } else { 1 }
+      let del = cur[y] + 1
+      let ins = prev[y + 1] + 1
+      let sub = prev[y] + cost
+      let e = if del < ins { del } else { ins }
+      cur[y + 1] = if e < sub { e } else { sub }
+      y = y + 1
+    }
+    let tmp = prev
+    prev = cur
+    cur = tmp
+    x = x + 1
+  }
+  prev[m]
+}
+
+pub fn char_ratio(a : String, b : String) -> Double {
+  let n = a.length()
+  let m = b.length()
+  if n == 0 && m == 0 { return 1.0 }
+  let d = levenshtein(a, b).to_double()
+  let mx = (if n > m { n } else { m }).to_double()
+  1.0 - d / mx
+}
+
+pub fn str_contains(s : String, sub : String) -> Bool {
+  let n = s.length()
+  let m = sub.length()
+  if m == 0 { return true }
+  if m > n { return false }
+  let mut i = 0
+  while i + m <= n {
+    let mut j = 0
+    let mut ok = true
+    while j < m {
+      if s[i + j] != sub[j] { ok = false; break }
+      j = j + 1
+    }
+    if ok { return true }
+    i = i + 1
+  }
+  false
+}
+
+fn split_on(s : String, sep : String) -> Array[String] {
+  let parts : Array[String] = []
+  let n = s.length()
+  let m = sep.length()
+  if m == 0 { parts.push(s); return parts }
+  let mut i = 0
+  let mut start = 0
+  while i + m <= n {
+    let mut j = 0
+    let mut ok = true
+    while j < m {
+      if s[i + j] != sep[j] { ok = false; break }
+      j = j + 1
+    }
+    if ok {
+      parts.push(s[start:i].to_owned())
+      i = i + m
+      start = i
+    } else {
+      i = i + 1
+    }
+  }
+  parts.push(s[start:n].to_owned())
+  parts
+}
+
+fn str_index(s : String, sub : String, from : Int) -> Option[Int] {
+  let n = s.length()
+  let m = sub.length()
+  let mut i = from
+  while i + m <= n {
+    let mut j = 0
+    let mut ok = true
+    while j < m {
+      if s[i + j] != sub[j] { ok = false; break }
+      j = j + 1
+    }
+    if ok { return Some(i) }
+    i = i + 1
+  }
+  None
+}
+
+// 提取片段中首个 <tag>...</tag> 文本（容忍 <tag ...> 带属性）
+fn first_tag_text(s : String, tag : String) -> String {
+  let open = "<" + tag
+  let close = "</" + tag + ">"
+  let n = s.length()
+  let m = open.length()
+  let mut i = 0
+  while i + m <= n {
+    let mut j = 0
+    let mut ok = true
+    while j < m {
+      if s[i + j] != open[j] { ok = false; break }
+      j = j + 1
+    }
+    // 边界检查：标签名后必须是标签分隔符（> / 空白 / /），否则是 <termGrp> 之类的前缀误匹配
+    if ok {
+      let nx = if i + m < n { s[i + m] } else { '>' }
+      if nx != '>' && nx != ' ' && nx != '\t' && nx != '\n' && nx != '/' { ok = false }
+    }
+    if ok {
+      let mut k = i + m
+      while k < n {
+        if s[k] == '>' { break }
+        k = k + 1
+      }
+      let cstart = k + 1
+      match str_index(s, close, cstart) {
+        Some(end) => return s[cstart:end].to_owned()
+        None => return ""
+      }
+    }
+    i = i + 1
+  }
+  ""
+}
+
+// 判断字符是否为 ASCII 字母/数字（用于拉丁文术语的词边界判定）
+// 注：MoonBit 字符串索引返回 UInt16（UTF-16 码元），故参数与比较均用码点数值
+fn is_ascii_alnum(c : UInt16) -> Bool {
+  (c >= 97 && c <= 122) || (c >= 65 && c <= 90) || (c >= 48 && c <= 57)
+}
+
+// 提取片段中 langSet 的 xml:lang / lang 属性值（如 "en-US"）；无则返回 ""
+fn lang_attr(s : String) -> String {
+  match str_index(s, "xml:lang=\"", 0) {
+    Some(i) => {
+      let q = i + 10  // "xml:lang=\"" 共 10 字符，末位为前导引号，值自此开始
+      match str_index(s, "\"", q) {
+        Some(end) => return s[q:end].to_owned()
+        None => return ""
+      }
+    }
+    None => {
+      match str_index(s, "lang=\"", 0) {
+        Some(i) => {
+          let q = i + 6  // "lang=\"" 共 6 字符，末位为前导引号，值自此开始
+          match str_index(s, "\"", q) {
+            Some(end) => return s[q:end].to_owned()
+            None => return ""
+          }
+        }
+        None => return ""
+      }
+    }
+  }
+}
+
+// 术语命中：区分拉丁文（需词边界，避免 log⊂logical 误报）与 CJK（直接子串，CJK 无空格词边界）
+fn term_hit(text : String, term : String) -> Bool {
+  if term == "" { return false }
+  let tl = term.length()
+  let n = text.length()
+  if n < tl { return false }
+  let term_is_latin = is_ascii_alnum(term[0])
+  if !term_is_latin {
+    return str_contains(text, term)
+  }
+  let mut i = 0
+  while i + tl <= n {
+    if (text[i:i + tl]).to_owned() == term {
+      let left_ok = if i == 0 { true } else { !is_ascii_alnum(text[i - 1]) }
+      let right_ok = if i + tl >= n { true } else { !is_ascii_alnum(text[i + tl]) }
+      if left_ok && right_ok { return true }
+    }
+    i = i + 1
+  }
+  false
+}
+
 // ---------------------------------------------------------------------------
 // JSON 构造 / 访问辅助（复用 AL-world 风格，零依赖 moonbitlang/core/json）
 // ---------------------------------------------------------------------------
