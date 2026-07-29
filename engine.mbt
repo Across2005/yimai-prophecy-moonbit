@@ -1661,8 +1661,10 @@ fn node_key(j : Json) -> String {
 
 // ---- #2 QE + MQM 自动评测 ----
 
-// 句段级 QE 分数（0..1）：0.4·匹配率 + 0.25·术语一致 + 0.25·字符相似 + 0.1·长度比
+// 句段级 QE 分数（0..1）：0.55·匹配率 + 0.30·术语一致 + 0.15·字符相似
 // match_rate 为 [0,1]（与 fuzzy_match 的 score 同量级，勿传 match_pct）
+// 注：跨语言句对字符相似度/长度比天然偏低，若作为惩罚项会把分数压到 ~0.7 失真，
+// 故 QE 以 TM 匹配率 + 术语一致为主，字符相似仅作正向加项（同语言场景才显著）。
 pub fn ProphecyEngine::qe_score(
   _self : ProphecyEngine,
   source : String,
@@ -1670,10 +1672,14 @@ pub fn ProphecyEngine::qe_score(
   match_rate : Double,
   term_ok : Bool,
 ) -> Double {
-  let qmatch = max0(0.0, min1(match_rate))
+  // NaN 防护：match_rate 异常（如调用方传入 NaN）时 max0/min1 无法钳位（NaN 比较恒假），
+  // 会让 qmatch=NaN 穿透到 score。先归一化到 [0,1]。
+  let mr = if match_rate != match_rate { 0.0 } else { max0(0.0, min1(match_rate)) }
+  let qmatch = mr
   let qterm = if term_ok { 1.0 } else { 0.0 }
   // 注意：跨语言句对字符相似度/长度比天然偏低，若作为惩罚项会把分数压到 ~0.7，
   // 失真。故 QE 以 TM 匹配率 + 术语一致为主，字符相似仅作正向加项（同语言场景才显著）。
+  // char_ratio 对空串已做保护（双空返回 1.0、单空返回 0），不会产出 NaN。
   let qchar = max0(0.0, min1(char_ratio(source, target)))
   let score = 0.55 * qmatch + 0.30 * qterm + 0.15 * qchar
   min1(max0(0.0, score))
@@ -1695,8 +1701,11 @@ pub fn ProphecyEngine::mqm_tags(
       ("detail", str_json("术语未通过一致性校验（check_terms 检出违规）")),
     ]))
   }
+  // 跨语种（如 英→中）字符级相似度天然偏低，char_ratio 不可作为 accuracy 判据；
+  // 译文为空时 char_ratio 恒为 0，亦无意义（空译文由 fluency/critical 覆盖），跳过
+  let cross = cross_script(source, target)
   let cr = char_ratio(source, target)
-  if cr < 0.5 {
+  if !cross && target.length() > 0 && cr < 0.5 {
     issues.push(obj([
       ("dimension", str_json("accuracy")),
       ("severity", str_json("major")),
@@ -1711,7 +1720,9 @@ pub fn ProphecyEngine::mqm_tags(
     ]))
   } else {
     let lr = target.length().to_double() / max0(1.0, source.length().to_double())
-    if lr > 2.5 || lr < 0.4 {
+    // 跨语种长度比天然偏离（英→中译文更短），不可作为流畅性判据；
+    // 源文为空时长度比无意义，亦跳过（避免空源文误报流畅性）
+    if !cross && source.length() > 0 && (lr > 2.5 || lr < 0.4) {
       issues.push(obj([
         ("dimension", str_json("fluency")),
         ("severity", str_json("minor")),
@@ -1719,7 +1730,9 @@ pub fn ProphecyEngine::mqm_tags(
       ]))
     }
   }
-  if target.length().to_double() < 0.5 * source.length().to_double() && source.length() > 0 {
+  // 跨语种时译文长度通常远短于源文（英→中），长度比不可作为 omission 判据；
+  // target 为空已由 fluency/critical 覆盖，此处再加 target.length()>0 防止同一问题重复标注
+  if !cross && target.length() > 0 && target.length().to_double() < 0.5 * source.length().to_double() && source.length() > 0 {
     issues.push(obj([
       ("dimension", str_json("omission")),
       ("severity", str_json("major")),
@@ -1903,9 +1916,13 @@ pub fn ProphecyEngine::batch_apply(
 // ---- #6 TMS 互通（XLIFF / TMX 解析侧） ----
 
 // 解析 TMX(1.4/2.0)：每个 <tu> 取 src/tgt 的 <tuv xml:lang>/<seg> 建 TM。返回加载条数。
+// 注意：必须以单元「闭合标签」</tu> 切分，而非 <tu> 开端标签——
+// 因为 split_on(xml,"<tu") 会同时命中 <tuv（<tuv 以 <tu 开头），
+// 把每个 <tu> 内的两个 <tuv> 拆到不同片段，导致译文落空/丢弃。
+// 而 </tu> 不是 </tuv> 的子串，按闭合标签切分可保证一个单元的全部 <tuv> 落在同一片段。
 pub fn ProphecyEngine::parse_tmx(self : ProphecyEngine, xml : String) -> Int {
   let mut count = 0
-  let tus = split_on(xml, "<tu")
+  let tus = split_on(xml, "</tu>")
   for tu in tus {
     let tuvs = split_on(tu, "<tuv")
     let mut src = ""
@@ -1915,12 +1932,14 @@ pub fn ProphecyEngine::parse_tmx(self : ProphecyEngine, xml : String) -> Int {
       let lang = lang_attr(tuv)
       let seg = first_tag_text(tuv, "seg")
       if seg == "" { continue }
-      if lang == "en-US" { src = seg }
-      else if lang == "zh-CN" { tgt = seg }
+      // 前缀匹配以兼容语言代码变体：en-US/en/zh-CN/zh/zh-Hans 等
+      if starts_with(lang, "en") { src = seg }
+      else if starts_with(lang, "zh") { tgt = seg }
       else if fallback == "" { fallback = seg }
     }
     if tgt == "" { tgt = fallback }
-    if src != "" {
+    // 仅入库完整双语对，避免空译文污染翻译记忆（数据完整性）
+    if src != "" && tgt != "" {
       let _ = self.add_tm(src, tgt)
       count = count + 1
     }
@@ -1939,7 +1958,8 @@ pub fn ProphecyEngine::parse_xliff(self : ProphecyEngine, xml : String) -> Int {
     let u = segs1[i]
     let src = first_tag_text(u, "source")
     let tgt = first_tag_text(u, "target")
-    if src != "" {
+    // 仅入库完整双语对，避免空译文污染翻译记忆
+    if src != "" && tgt != "" {
       let _ = self.add_tm(src, tgt)
       count = count + 1
     }
@@ -1951,7 +1971,7 @@ pub fn ProphecyEngine::parse_xliff(self : ProphecyEngine, xml : String) -> Int {
     if str_contains(u, "trans-unit") { continue }
     let src = first_tag_text(u, "source")
     let tgt = first_tag_text(u, "target")
-    if src != "" {
+    if src != "" && tgt != "" {
       let _ = self.add_tm(src, tgt)
       count = count + 1
     }

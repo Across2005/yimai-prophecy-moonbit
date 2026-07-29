@@ -4,7 +4,7 @@
 >
 > 在「预测记忆」内核之外，已落地 **#22 翻译记忆（TM）/ 术语库（TB）一等公民**：真正的 fuzzy match（含匹配率%）、concordance 检索、TBX 术语库强制对齐与一致性校验——让引擎从「只预测」走向「预测 + 检索 + 术语守门」。
 
-[![Tests](https://img.shields.io/badge/tests-91%2F91%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
+[![Tests](https://img.shields.io/badge/tests-96%2F96%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Hit@3](https://img.shields.io/badge/Hit%403-0.8246-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![vs Random](https://img.shields.io/badge/3.6x%20%3E%20random-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Leave-one-out](https://img.shields.io/badge/LOO%20generalization-100%25-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
@@ -417,8 +417,8 @@ All six methods are covered by regression tests **R16–R22** (see [Evaluation](
 
 All numbers below are produced by `moon test --target wasm-gc` and are reproducible.
 
-**Summary: `Total tests: 91, passed: 91, failed: 0`**
-(4 quantitative acceptance + 10 real-world scenarios + 30 domain demos + 4 pre-existing black-box + 4 supporting + 4 benchmark/credibility + **22 roadmap regression (R1–R22**, of which **R16–R22 cover #22 TM/TB**) + **13 extension-capability regression (E1–E13, covering #2–#7**)).
+**Summary: `Total tests: 96, passed: 96, failed: 0`**
+(4 quantitative acceptance + 10 real-world scenarios + 30 domain demos + 4 pre-existing black-box + 4 supporting + 4 benchmark/credibility + **22 roadmap regression (R1–R22**, of which **R16–R22 cover #22 TM/TB**) + **18 extension-capability regression (E1–E18, covering #2–#7**)).
 
 | Layer | Check | Result | Evidence |
 |-------|-------|--------|----------|
@@ -438,7 +438,7 @@ All numbers below are produced by `moon test --target wasm-gc` and are reproduci
 | **B3** | Robustness under injected noise | ✅ | 2 unrelated observations don't break the learned next-step prediction |
 | **B4** | Quantified recall precision | ✅ | term query Top-3 hits the exact BMS term / liquid-cooled battery example |
 | **#22** | TM/TB regression (R16–R22) | ✅ | fuzzy match % / concordance / TBX load+enforce+check / serialization round-trip, incl. word-boundary (`log`≠`logical`) and 3-language `xml:lang` (`en→zh`, ignores `fr`) |
-| **#2–#7** | Extension regression (E1–E13) | ✅ | QE+MQM (E1–E3) / format-fidelity (E4–E5) / multimodal-OCR-stub (E6–E7) / batch-CI (E8–E9) / TMS XLIFF·TMX (E10–E11) / observability-drift (E12–E13) |
+| **#2–#7** | Extension regression (E1–E18) | ✅ | QE+MQM (E1–E3, E15–E17) / format-fidelity (E4–E5) / multimodal-OCR-stub (E6–E7) / batch-CI (E8–E9) / TMS XLIFF·TMX (E10–E11, E14, E18) / observability-drift (E12–E13) |
 
 ### Credibility hardening (why the 0.8246 number is trustworthy)
 
@@ -453,7 +453,7 @@ Reproduce:
 
 ```bash
 cd yimai_prophecy_moonbit
-moon test --target wasm-gc      # all 91 tests
+moon test --target wasm-gc      # all 96 tests
 moon build --target wasm-gc     # library only
 cd cmd/main && moon build --target wasm-gc && moon run .
 ```
@@ -462,7 +462,7 @@ cd cmd/main && moon build --target wasm-gc && moon run .
 
 ## Extension API (#2–#7)
 
-All seven user-scoped extension capabilities are implemented in `engine.mbt` and regression-tested by `yimai_prophecy_moonbit_extension_test.mbt` (E1–E13). They are **zero-dependency** and **deterministic** — same input ⇒ same output.
+All seven user-scoped extension capabilities are implemented in `engine.mbt` and regression-tested by `yimai_prophecy_moonbit_extension_test.mbt` (E1–E18). They are **zero-dependency** and **deterministic** — same input ⇒ same output.
 
 | # | Capability | Key methods | Notes |
 |---|-----------|-------------|-------|
@@ -512,12 +512,12 @@ From the "translation-born skill" brainstorm — what's built vs. pending:
 
 | # | Capability | Status | Notes |
 |---|-----------|--------|-------|
-| 1 | **TM / TermBase first-class** (fuzzy match %, concordance, TBX enforcement) | ✅ Done | `moon test` 91/91; reviewed + hardened (word-boundary, `xml:lang`). |
+| 1 | **TM / TermBase first-class** (fuzzy match %, concordance, TBX enforcement) | ✅ Done | `moon test` 96/96; reviewed + hardened (word-boundary, `xml:lang`); open-code-review + MoA fixes for `parse_tmx` cross-language/`</tu>` split + `mqm_tags` cross-language false positives + empty-target/language-variant robustness. |
 | 2 | **Quality estimation + MQM auto-eval** | ✅ Done | `qe_score` (0.55·match + 0.30·term + 0.15·char) + `mqm_tags` (terminology/accuracy/fluency/omission w/ severity). Tested E1–E3. |
 | 3 | **Format-fidelity round-trip** | ✅ Done | `check_format_fidelity` (missing/extra tag detection) + `protect_tags` (mask tags to `__TAG__`). Tested E4–E5. |
 | 4 | **Multimodal / screenshot translation** | ✅ Done (OCR external stub) | `ocr_image` (external boundary) + `align_regions` (region ↔ TM align). Zero-dep engine speaks JSON at the OCR boundary; real OCR injected by host. Tested E6–E7. |
 | 5 | **Localization CI / batch pipeline** | ✅ Done | `batch_apply` (Top-1 TM + term-gate, threshold-driven) → `{total, passed, failed, items}`. Tested E8–E9. |
-| 6 | **TMS interoperability** | ✅ Done | `parse_tmx` / `parse_xliff` (XLIFF 1.2 `<trans-unit>` & 2.0 `<unit>`) + `export_tmx` (round-trip). Tested E10–E11. |
+| 6 | **TMS interoperability** | ✅ Done | `parse_tmx` / `parse_xliff` (XLIFF 1.2 `<trans-unit>` & 2.0 `<unit>`) + `export_tmx` (round-trip). Tested E10–E11; cross-language TMX correctness regression added as E14 (open-code-review fix). |
 | 7 | **Observability & drift monitoring** | ✅ Done | `metrics` (tm/term counts + coverage) + `drift_report` (before/after snapshot diff). Tested E12–E13. |
 
 > This project is **not** packaged as a WorkBuddy skill yet. The dev loop for these is: **research (Deep Research / WebSearch) → review (open-code-review) → verify (browser automation + `moon test`)**. MoA is intentionally *not* embedded inside the skill (kept as an external advisor).

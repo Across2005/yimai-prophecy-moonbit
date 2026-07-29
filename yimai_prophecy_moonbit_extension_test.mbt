@@ -1,6 +1,7 @@
 // yimai_prophecy_moonbit_extension_test.mbt
-// #2–#7 扩展能力专项回归（E1–E13）
+// #2–#7 扩展能力专项回归（E1–E16）
 // 覆盖：QE+MQM / 格式保真 / 多模态对齐(OCR 外部桩) / 本地化批处理 / TMS(TMX·XLIFF) / 可观测与漂移。
+// E14–E16 为审查回归：parse_tmx 跨语种建 TM 正确性、mqm_tags 跨语种误报屏蔽、同语种仍报 accuracy。
 
 // ---- #2 QE + MQM ----
 test "E1 QE 自动评测：高匹配 + 无术语违规 => 高分且 term_ok" {
@@ -223,6 +224,110 @@ test "E13 漂移：新增 TM 后被检出" {
     Json::Object(o) =>
       match o.get("tm_added") {
         Some(Json::Number(t, ..)) => inspect(t == 1.0, content="true")
+        _ => inspect(false, content="true")
+      }
+    _ => inspect(false, content="true")
+  }
+}
+
+// ---- 审查回归（open-code-review 发现并修复） ----
+
+test "E14 parse_tmx 跨语种：en-US/zh-CN 双 <tuv> 正确建 TM（回归：<tu>/<tuv> 切分碰撞）" {
+  let e = ProphecyEngine::make()
+  let tmx =
+    "<?xml version=\"1.0\"?><tmx><body>" +
+    "<tu><tuv xml:lang=\"en-US\"><seg>Open file</seg></tuv><tuv xml:lang=\"zh-CN\"><seg>打开文件</seg></tuv></tu>" +
+    "<tu><tuv xml:lang=\"en-US\"><seg>Call API</seg></tuv><tuv xml:lang=\"zh-CN\"><seg>调用接口</seg></tuv></tu>" +
+    "</body></tmx>"
+  let n = e.parse_tmx(tmx)
+  inspect(n == 2, content="true")
+  let r = e.fuzzy_match("Open file", 1, 0.7)
+  match r {
+    Json::Array(a) =>
+      match a[0] {
+        Json::Object(m) =>
+          match m.get("target") {
+            Some(Json::String(s)) => inspect(s == "打开文件", content="true")
+            _ => inspect(false, content="true")
+          }
+        _ => inspect(false, content="true")
+      }
+    _ => inspect(false, content="true")
+  }
+}
+
+test "E15 mqm_tags 跨语种：正确 EN→ZH 不误报 accuracy/omission（回归：跨语言启发式误报）" {
+  let e = ProphecyEngine::make()
+  let tags = e.mqm_tags("Open file", "打开文件", 0.95, true)
+  match tags {
+    Json::Array(a) => {
+      let mut bad = 0
+      for t in a {
+        match t {
+          Json::Object(o) =>
+            match o.get("dimension") {
+              Some(Json::String(d)) => if d == "accuracy" || d == "omission" { bad = bad + 1 }
+              _ => ()
+            }
+          _ => ()
+        }
+      }
+      inspect(bad == 0, content="true")
+    }
+    _ => inspect(false, content="true")
+  }
+}
+
+test "E16 mqm_tags 同语种：低相似度仍报 accuracy（确认屏蔽仅限跨语种）" {
+  let e = ProphecyEngine::make()
+  let tags = e.mqm_tags("Open file", "Qmxi kpl zzz", 0.95, true)
+  match tags {
+    Json::Array(a) => {
+      let mut hit = false
+      for t in a {
+        match t {
+          Json::Object(o) =>
+            match o.get("dimension") {
+              Some(Json::String(d)) => if d == "accuracy" { hit = true }
+              _ => ()
+            }
+          _ => ()
+        }
+      }
+      inspect(hit, content="true")
+    }
+    _ => inspect(false, content="true")
+  }
+}
+
+// ---- 审查回归（MoA 多模型复查发现并修复） ----
+
+test "E17 mqm_tags 空译文：仅标 fluency/critical，不重复标 omission（回归：空 target 双标）" {
+  let e = ProphecyEngine::make()
+  let tags = e.mqm_tags("Open file", "", 0.95, true)
+  match tags {
+    Json::Array(a) => inspect(a.length() == 1, content="true")
+    _ => inspect(false, content="true")
+  }
+}
+
+test "E18 parse_tmx 语言代码变体：en/zh 前缀也能正确建 TM（回归 #8 语言硬编码）" {
+  let e = ProphecyEngine::make()
+  let tmx =
+    "<?xml version=\"1.0\"?><tmx><body>" +
+    "<tu><tuv xml:lang=\"en\"><seg>Open file</seg></tuv><tuv xml:lang=\"zh\"><seg>打开文件</seg></tuv></tu>" +
+    "</body></tmx>"
+  let n = e.parse_tmx(tmx)
+  inspect(n == 1, content="true")
+  let r = e.fuzzy_match("Open file", 1, 0.7)
+  match r {
+    Json::Array(a) =>
+      match a[0] {
+        Json::Object(m) =>
+          match m.get("target") {
+            Some(Json::String(s)) => inspect(s == "打开文件", content="true")
+            _ => inspect(false, content="true")
+          }
         _ => inspect(false, content="true")
       }
     _ => inspect(false, content="true")

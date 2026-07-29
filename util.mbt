@@ -291,6 +291,52 @@ pub fn levenshtein(a : String, b : String) -> Int {
   prev[m]
 }
 
+// ---- 跨语种判定（供 MQM 启发式屏蔽误报） ----
+
+// 字符是否落在中日韩统一表意文字（CJK）主区间 / 扩展A / CJK 标点 / 全角区
+fn is_cjk_char(c : Char) -> Bool {
+  let cp = c.to_int()
+  (cp >= 0x4E00 && cp <= 0x9FFF) ||
+  (cp >= 0x3400 && cp <= 0x4DBF) ||
+  (cp >= 0x3000 && cp <= 0x303F) ||
+  (cp >= 0xFF00 && cp <= 0xFFEF)
+}
+
+// 文本主导文字：0=混合/无法判定, 1=CJK 主导, 2=拉丁主导
+fn script_kind(s : String) -> Int {
+  let mut cjk = 0
+  let mut lat = 0
+  for c in s.iter() {
+    if is_cjk_char(c) {
+      cjk = cjk + 1
+    } else {
+      let code = c.to_int()
+      if (code >= 97 && code <= 122) || (code >= 65 && code <= 90) {
+        lat = lat + 1
+      }
+    }
+  }
+  if cjk > lat && cjk > 0 {
+    1
+  } else if lat > cjk && lat > 0 {
+    2
+  } else {
+    0
+  }
+}
+
+// 跨语种判定：源/译文主导文字分属不同体系（如 英文→中文）时为真。
+// 用于屏蔽 char_ratio / 长度比 这类仅同语种有效的启发式，避免跨语言误报。
+fn cross_script(a : String, b : String) -> Bool {
+  let ka = script_kind(a)
+  let kb = script_kind(b)
+  if ka == 0 || kb == 0 {
+    false
+  } else {
+    ka != kb
+  }
+}
+
 pub fn char_ratio(a : String, b : String) -> Double {
   let n = a.length()
   let m = b.length()
@@ -298,6 +344,14 @@ pub fn char_ratio(a : String, b : String) -> Double {
   let d = levenshtein(a, b).to_double()
   let mx = (if n > m { n } else { m }).to_double()
   1.0 - d / mx
+}
+
+// 字符串是否以子串 p 开头（用于 xml:lang 前缀匹配，如 en-US/en/zh-CN/zh-Hans）
+fn starts_with(s : String, p : String) -> Bool {
+  match str_index(s, p, 0) {
+    Some(i) => i == 0
+    None => false
+  }
 }
 
 pub fn str_contains(s : String, sub : String) -> Bool {
