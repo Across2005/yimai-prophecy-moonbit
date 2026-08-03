@@ -1,0 +1,17 @@
+[
+  { "src": "电池包热管理策略", "tgt": "Battery pack thermal management strategy" },
+  { "src": "电机冷却系统", "tgt": "Motor cooling system" },
+  { "src": "电池包温度管理方案", "tgt": "Battery pack temperature management plan" },
+  { "src": "高压平台 800V", "tgt": "800V high-voltage platform" },
+  { "src": "液冷电池包", "tgt": "liquid-cooled battery pack" },
+  { "src": "充电功率可达 150 kW", "tgt": "charging power up to 150 kW" },
+  { "src": "网络登录", "tgt": "network logon" },
+  { "src": "打开设置菜单选择网络", "tgt": "Open Settings menu, choose Network" },
+  { "src": "安装传感器", "tgt": "install the sensor" },
+  { "src": "无菌包装", "tgt": "sterile packaging" },
+  { "src": "生物相容性等级", "tgt": "biocompatibility level" },
+  { "src": "随机对照试验", "tgt": "randomized controlled trial (RCT)" },
+  { "src": "循证医学", "tgt": "evidence-based medicine (EBM)" },
+  { "src": "大语言模型", "tgt": "large language model (LLM)" },
+  { "src": "量子密钥分发", "tgt": "quantum key distribution (QKD)" }
+]

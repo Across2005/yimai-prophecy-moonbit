@@ -8,6 +8,7 @@ options(
   "is-main": true,
   link: {
     "native": {
+      // 本机 MSVC（VS18 Community）；换环境请改为对应 cl.exe 路径（scripts/setup.ps1 可检测）
       "cc": "C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64/cl.exe",
     },
   },

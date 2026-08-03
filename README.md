@@ -91,6 +91,26 @@ import {
 
 > Requires the MoonBit toolchain (`moon`, v0.1.2026+).
 
+### Out-of-the-box setup (Windows, AI agents welcome)
+
+Clone the repo, then run the one-shot dev workflow (checks env → builds the native
+service → starts it on `127.0.0.1:8787` → seeds sample TM pairs → smoke-tests
+all 13 endpoints + MCP):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/dev.ps1
+```
+
+Or step by step: `scripts/setup.ps1` (env check) → `build.ps1` (compile, needs MSVC) →
+`run.ps1` (start) → `seed.ps1` (sample data) → `smoke.ps1` (verify).
+
+> **Windows native prerequisites**: `cmd/service` requires **MSVC** (`link.native.cc`
+> in `cmd/service/moon.pkg` and `cmd/main/moon.pkg` points at `cl.exe` — update both if
+> the path differs on your machine); after a MoonBit toolchain upgrade, rebuild the core
+> native bundle once (`cd ~/.moon/lib/core && moon clean --target-dir _build/native &&
+> moon bundle --target native --release`). AI agents: see [`AGENTS.md`](./AGENTS.md) for
+> the full out-of-the-box guide.
+
 ---
 
 ## Quick Start
@@ -658,6 +678,8 @@ From the "translation-born skill" brainstorm — what's built vs. pending:
 ## For Agents / Integration
 
 This package delivers a **zero-dependency, deterministic** "Prophecy Memory Network" to other agents. Integration options (2026-08 更新，修正此前「无 I/O / 仅 IIFE」的过时声明):
+
+> **AI agent 拆箱即用**：克隆后先读 [`AGENTS.md`](./AGENTS.md)（项目结构、构建/运行/消费指南、Windows 前置、MoonBit 坑），再跑 `scripts/dev.ps1` 一键起服务——无需人工配置。
 
 **Path A — build & run (agent has the MoonBit toolchain):**
 
