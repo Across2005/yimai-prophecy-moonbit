@@ -4,3 +4,5 @@ target/
 target
 .mooncakes/
 .moonagent/
+*.mbti
+tm_store.json

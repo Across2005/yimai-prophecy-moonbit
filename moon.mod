@@ -13,6 +13,10 @@ name = "Across2005/yimai_prophecy_moonbit"
 
 version = "0.1.0"
 
+import {
+  "moonbitlang/async@0.20.1",
+}
+
 readme = "README.mbt.md"
 
 repository = "https://github.com/Across2005/yimai-prophecy-moonbit"

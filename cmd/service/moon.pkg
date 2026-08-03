@@ -1,0 +1,24 @@
+import {
+  "moonbitlang/core/json",
+  "moonbitlang/core/ref",
+  "moonbitlang/core/strconv",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/async",
+  "moonbitlang/async/http" @http,
+  "moonbitlang/async/socket" @socket,
+  "moonbitlang/async/fs" @fs,
+  "moonbitlang/async/io" @io,
+  "Across2005/yimai_prophecy_moonbit" @lib,
+}
+
+// async 的 socket/http server 仅支持 native target（非 native 为桩）
+supported_targets = "+native"
+
+options(
+  "is-main": true,
+  link: {
+    "native": {
+      "cc": "C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64/cl.exe",
+    },
+  },
+)

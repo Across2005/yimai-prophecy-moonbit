@@ -8,6 +8,7 @@
 [![Hit@3](https://img.shields.io/badge/Hit%403-0.8246-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![vs Random](https://img.shields.io/badge/3.6x%20%3E%20random-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Leave-one-out](https://img.shields.io/badge/LOO%20generalization-100%25-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
+[![Service API](https://img.shields.io/badge/HTTP%20API-8%20endpoints%20live-9cf)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![MoonBit](https://img.shields.io/badge/MoonBit-0.1.2026-9cf)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
@@ -21,6 +22,7 @@
 - [Quick Start](#quick-start)
 - [Real-world scenario: predictive translation memory](#real-world-scenario-predictive-translation-memory)
 - [Domain usage cases (30 domains × 5 rounds, verified)](#domain-usage-cases-30-domains--5-rounds-verified)
+- [Service Layer — 纯 MoonBit HTTP API (cmd/service)](#service-layer--纯-moonbit-http-api-cmdservice)
 - [API Reference](#api-reference)
 - [#22 TM/TB — Translation Memory & TermBase](#22-tmtb--translation-memory--termbase)
 - [Data Formats](#data-formats)
@@ -47,6 +49,7 @@
 - **Explainable & bilingual (美)** — `TermNode` (`mark_term`) boosts terminology recall with a +5.0 activation and a "term hit" flag; `explain_card` returns a white-box `activation_path` / `prediction_path` / `value_breakdown` JSON; `align_diff` gives a character-level LCS edit script for bilingual alignment.
 - **TM / TermBase (检索 + 守门)** — `#22` 新增 `add_tm` / `fuzzy_match` / `concordance` / `load_tbx` / `enforce_terms` / `check_terms`：真正的 fuzzy match（匹配率 %）、concordance 检索、`TBX(ISO 30042)` 术语库解析、术语强制对齐与一致性校验（见 [§#22](#22-tmtb--translation-memory--termbase)）。
 - **Incremental & collaborative (中/长周期)** — Write-Ahead Log (`wal_*`) for event-sourced replay, active-learning candidates by uncertainty + diversity, and federated increment export/import (`fed_*`) for cross-agent coordination.
+- **Pure-MoonBit service layer (纯 MoonBit 全栈)** — `cmd/service` 起本地 HTTP server（`127.0.0.1:8787`），8 个 `/api/*` 端点（fuzzy_match / check_terms / concordance / qe_auto / predict / add_tm / tm_count / ping）全部实测通过；TM 状态经 fs **原子写持久化**（tmp+rename），重启恢复闭环——**引擎到服务零桥接语言**。
 
 ---
 
@@ -139,6 +142,23 @@ Build & run the bundled demo:
 ```bash
 moon build
 moon run cmd/main     # training → Hit@3 → replay prediction → D8 cold-start → consolidate → reward → restore
+```
+
+### Start the HTTP service (pure MoonBit, `cmd/service`)
+
+```bash
+moon build cmd/service --target native && moon run cmd/service --target native
+# 译脉引擎服务: http://127.0.0.1:8787
+```
+
+Then smoke-test the API (Windows native build requires MSVC — see [Service Layer](#service-layer--纯-moonbit-http-api-cmdservice)):
+
+```bash
+curl -X POST localhost:8787/api/add_tm        -d '{"src":"电池包热管理策略","tgt":"Battery pack thermal management strategy"}'
+curl -X POST localhost:8787/api/fuzzy_match   -d '{"query":"电池包热管理方案","k":3,"threshold":0.5}'
+curl -X POST localhost:8787/api/check_terms   -d '{"source":"install the sensor","target":"安装设备"}'
+curl -X POST localhost:8787/api/qe_auto       -d '{"source":"a","target":"b","match_rate":0.8}'
+curl -X POST localhost:8787/api/predict       -d '{"k":3}'
 ```
 
 ---
@@ -238,6 +258,85 @@ The ten domains and their sourced terminology (Chinese ⇄ English):
 > Terminology cross-checked against authoritative sources (ISO/IEC 4879, NIST PQC, CCSDS, NASA DSOC; Genette/Shklovsky, Husserl, EBM clinical usage, Festinger/APA/DSM-5; Mankiw/Samuelson, Saussure/Chomsky, IUPAC, IAU, IEEE/ACM, Britannica/ASA — not invented).
 
 **All thirty domains converge to the same deterministic shape after 5 rounds** — `节点(nodes)=18  边(edges)=222  Hit@3=0.7867` — with one minor, reproducible exception: the **Architecture** domain converges to `边(edges)=224`. This confirms the engine's behaviour is corpus-shape-driven and reproducible across all thirty subjects, independent of subject matter.
+
+---
+
+## Service Layer — 纯 MoonBit HTTP API (cmd/service)
+
+`cmd/service` 是**纯 MoonBit 双层架构的 Layer 2**：用 `moonbitlang/async`（http / fs / socket）起本地 HTTP server，把引擎能力以 REST API 暴露给前端工作台 / Agent / LLM 宿主。**引擎到服务零桥接语言**——同一门 MoonBit 完成全部。
+
+### 架构演进：旧架构 vs 新架构
+
+本项目从「纯库」演进为「三层架构」。差异如下：
+
+| 维度 | 旧架构（v1） | 新架构（v2，当前） |
+|---|---|---|
+| **总体形态** | 单一纯库（零依赖内核）+ `cmd/main` demo | **三层**：Layer0 零依赖内核 / Layer2 纯 MoonBit 服务层 / Layer1 知识层（文档 + 前端规划） |
+| **I/O 能力** | 无 stdin / 无文件 I/O（wasm-gc 内存态） | `async/fs` **原子写持久化**（`tm_store.json`，tmp+rename）+ 重启恢复闭环 |
+| **对外接口** | 仅 MoonBit 函数调用（`moon add` 后进程内调用） | **13 个 HTTP REST 端点**，前端 / Agent / LLM 宿主可直接消费 |
+| **集成路径** | 2 条：库引用、算法移植 | **4 条**：A 构建运行 / B wasm-gc exports / **C HTTP 服务（新增，已实测）** / D 算法移植 |
+| **运行形态** | wasm-gc 内存态（测试友好） | native（Windows 需 MSVC）本地常驻服务，`127.0.0.1:8787` |
+| **语言栈** | 单一 MoonBit（仅库） | 单一 MoonBit（库 + HTTP 服务 + 文件 I/O）——**引擎到服务零桥接语言** |
+| **状态持有** | 调用方自管引擎实例 | `Ref[ProphecyEngine]` 服务内单例 + JSON 边界透出 |
+
+> **演进动机**：旧架构的引擎能力只能被「会 MoonBit 的程序」消费；新架构让任何会 HTTP 的宿主（浏览器前端、Agent 工具调用、LLM 函数调用）都能用上确定性记忆引擎——**内核零依赖铁律不变**，只是多了一层纯 MoonBit 的 I/O 壳。
+
+### 端点矩阵（13 个，全部 curl 实测通过）
+
+| 端点 | 方法 | 请求体 | 响应 | 说明 |
+|---|---|---|---|---|
+| `/api/ping` | GET | — | `{"status":"ok"}` | 健康检查 |
+| `/api/add_tm` | POST | `{"src","tgt"}` | `{"id","status"}` | 新增 TM，原子落盘 |
+| `/api/fuzzy_match` | POST | `{"query","k","threshold"}` | Top-K（S1 四分量白盒） | TM 模糊检索 |
+| `/api/check_terms` | POST | `{"source","target"}` | 违规数组 | 术语一致性校验 |
+| `/api/concordance` | POST | `{"term","k"}` | 含术语 TM 段 | 术语上下文检索 |
+| `/api/qe_auto` | POST | `{"source","target","match_rate"}` | `{"qe_score","term_ok","mqm"}` | 自动 QE 评分 |
+| `/api/predict` | POST | `{"k"}` | `{"predictions","confidence","uncertainty"}` | 下一步预测 + 白盒 |
+| `/api/observe` | POST | `{"text","mtype"}` | `{"mid","status"}` | 记录真实步骤（学习/转移）→ 落盘 |
+| `/api/recall` | POST | `{"query","k"}` | `Array[{id,text,score,via_edges}]` | 激活扩散语义召回 |
+| `/api/explain` | POST | `{"mid"}` | 白盒卡片 | `value_breakdown` / `activation_path` 证据链 |
+| `/api/reward` | POST | `{"mid","score"}` | `{"ok"}` | **采纳/拒绝反馈 → predictive_value（闭环核心）** |
+| `/api/consolidate` | POST | `{"prune"}` | `{pruned,nodes,edges,...}` | 固化重放（价值重算 + 剪枝） |
+| `/api/tm_count` | GET | — | `{"tm_count"}` | 存量统计 |
+
+**实测**（中文 query，白盒分项全透出）：
+
+```json
+POST /api/fuzzy_match  {"query":"电池包热管理方案","k":3,"threshold":0.5}
+→ [{"id":"m3","source":"电池包温度管理方案","target":"Battery pack temperature management plan",
+    "score":0.7377,"match_pct":73.7723,"sim_token":0.7125,"sim_tfidf":0.6796,
+    "sim_char":0.7778,"sim_ngram":0.6667,"sim_tokenset":0.75}, ...]
+```
+
+### 三层关联与记忆闭环
+
+13 个端点不是孤立的——它们把三层连成**记忆闭环**（完整映射表见架构方案 §11）：
+
+```
+前端操作 ──HTTP──▶ Layer2 服务端点 ──调用──▶ Layer0 引擎方法
+   ▲                                              │
+   │                                              ▼
+   └─── JSON 响应（白盒分数/证据链）◀── save_store() 原子落盘 ◀┘
+                                │
+                                ▼
+                  重启 load_store() → from_json() → 记忆不丢
+```
+
+两个闭环（实测）：
+- **采纳闭环**：前端「采纳译文」→ `/api/reward{mid,+1}` → `predictive_value` 提升 → 下次 `/api/predict` 排序更优；
+- **学习闭环**：前端「记录步骤」→ `/api/observe{text}` → 转移计数 → 落盘 → 重启恢复 → 预测更准（实测：observe 两步 → predict Top1 prob=1.0）。
+
+### 持久化
+
+- 引擎状态经 `to_json()` → `@fs.write_file(tmp, create_mode=CreateOrTruncate)` → `rename` **原子落盘**到 `tm_store.json`；
+- 重启时 `load_store()` → `from_json()` 完整恢复（实测 tm_count 持久化后重启一致）；
+- 单例持有：`engine_ref : @ref.Ref[@lib.ProphecyEngine]`（MoonBit 顶层无全局可变变量，`Ref` 是标准方案）。
+
+### 平台要求（Windows）
+
+- async 的 native 后端**硬性要求 MSVC**（`thread_pool.c: #error "Currently only MSVC is supported on Windows"`），mingw gcc 不可用；wasm/js 后端暂不支持 socket server；
+- 构建需 MSVC 环境（INCLUDE/LIB）+ `moon.pkg` 配置 `link.native.cc` 指向 `cl.exe`；
+- 工具链升级后需重建 core native bundle（`cd ~/.moon/lib/core && moon clean --target-dir _build/native && moon bundle --target native --release`）。
 
 ---
 
@@ -501,9 +600,9 @@ The "fast / accurate / beautiful" algorithm kernel is **fully landed** and contr
 | Federated increment | `fed_export` / `fed_import` | ✅ |
 | Neural-symbolic distillation (consume side) | `inject_distillation` | ✅ |
 | **#22 TM / TermBase** | `add_tm` / `fuzzy_match` / `concordance` / `load_tbx` / `enforce_terms` / `check_terms` | ✅ (new) |
-| External memory / CSR / WAL persistence | — | ⬜ needs host JS bridge (wasm-gc in-memory) |
-| Translator workbench (ardot) | — | ⬜ needs front-end hand-off |
-| Bilingual alignment heatmap (front-end) | — | ⬜ algorithm ready, needs render |
+| **S1 fuzzy-match upgrade** | `fuzzy_match`（IDF + 2-gram + word-order）/ `fuzzy_match_legacy` | ✅ |
+| **Pure-MoonBit HTTP service** | `cmd/service`：13 端点 + 记忆闭环 + 原子写持久化 + 重启恢复 | ✅ (new) |
+| Translator workbench (web front-end) | `cmd/service/web`（服务层托管静态页） | ⬜ 规划（阶段 C） |
 | Federation coordinator (FedAvg service) | — | ⬜ needs external service |
 | Distillation training pipeline | — | ⬜ needs separate training flow |
 | Visual memory graph | — | ⬜ needs front-end (data interface ready) |
@@ -528,7 +627,7 @@ From the "translation-born skill" brainstorm — what's built vs. pending:
 
 ## For Agents / Integration
 
-This package delivers a **zero-dependency, deterministic** "Prophecy Memory Network" to other agents. Because the current MoonBit toolchain (v0.1.2026) has **no stdin / no file I/O** and the `js` target emits only an immediately-invoked IIFE (it does not export functions to a host language), "integration" is one of two paths:
+This package delivers a **zero-dependency, deterministic** "Prophecy Memory Network" to other agents. Integration options (2026-08 更新，修正此前「无 I/O / 仅 IIFE」的过时声明):
 
 **Path A — build & run (agent has the MoonBit toolchain):**
 
@@ -540,9 +639,13 @@ cd cmd/main && moon build --target wasm-gc && moon run .
 
 Then `moon add Across2005/yimai_prophecy_moonbit` and call any of the `ProphecyEngine` methods.
 
-**Path B — algorithm port (agent has no MoonBit but needs the capability in-process):**
+**Path B — wasm-gc exports (engine as a callable module):** 新工具链（moonc v0.10.4+）支持在 `moon.pkg.json` 配置 `link.wasm-gc.exports` + `use-js-builtin-string: true`，让 JS 宿主直接调用 `ProphecyEngine` 方法（String 与 JS String 互通）；JS 后端亦支持 `format: esm/cjs`（不再只有 IIFE）。详见 [Package Configuration](https://docs.moonbitlang.com/en/latest/toolchain/moon/package.html)。
 
-`engine.mbt` is pure-stdlib, zero-I/O, with constants (`HEBB_LR`, `EDGE_DECAY`, `BETA`, …) that map 1:1 to D1–D8. It can be reimplemented in Python / TypeScript / Go by reading the source. This is currently the most practical route for cross-language agent loading.
+**Path C — service layer (纯 MoonBit HTTP server, `cmd/service`):** ✅ **已实测落地**。`moonbitlang/async` 提供 `http` / `fs` / `socket`，起本地服务并托管前端工作台；**13 个 `/api/*` 端点**（add_tm / fuzzy_match / check_terms / concordance / qe_auto / predict / observe / recall / explain / reward / consolidate / tm_count / ping）全部 curl 通过，含**记忆闭环**（observe 学习 → predict 预测 → reward 反馈 → consolidate 固化）与原子写持久化 + 重启恢复（详见 [Service Layer](#service-layer--纯-moonbit-http-api-cmdservice)）。注意：Windows 上 async 的 native 后端**仅支持 MSVC 编译**（`thread_pool.c: #error "Currently only MSVC is supported on Windows"`）；wasm/js 后端暂不支持 socket server（`socket/unimplemented.mbt`）。
+
+**Path D — algorithm port (agent has no MoonBit but needs the capability in-process):**
+
+`engine.mbt` is pure-stdlib, zero-I/O, with constants (`HEBB_LR`, `EDGE_DECAY`, `BETA`, …) that map 1:1 to D1–D8. It can be reimplemented in Python / TypeScript / Go by reading the source — the most portable route for cross-language agent loading.
 
 ---
 
@@ -562,3 +665,4 @@ MIT — see [`LICENSE`](./LICENSE).
 
 - Built on the [MoonBit](https://www.moonbitlang.com) language and its `core` (`json`, `math`) packages.
 - README structure follows conventions of high-star open-source projects (e.g. `sharkdp/bat`, `BurntSushi/ripgrep`) and the idiomatic MoonBit library style of [`moonbit-community/moon_elk`](https://github.com/moonbit-community/moon_elk).
+- 完整架构方案（评审叙事 + 工程附录 13 章）：`译脉·先知2.0_完整架构方案.md`（黑客松定位、三层架构、确定性/零依赖/白盒三大卖点、S1 实证、增强路线图 S/M/L → 端点映射）。

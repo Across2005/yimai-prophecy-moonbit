@@ -1,0 +1,276 @@
+// routes.mbt —— HTTP 路由 + /api/* 端点实现
+// 端点（全部实测通过）：
+//   POST /api/fuzzy_match   {"query","k","threshold"}   TM 模糊匹配（S1 四分量白盒）
+//   POST /api/add_tm        {"src","tgt"}               新增 TM 并原子落盘
+//   POST /api/check_terms   {"source","target"}         术语一致性校验
+//   POST /api/concordance   {"term","k"}                术语上下文检索
+//   POST /api/qe_auto       {"source","target","match_rate"}  QE 评分
+//   POST /api/predict       {"k"}                       下一步预测 + 白盒
+//   GET  /api/tm_count / /api/ping                       存量 / 健康检查
+// 注：MoonBit async 调用无需 await；Request.path 含完整 query string（路由需剥离）。
+
+// 从 path 提取 ? 之前的 base path（async 的 Request.path 含完整 query string）
+fn extract_base_path(path : String) -> String {
+  let parts = path.split("?").to_array()
+  parts[0].to_string()
+}
+
+async fn send_json(conn : @http.ServerConnection, code : Int, body : String) -> Unit {
+  conn.send_response(code, "OK", extra_headers={ "Content-Type": "application/json" })
+  conn.write_string(body)
+  conn.end_response()
+}
+
+// 主路由
+async fn handle_request(req : @http.Request, body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let path = extract_base_path(req.path)
+  if path == "/api/ping" {
+    send_json(conn, 200, "{\"status\":\"ok\"}")
+  } else if path == "/api/fuzzy_match" {
+    handle_fuzzy_match(body, conn)
+  } else if path == "/api/add_tm" {
+    handle_add_tm(body, conn)
+  } else if path == "/api/tm_count" {
+    handle_tm_count(conn)
+  } else if path == "/api/check_terms" {
+    handle_check_terms(body, conn)
+  } else if path == "/api/concordance" {
+    handle_concordance(body, conn)
+  } else if path == "/api/qe_auto" {
+    handle_qe_auto(body, conn)
+  } else if path == "/api/predict" {
+    handle_predict(body, conn)
+  } else if path == "/api/observe" {
+    handle_observe(body, conn)
+  } else if path == "/api/recall" {
+    handle_recall(body, conn)
+  } else if path == "/api/explain" {
+    handle_explain(body, conn)
+  } else if path == "/api/reward" {
+    handle_reward(body, conn)
+  } else if path == "/api/consolidate" {
+    handle_consolidate(body, conn)
+  } else {
+    conn.send_response(404, "Not Found")
+    conn.end_response()
+  }
+}
+
+// 从 body 读取 JSON（async；返回 Option[Json]）
+async fn read_json_body(body : &@io.Reader) -> Option[Json] {
+  let data = body.read_all()
+  let s = try { data.text() } catch { _ => "" }
+  try { Some(@json.parse(s)) } catch { _ => None }
+}
+
+// 从 JSON 对象取字符串字段
+fn json_str(o : Map[String, Json], key : String) -> String {
+  match o.get(key) {
+    Some(Json::String(v)) => v
+    _ => ""
+  }
+}
+
+// POST /api/fuzzy_match  {"query":"..","k":3,"threshold":0.5}
+async fn handle_fuzzy_match(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let parsed = read_json_body(body)
+  match parsed {
+    Some(Json::Object(o)) => {
+      let query = json_str(o, "query")
+      let k = match o.get("k") {
+        Some(Json::Number(n, ..)) => n.to_int()
+        _ => 3
+      }
+      let thr = match o.get("threshold") {
+        Some(Json::Number(n, ..)) => n
+        _ => 0.70
+      }
+      let result = engine_ref.val.fuzzy_match(query, k, thr)
+      send_json(conn, 200, result.stringify())
+    }
+    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+  }
+}
+
+// POST /api/add_tm  {"src":"..","tgt":".."}
+async fn handle_add_tm(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let data = body.read_all()
+  let s = try { data.text() } catch { _ => "" }
+  let parsed : Option[Json] = try { Some(@json.parse(s)) } catch { _ => None }
+  match parsed {
+    Some(Json::Object(o)) => {
+      let src = match o.get("src") {
+        Some(Json::String(v)) => v
+        _ => ""
+      }
+      let tgt = match o.get("tgt") {
+        Some(Json::String(v)) => v
+        _ => ""
+      }
+      if src == "" {
+        send_json(conn, 400, "{\"error\":\"src required\"}")
+      } else {
+        let id = engine_ref.val.add_tm(src, tgt)
+        try { save_store() } catch { err => println("save_store error: \{err}") }
+        send_json(conn, 200, "{\"id\":\"" + id + "\",\"status\":\"stored\"}")
+      }
+    }
+    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+  }
+}
+
+// GET /api/tm_count
+async fn handle_tm_count(conn : @http.ServerConnection) -> Unit {
+  let c = tm_count()
+  send_json(conn, 200, "{\"tm_count\":" + c.to_string() + "}")
+}
+
+// POST /api/check_terms  {"source":"..","target":".."}  术语一致性校验（白盒返回违规）
+async fn handle_check_terms(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let parsed = read_json_body(body)
+  match parsed {
+    Some(Json::Object(o)) => {
+      let source = json_str(o, "source")
+      let target = json_str(o, "target")
+      let result = engine_ref.val.check_terms(source, target)
+      send_json(conn, 200, result.stringify())
+    }
+    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+  }
+}
+
+// POST /api/concordance  {"term":"..","k":3}  含术语的 TM 段检索
+async fn handle_concordance(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let parsed = read_json_body(body)
+  match parsed {
+    Some(Json::Object(o)) => {
+      let term = json_str(o, "term")
+      let k = match o.get("k") {
+        Some(Json::Number(n, ..)) => n.to_int()
+        _ => 3
+      }
+      let result = engine_ref.val.concordance(term, k)
+      send_json(conn, 200, result.stringify())
+    }
+    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+  }
+}
+
+// POST /api/qe_auto  {"source":"..","target":"..","match_rate":0.7}  自动 QE 评分
+async fn handle_qe_auto(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let parsed = read_json_body(body)
+  match parsed {
+    Some(Json::Object(o)) => {
+      let source = json_str(o, "source")
+      let target = json_str(o, "target")
+      let mr = match o.get("match_rate") {
+        Some(Json::Number(n, ..)) => n
+        _ => 0.0
+      }
+      let result = engine_ref.val.qe_auto(source, target, mr)
+      send_json(conn, 200, result.stringify())
+    }
+    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+  }
+}
+
+// POST /api/predict  {"k":3}  下一步预测（白盒：activation_path 证据链）
+async fn handle_predict(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let parsed = read_json_body(body)
+  match parsed {
+    Some(Json::Object(o)) => {
+      let k = match o.get("k") {
+        Some(Json::Number(n, ..)) => n.to_int()
+        _ => 3
+      }
+      let result = engine_ref.val.predict(k)
+      send_json(conn, 200, result.stringify())
+    }
+    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+  }
+}
+
+// POST /api/observe  {"text":"..","mtype":"step"}  记录真实步骤（学习/转移/命中核算）→ 落盘
+async fn handle_observe(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let parsed = read_json_body(body)
+  match parsed {
+    Some(Json::Object(o)) => {
+      let text = json_str(o, "text")
+      let mtype = json_str(o, "mtype")
+      if text == "" {
+        send_json(conn, 400, "{\"error\":\"text required\"}")
+      } else {
+        let mid = engine_ref.val.observe(text, mtype)
+        try { save_store() } catch { err => println("save_store error: \{err}") }
+        send_json(conn, 200, "{\"mid\":\"" + mid + "\",\"status\":\"learned\"}")
+      }
+    }
+    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+  }
+}
+
+// POST /api/recall  {"query":"..","k":5}  激活扩散语义召回
+async fn handle_recall(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let parsed = read_json_body(body)
+  match parsed {
+    Some(Json::Object(o)) => {
+      let query = json_str(o, "query")
+      let k = match o.get("k") {
+        Some(Json::Number(n, ..)) => n.to_int()
+        _ => 5
+      }
+      let result = engine_ref.val.recall(query, k)
+      send_json(conn, 200, @lib.arr_json(result).stringify())
+    }
+    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+  }
+}
+
+// POST /api/explain  {"mid":".."}  白盒卡片（value_breakdown / activation_path / predicts_to）
+async fn handle_explain(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let parsed = read_json_body(body)
+  match parsed {
+    Some(Json::Object(o)) => {
+      let mid = json_str(o, "mid")
+      let result = engine_ref.val.explain_card(mid)
+      send_json(conn, 200, result.stringify())
+    }
+    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+  }
+}
+
+// POST /api/reward  {"mid":"..","score":1.0}  采纳/拒绝反馈 → predictive_value（闭环核心）
+async fn handle_reward(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let parsed = read_json_body(body)
+  match parsed {
+    Some(Json::Object(o)) => {
+      let mid = json_str(o, "mid")
+      let score = match o.get("score") {
+        Some(Json::Number(n, ..)) => n
+        _ => 1.0
+      }
+      let ok = engine_ref.val.reward(mid, score)
+      if ok {
+        try { save_store() } catch { err => println("save_store error: \{err}") }
+        send_json(conn, 200, "{\"ok\":true}")
+      } else {
+        send_json(conn, 404, "{\"ok\":false,\"error\":\"unknown mid\"}")
+      }
+    }
+    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+  }
+}
+
+// POST /api/consolidate  {"prune":true}  固化重放（价值重算 + 可选剪枝）
+async fn handle_consolidate(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let parsed = read_json_body(body)
+  match parsed {
+    Some(Json::Object(o)) => {
+      let prune = json_str(o, "prune") == "true"
+      let result = engine_ref.val.consolidate(prune)
+      try { save_store() } catch { err => println("save_store error: \{err}") }
+      send_json(conn, 200, result.stringify())
+    }
+    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+  }
+}
