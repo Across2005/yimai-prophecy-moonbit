@@ -50,6 +50,9 @@ async fn handle_request(req : @http.Request, body : &@io.Reader, conn : @http.Se
     handle_reward(body, conn)
   } else if path == "/api/consolidate" {
     handle_consolidate(body, conn)
+  } else if path == "/mcp" {
+    // MCP Server 变体（spec 2025-11-25，Streamable HTTP；实现见 mcp.mbt）
+    handle_mcp(req, body, conn)
   } else {
     serve_static(path, conn)
   }
