@@ -12,7 +12,7 @@ fn rpc_error(id : Json, code : Int, msg : String) -> Json {
   @lib.obj([
     ("jsonrpc", @lib.str_json("2.0")),
     ("id", id),
-    ("error", @lib.obj([("code", @lib.num_json(code.to_double())), ("message", @lib.str_json(msg))])),
+    ("error", @lib.obj([("code", code.to_json()), ("message", @lib.str_json(msg))])),
   ])
 }
 
@@ -180,7 +180,7 @@ fn is_known_tool(name : String) -> Bool {
 // 分派工具调用（写操作后落盘；async 因调用 save_store）
 async fn invoke_tool(name : String, args : Json) -> Json {
   if name == "fuzzy_match" {
-    engine_ref.val.fuzzy_match(arg_str(args, "query"), arg_int(args, "k", 3), arg_num(args, "threshold", 0.5))
+    engine_ref.val.fuzzy_match(arg_str(args, "query"), arg_int(args, "k", 3), arg_num(args, "threshold", 0.70))
   } else if name == "add_tm" {
     let id = engine_ref.val.add_tm(arg_str(args, "src"), arg_str(args, "tgt"))
     try { save_store() } catch { err => println("save_store error: \{err}") }
@@ -205,9 +205,9 @@ async fn invoke_tool(name : String, args : Json) -> Json {
     let ok = engine_ref.val.reward(arg_str(args, "mid"), arg_num(args, "score", 1.0))
     if ok {
       try { save_store() } catch { err => println("save_store error: \{err}") }
-      @lib.obj([("ok", @lib.str_json("true"))])
+      @lib.obj([("ok", true.to_json())])
     } else {
-      @lib.obj([("ok", @lib.str_json("false")), ("error", @lib.str_json("unknown mid"))])
+      @lib.obj([("ok", false.to_json()), ("error", @lib.str_json("unknown mid"))])
     }
   } else if name == "consolidate" {
     let result = engine_ref.val.consolidate(arg_bool(args, "prune", true))
@@ -226,7 +226,7 @@ async fn invoke_tool(name : String, args : Json) -> Json {
 fn handle_initialize(id : Json) -> Json {
   rpc_result(id, @lib.obj([
     ("protocolVersion", @lib.str_json("2025-11-25")),
-    ("capabilities", @lib.obj([("tools", @lib.obj([("listChanged", @lib.str_json("false"))]))])),
+    ("capabilities", @lib.obj([("tools", @lib.obj([("listChanged", false.to_json())]))])),
     ("serverInfo", @lib.obj([
       ("name", @lib.str_json("yimai-prophecy")),
       ("version", @lib.str_json("2.0.0")),
@@ -269,7 +269,7 @@ async fn handle_tools_call(id : Json, params : Json) -> Json {
   ])])
   rpc_result(id, @lib.obj([
     ("content", content),
-    ("isError", @lib.str_json(if is_err { "true" } else { "false" })),
+    ("isError", is_err.to_json()),
   ]))
 }
 

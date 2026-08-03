@@ -305,7 +305,13 @@ async fn handle_consolidate(body : &@io.Reader, conn : @http.ServerConnection) -
   let parsed = read_json_body(body)
   match parsed {
     Some(Json::Object(o)) => {
-      let prune = json_str(o, "prune") == "true"
+      let prune = match o.get("prune") {
+        Some(v) => match v.as_bool() {
+          Some(b) => b
+          None => json_str(o, "prune") == "true"
+        }
+        None => true
+      }
       let result = engine_ref.val.consolidate(prune)
       try { save_store() } catch { err => println("save_store error: \{err}") }
       send_json(conn, 200, result.stringify())

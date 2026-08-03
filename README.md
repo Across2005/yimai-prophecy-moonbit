@@ -8,7 +8,7 @@
 [![Hit@3](https://img.shields.io/badge/Hit%403-0.8246-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![vs Random](https://img.shields.io/badge/3.6x%20%3E%20random-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Leave-one-out](https://img.shields.io/badge/LOO%20generalization-100%25-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
-[![Service API](https://img.shields.io/badge/HTTP%20API-8%20endpoints%20live-9cf)](https://github.com/Across2005/yimai_prophecy_moonbit)
+[![Service API](https://img.shields.io/badge/HTTP%20API-13%20endpoints%20%2B%20MCP-9cf)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![MoonBit](https://img.shields.io/badge/MoonBit-0.1.2026-9cf)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
@@ -49,7 +49,7 @@
 - **Explainable & bilingual (美)** — `TermNode` (`mark_term`) boosts terminology recall with a +5.0 activation and a "term hit" flag; `explain_card` returns a white-box `activation_path` / `prediction_path` / `value_breakdown` JSON; `align_diff` gives a character-level LCS edit script for bilingual alignment.
 - **TM / TermBase (检索 + 守门)** — `#22` 新增 `add_tm` / `fuzzy_match` / `concordance` / `load_tbx` / `enforce_terms` / `check_terms`：真正的 fuzzy match（匹配率 %）、concordance 检索、`TBX(ISO 30042)` 术语库解析、术语强制对齐与一致性校验（见 [§#22](#22-tmtb--translation-memory--termbase)）。
 - **Incremental & collaborative (中/长周期)** — Write-Ahead Log (`wal_*`) for event-sourced replay, active-learning candidates by uncertainty + diversity, and federated increment export/import (`fed_*`) for cross-agent coordination.
-- **Pure-MoonBit service layer (纯 MoonBit 全栈)** — `cmd/service` 起本地 HTTP server（`127.0.0.1:8787`），8 个 `/api/*` 端点（fuzzy_match / check_terms / concordance / qe_auto / predict / add_tm / tm_count / ping）全部实测通过；TM 状态经 fs **原子写持久化**（tmp+rename），重启恢复闭环——**引擎到服务零桥接语言**。
+- **Pure-MoonBit service layer (纯 MoonBit 全栈)** — `cmd/service` 起本地 HTTP server（`127.0.0.1:8787`），**13 个 `/api/*` 端点 + `/mcp` MCP Server**（fuzzy_match / add_tm / check_terms / concordance / qe_auto / predict / observe / recall / explain / reward / consolidate / tm_count / ping + MCP tools）全部实测通过；TM 状态经 fs **原子写持久化**（tmp+rename），重启恢复闭环——**引擎到服务零桥接语言**。
 
 ---
 
@@ -325,6 +325,34 @@ POST /api/fuzzy_match  {"query":"电池包热管理方案","k":3,"threshold":0.5
 两个闭环（实测）：
 - **采纳闭环**：前端「采纳译文」→ `/api/reward{mid,+1}` → `predictive_value` 提升 → 下次 `/api/predict` 排序更优；
 - **学习闭环**：前端「记录步骤」→ `/api/observe{text}` → 转移计数 → 落盘 → 重启恢复 → 预测更准（实测：observe 两步 → predict Top1 prob=1.0）。
+
+### MCP Server（/mcp 端点）—— 供 Claude Desktop / 通用 MCP 客户端消费
+
+`cmd/service` 同时暴露 **MCP（Model Context Protocol）Server 变体**（spec **2025-11-25**，Streamable HTTP）：挂 `/mcp` 端点，POST 单 JSON-RPC 消息、`application/json` 响应（无需 SSE）。**13 个引擎能力直接映射为 MCP tools**：
+
+| MCP tool | 参数 | 说明 |
+|---|---|---|
+| `fuzzy_match` | query / k / threshold | TM 模糊检索（S1 四分量白盒） |
+| `add_tm` | src / tgt | 新增 TM 并落盘 |
+| `check_terms` | source / target | 术语一致性校验 |
+| `concordance` | term / k | 术语上下文检索 |
+| `qe_auto` | source / target / match_rate | 自动 QE 评分 |
+| `predict` | k | 下一步预测 + 白盒路径 |
+| `observe` | text / mtype | 记录步骤（学习）并落盘 |
+| `recall` | query / k | 语义召回 |
+| `explain` | mid | 白盒卡片 |
+| `reward` | mid / score | 采纳/拒绝反馈 |
+| `consolidate` | prune | 固化重放 |
+| `tm_count` / `ping` | — | 存量 / 健康检查 |
+
+```bash
+# MCP 握手（curl 模拟客户端）
+curl -X POST localhost:8787/mcp -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+curl -X POST localhost:8787/mcp -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+curl -X POST localhost:8787/mcp -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"fuzzy_match","arguments":{"query":"电池","k":2}}}'
+```
+
+> 协议：`initialize`（protocolVersion 2025-11-25 + capabilities.tools）/ `notifications/initialized`（202）/ `tools/list`（13 tools，inputSchema JSON Schema 2020-12）/ `tools/call`（未知工具 `-32602`，引擎异常 `isError:true`）；GET /mcp 回 405。实现为自建轻量 JSON-RPC 2.0 层（`cmd/service/mcp.mbt`，MoonBit 无现成 MCP 库），全程复用引擎 `@lib.obj/str_json/num_json` 构造（Json 为 FFI 类型）。
 
 ### 持久化
 
@@ -602,6 +630,8 @@ The "fast / accurate / beautiful" algorithm kernel is **fully landed** and contr
 | **#22 TM / TermBase** | `add_tm` / `fuzzy_match` / `concordance` / `load_tbx` / `enforce_terms` / `check_terms` | ✅ (new) |
 | **S1 fuzzy-match upgrade** | `fuzzy_match`（IDF + 2-gram + word-order）/ `fuzzy_match_legacy` | ✅ |
 | **Pure-MoonBit HTTP service** | `cmd/service`：13 端点 + 记忆闭环 + 原子写持久化 + 重启恢复 | ✅ (new) |
+| **MCP Server (/mcp)** | `cmd/service/mcp.mbt`：13 引擎能力 → MCP tools（spec 2025-11-25） | ✅ (new) |
+| SKILL.md 编排壳 / TMPlm 桥接 (M5) | — | ⬜ 待办（阶段 E 剩余） |
 | Translator workbench (web front-end) | `cmd/service/web`（服务层托管静态页） | ⬜ 规划（阶段 C） |
 | Federation coordinator (FedAvg service) | — | ⬜ needs external service |
 | Distillation training pipeline | — | ⬜ needs separate training flow |
@@ -646,6 +676,14 @@ Then `moon add Across2005/yimai_prophecy_moonbit` and call any of the `ProphecyE
 **Path D — algorithm port (agent has no MoonBit but needs the capability in-process):**
 
 `engine.mbt` is pure-stdlib, zero-I/O, with constants (`HEBB_LR`, `EDGE_DECAY`, `BETA`, …) that map 1:1 to D1–D8. It can be reimplemented in Python / TypeScript / Go by reading the source — the most portable route for cross-language agent loading.
+
+**Path E — MCP client (Claude Desktop / any MCP host):** ✅ 已实测。`cmd/service` 暴露 `/mcp` 端点（MCP spec 2025-11-25 Streamable HTTP），13 个引擎能力映射为 MCP tools（fuzzy_match / add_tm / check_terms / concordance / qe_auto / predict / observe / recall / explain / reward / consolidate / tm_count / ping）。Claude Desktop 配置：
+
+```json
+{ "mcpServers": { "yimai": { "url": "http://127.0.0.1:8787/mcp" } } }
+```
+
+先 `moon run cmd/service --target native` 起服务，MCP 客户端即可经 initialize → tools/list → tools/call 消费全部引擎能力（详见 [MCP Server](#mcp-servermcp-端点--供-claude-desktop--通用-mcp-客户端消费)）。
 
 ---
 
