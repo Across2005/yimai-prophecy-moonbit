@@ -162,3 +162,87 @@ test "R22 多语言 TBX：按 xml:lang 取 en→zh（忽略 fr）" {
     _ => inspect(false, content="true")
   }
 }
+
+// ---- S1 检索强化回归（R23-R25）：IDF 加权 + n-gram + 词序容忍 ----
+
+fn json_score(j : Json) -> Double {
+  match j {
+    Json::Object(m) =>
+      match m.get("score") {
+        Some(Json::Number(n, ..)) => n
+        _ => 0.0
+      }
+    _ => 0.0
+  }
+}
+
+fn json_source(j : Json) -> String {
+  match j {
+    Json::Object(m) =>
+      match m.get("source") {
+        Some(Json::String(s)) => s
+        _ => ""
+      }
+    _ => ""
+  }
+}
+
+test "R23 S1 IDF 加权：常见词噪音下罕见术语优先召回，且 top1-top2 区分度 >= 旧公式" {
+  let e = ProphecyEngine::make()
+  let _ = e.add_tm("打开文件保存", "Open file and save")
+  let _ = e.add_tm("打开设置界面", "Open settings UI")
+  let _ = e.add_tm("打开浏览器窗口", "Open browser window")
+  let _ = e.add_tm("打开命令行工具", "Open command line tool")
+  let _ = e.add_tm("打开网络连接面板", "Open network panel")
+  let _ = e.add_tm("光子芯片散热设计", "Photonic chip thermal design")
+  let r = e.fuzzy_match("光子芯片设计文件", 3, 0.0)
+  let rl = e.fuzzy_match_legacy("光子芯片设计文件", 3, 0.0)
+  // top1 必须是含罕见术语的条目（IDF 让"光子芯片"权重压过高频"打开"）
+  match r {
+    Json::Array(a) => {
+      inspect(a.length() >= 1, content="true")
+      inspect(json_source(a[0]) == "光子芯片散热设计", content="true")
+    }
+    _ => inspect(false, content="true")
+  }
+  // 区分度对比：新公式 top1-top2 差距 >= 旧公式（罕见术语更显著领先）
+  match (r, rl) {
+    (Json::Array(an), Json::Array(al)) => {
+      let gap_new = if an.length() >= 2 { json_score(an[0]) - json_score(an[1]) } else { 0.0 }
+      let gap_old = if al.length() >= 2 { json_score(al[0]) - json_score(al[1]) } else { 0.0 }
+      inspect(gap_new >= gap_old, content="true")
+    }
+    _ => inspect(false, content="true")
+  }
+}
+
+test "R24 S1 词序重排：新公式命中（>0.70），旧公式漏掉（<0.70）" {
+  let e = ProphecyEngine::make()
+  let _ = e.add_tm("请检查设置按钮", "Please check the settings button")
+  // 中文 bigram 分词下词序重排改变 bigram，旧公式的 token 余弦显著受损；新公式 sim_tokenset 不敏感
+  let rn = e.fuzzy_match("设置按钮请检查", 1, 0.70)
+  match rn {
+    Json::Array(a) => inspect(a.length() == 1, content="true")
+    _ => inspect(false, content="true")
+  }
+  let ro = e.fuzzy_match_legacy("设置按钮请检查", 1, 0.70)
+  match ro {
+    Json::Array(a) => inspect(a.length() == 0, content="true")
+    _ => inspect(false, content="true")
+  }
+}
+
+test "R25 S1 边界：空查询不崩溃；单字查询无 2-gram 时不过 0.70 阈值" {
+  let e = ProphecyEngine::make()
+  let _ = e.add_tm("请检查设置按钮", "Please check the settings button")
+  let r1 = e.fuzzy_match("", 3, 0.0)
+  match r1 {
+    Json::Array(_) => inspect(true, content="true")
+    _ => inspect(false, content="true")
+  }
+  let r2 = e.fuzzy_match("短", 3, 0.70)
+  match r2 {
+    Json::Array(a) => inspect(a.length() == 0, content="true")
+    _ => inspect(false, content="true")
+  }
+}

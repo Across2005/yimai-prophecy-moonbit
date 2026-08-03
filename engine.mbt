@@ -99,6 +99,10 @@ pub struct ProphecyEngine {
   mut fed_add : Int                                // 联邦增量：新增节点计数
   mut fed_upd : Int                                // 联邦增量：更新计数
   mut clock : Double                                // 逻辑时钟（替代 wall-clock）
+  // ---- S1 检索强化：TM IDF 表（内部态，不进 to_json；from_json 后重建）----
+  mut tm_df : Map[String, Int]                     // TM 文档频率：token -> 含该 token 的 TM 数
+  mut tm_idf : Map[String, Double]                 // 预计算 IDF：ln((N+1)/(df+1)) + 1
+  mut tm_idf_dirty : Bool                          // add_tm/剪枝后置真，fuzzy_match 惰性重算
 }
 
 // ---------------------------------------------------------------------------
@@ -359,12 +363,145 @@ pub fn ProphecyEngine::make() -> ProphecyEngine {
     fed_add: 0,
     fed_upd: 0,
     clock: 0.0,
+    tm_df: Map::from_iter(([] : Array[(String, Int)]).iter()),
+    tm_idf: Map::from_iter(([] : Array[(String, Double)]).iter()),
+    tm_idf_dirty: false,
   }
 }
 
 fn ProphecyEngine::_new_id(self : ProphecyEngine) -> String {
   self.seq = self.seq + 1
   "m" + self.seq.to_string()
+}
+
+// ---- S1 检索强化：TM IDF 表（确定性重建，逻辑时钟无关）----
+
+// 全量重建 TM 文档频率与 IDF 表（幂等；add_tm/consolidate-prune/from_json 后调用）
+fn ProphecyEngine::rebuild_tm_idf(self : ProphecyEngine) -> Unit {
+  let df : Map[String, Int] = Map::from_iter(([] : Array[(String, Int)]).iter())
+  let mut n = 0
+  for _, m in self.memories.iter2() {
+    if m.mtype != "tm" {
+      continue
+    }
+    n = n + 1
+    let seen : Map[String, Bool] = Map::from_iter(([] : Array[(String, Bool)]).iter())
+    for t in yimai_tokenize(m.text) {
+      if seen.contains(t) {
+        continue
+      }
+      seen.set(t, true)
+      let v = match df.get(t) {
+        Some(x) => x
+        None => 0
+      }
+      df.set(t, v + 1)
+    }
+  }
+  self.tm_df = df
+  let idf : Map[String, Double] = Map::from_iter(([] : Array[(String, Double)]).iter())
+  for t, f in self.tm_df.iter2() {
+    // idf = ln((N+1)/(df+1)) + 1：常见词（df 高）权重低，罕见术语（df 低）权重高；N=0 时 idf=1
+    idf.set(t, @math.ln((n + 1).to_double() / (f + 1).to_double()) + 1.0)
+  }
+  self.tm_idf = idf
+  self.tm_idf_dirty = false
+}
+
+fn ProphecyEngine::mark_tm_idf_dirty(self : ProphecyEngine) -> Unit {
+  self.tm_idf_dirty = true
+}
+
+// 惰性重算：fuzzy_match 开头调用，仅当 dirty 时全量重建（保证每次 fuzzy_match 的 IDF 表新鲜）
+fn ProphecyEngine::ensure_tm_idf(self : ProphecyEngine) -> Unit {
+  if self.tm_idf_dirty {
+    self.rebuild_tm_idf()
+  }
+}
+
+// IDF 加权集合 Dice = 2·Σ_{t∈A∩B} idf(t) / (Σ_{t∈A} idf(t) + Σ_{t∈B} idf(t))。
+// fuzzy_match 主评分项：关注共有词的权重（罕见术语权重高），对 query 独有词的
+// 范数惩罚比 TF-IDF 余弦更宽容，短句/中文 bigram 场景更稳。
+fn idf_dice(
+  qvec : Map[String, Double],
+  mvec : Map[String, Double],
+  idf : Map[String, Double],
+) -> Double {
+  if qvec.length() == 0 || mvec.length() == 0 {
+    return 0.0
+  }
+  let mut inter_w = 0.0
+  let mut qw = 0.0
+  let mut mw = 0.0
+  for k, _ in qvec.iter2() {
+    let id = match idf.get(k) {
+      Some(x) => x
+      None => 1.0
+    }
+    qw = qw + id
+    if mvec.contains(k) {
+      inter_w = inter_w + id
+    }
+  }
+  for k, _ in mvec.iter2() {
+    let id = match idf.get(k) {
+      Some(x) => x
+      None => 1.0
+    }
+    mw = mw + id
+  }
+  if qw == 0.0 || mw == 0.0 {
+    return 0.0
+  }
+  2.0 * inter_w / (qw + mw)
+}
+
+// TF-IDF 加权余弦：qvec/mvec 存纯 TF，计算时实时乘 IDF（零依赖，不改变节点向量存储）。
+// 作为 fuzzy_match 输出的信息性分项（sim_tfidf），供调用方对比。
+fn tfidf_cosine(
+  qvec : Map[String, Double],
+  mvec : Map[String, Double],
+  idf : Map[String, Double],
+) -> Double {
+  if qvec.length() == 0 || mvec.length() == 0 {
+    return 0.0
+  }
+  let mut num = 0.0
+  for k, qv in qvec.iter2() {
+    let id = match idf.get(k) {
+      Some(x) => x
+      None => 1.0
+    }
+    match mvec.get(k) {
+      Some(mv) => num = num + (qv * id) * (mv * id)
+      None => ()
+    }
+  }
+  if num == 0.0 {
+    return 0.0
+  }
+  let mut na2 = 0.0
+  for k, v in qvec.iter2() {
+    let id = match idf.get(k) {
+      Some(x) => x
+      None => 1.0
+    }
+    na2 = na2 + (v * id) * (v * id)
+  }
+  let mut nb2 = 0.0
+  for k, v in mvec.iter2() {
+    let id = match idf.get(k) {
+      Some(x) => x
+      None => 1.0
+    }
+    nb2 = nb2 + (v * id) * (v * id)
+  }
+  let na = na2.sqrt()
+  let nb = nb2.sqrt()
+  if na == 0.0 || nb == 0.0 {
+    return 0.0
+  }
+  num / (na * nb)
 }
 
 // ---------------------------------------------------------------------------
@@ -1131,6 +1268,7 @@ pub fn ProphecyEngine::consolidate(self : ProphecyEngine, prune : Bool) -> Json 
   self.rebuild_role_members()
   self.fed_upd = self.fed_upd + 1
   self.stats_evolutions = self.stats_evolutions + 1
+  self.mark_tm_idf_dirty()   // S1：剪枝可能删 TM 节点，IDF 表需重算（fuzzy_match 惰性触发）
   obj([
     ("pruned", num_json(removed.to_double())),
     ("nodes", num_json(self.memories.length().to_double())),
@@ -1351,16 +1489,74 @@ pub fn ProphecyEngine::add_tm(self : ProphecyEngine, src : String, tgt : String)
   self.memories.set(mid, node)
   self.invalidate_pred_cache()
   self.fed_add = self.fed_add + 1
+  self.mark_tm_idf_dirty()
   mid
 }
 
-// TM 模糊匹配：Top-K（按匹配率降序）。匹配率 = 0.7·token余弦 + 0.3·字符级比率。
-// 对齐 Trados 实践：低于 threshold（建议阈值 0.70；MoonBit 无默认参数，调用方需显式传入）视为无匹配；返回匹配率%与分项相似度。
+// TM 模糊匹配：Top-K（按匹配率降序）。升级版评分（S1，对标 XTM Weighted Token Levenshtein 思路）：
+//   score = 0.55·idf_dice（IDF 加权共有词权重，罕见术语占优）
+//         + 0.20·char_2gram_dice（字符 2-gram，捕捉形态变体，中文 bigram 与分词器一致）
+//         + 0.15·token_set_dice（词序容忍：去重集合 Dice，重排场景不惩罚）
+//         + 0.10·position（首锚 token 命中，句首对齐权重）
+// 低于 threshold（建议阈值 0.70）视为无匹配；返回匹配率%与分项相似度。
+// 旧公式保留为 fuzzy_match_legacy（0.7·token-cosine + 0.3·char-ratio）供 A/B 对照。
 pub fn ProphecyEngine::fuzzy_match(self : ProphecyEngine, query : String, k : Int, threshold : Double) -> Json {
+  self.ensure_tm_idf()
+  let qv = tf_vector(yimai_tokenize(query))
+  let q2 = char_ngrams(query, 2)
+  let qtok = unique(yimai_tokenize(query))
+  let anchor = first_anchor(query)
+  let cands : Array[(String, Double, Double, Double, Double)] = []
+  for mid, m in self.memories.iter2() {
+    if m.mtype != "tm" {
+      continue
+    }
+    let sim_tok = idf_dice(qv, m.vec, self.tm_idf)
+    let sim_ng = dice_coeff(q2, char_ngrams(m.text, 2))
+    let sim_ts = dice_coeff(qtok, unique(yimai_tokenize(m.text)))
+    let sim_pos = if anchor != "" && term_hit(m.text, anchor) { 1.0 } else { 0.0 }
+    let score = 0.55 * sim_tok + 0.20 * sim_ng + 0.15 * sim_ts + 0.10 * sim_pos
+    if score >= threshold {
+      cands.push((mid, score, sim_tok, sim_ng, sim_ts))
+    }
+  }
+  sort_desc_by_key(cands, fn(c){ c.1 })
+  let sorted = cands
+  let lim = if k > sorted.length() { sorted.length() } else { k }
+  let out : Array[Json] = []
+  let mut i = 0
+  while i < lim {
+    let (mid, score, st, sng, sts) = sorted[i]
+    match self.memories.get(mid) {
+      Some(m) =>
+        out.push(obj([
+          ("id", str_json(mid)),
+          ("source", str_json(m.text)),
+          ("target", str_json(m.translation)),
+          ("score", num_json(r4(score))),
+          ("match_pct", num_json(r4(score * 100.0))),
+          ("sim_token", num_json(r4(st))),
+          ("sim_tfidf", num_json(r4(tfidf_cosine(qv, m.vec, self.tm_idf)))),
+          ("sim_char", num_json(r4(char_ratio(query, m.text)))),
+          ("sim_ngram", num_json(r4(sng))),
+          ("sim_tokenset", num_json(r4(sts))),
+        ]))
+      None => ()
+    }
+    i = i + 1
+  }
+  arr_json(out)
+}
+
+// 旧版模糊匹配（S1 之前的公式）：0.7·token-cosine + 0.3·char-ratio。
+// 保留用于 A/B 对照与平滑迁移（新公式验证通过后可在下个版本移除）。
+pub fn ProphecyEngine::fuzzy_match_legacy(self : ProphecyEngine, query : String, k : Int, threshold : Double) -> Json {
   let qv = tf_vector(yimai_tokenize(query))
   let cands : Array[(String, Double, Double, Double)] = []
   for mid, m in self.memories.iter2() {
-    if m.mtype != "tm" { continue }
+    if m.mtype != "tm" {
+      continue
+    }
     let sim_tok = cosine(qv, m.vec)
     let sim_ch = char_ratio(query, m.text)
     let score = 0.7 * sim_tok + 0.3 * sim_ch
@@ -2382,5 +2578,6 @@ pub fn ProphecyEngine::from_json(data : Json) -> ProphecyEngine {
   e.attn_beta = get_num(data, "attn_beta")
   e.wal_log = get_str_arr(data, "wal_log")
   e.rebuild_role_members()
+  e.rebuild_tm_idf()   // S1：内部态不进 to_json，恢复后重建 IDF 表（幂等）
   e
 }

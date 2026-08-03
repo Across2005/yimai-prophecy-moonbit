@@ -346,6 +346,68 @@ pub fn char_ratio(a : String, b : String) -> Double {
   1.0 - d / mx
 }
 
+// ---------------------------------------------------------------------------
+// 检索强化（S1）：字符 n-gram / 集合 Dice / 首锚 token（零依赖）
+// 用于 fuzzy_match 升级：2-gram 捕捉形态变体，Dice 对短文本比对 Jaccard 更宽容。
+// ---------------------------------------------------------------------------
+
+// 字符 n-gram（不足 n 长度返回空数组；MoonBit 字符串按 UTF-16 码元索引，中文 BMP 一字符一码元）
+fn char_ngrams(s : String, n : Int) -> Array[String] {
+  let out : Array[String] = []
+  let len = s.length()
+  if n <= 0 || len < n {
+    return out
+  }
+  let mut i = 0
+  while i + n <= len {
+    out.push(s[i:i + n].to_owned())
+    i = i + 1
+  }
+  out
+}
+
+// 保持顺序去重
+fn unique(arr : Array[String]) -> Array[String] {
+  let out : Array[String] = []
+  for x in arr {
+    if !arr_contains(out, x) {
+      out.push(x)
+    }
+  }
+  out
+}
+
+// 集合 Dice 系数 = 2|A∩B| / (|A|+|B|)，∈ [0,1]；短文本下比 Jaccard 更宽容
+fn dice_coeff(a : Array[String], b : Array[String]) -> Double {
+  let aset = unique(a)
+  let bset = unique(b)
+  if aset.length() == 0 || bset.length() == 0 {
+    return 0.0
+  }
+  let mut inter = 0
+  for x in aset {
+    if arr_contains(bset, x) {
+      inter = inter + 1
+    }
+  }
+  2.0 * inter.to_double() / (aset.length().to_double() + bset.length().to_double())
+}
+
+// 查询首锚 token：取首个长度≥2 的 token（中文 bigram 或英文整词）；无则取首 token。
+// 用于位置惩罚：锚 token 命中 TM 源文则加分（句首对齐权重）。
+fn first_anchor(query : String) -> String {
+  let toks = yimai_tokenize(query)
+  if toks.length() == 0 {
+    return ""
+  }
+  for t in toks {
+    if t.length() >= 2 {
+      return t
+    }
+  }
+  toks[0]
+}
+
 // 字符串是否以子串 p 开头（用于 xml:lang 前缀匹配，如 en-US/en/zh-CN/zh-Hans）
 fn starts_with(s : String, p : String) -> Bool {
   match str_index(s, p, 0) {

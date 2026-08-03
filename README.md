@@ -4,7 +4,7 @@
 >
 > 在「预测记忆」内核之外，已落地 **#22 翻译记忆（TM）/ 术语库（TB）一等公民**：真正的 fuzzy match（含匹配率%）、concordance 检索、TBX 术语库强制对齐与一致性校验——让引擎从「只预测」走向「预测 + 检索 + 术语守门」。
 
-[![Tests](https://img.shields.io/badge/tests-96%2F96%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
+[![Tests](https://img.shields.io/badge/tests-99%2F99%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Hit@3](https://img.shields.io/badge/Hit%403-0.8246-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![vs Random](https://img.shields.io/badge/3.6x%20%3E%20random-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Leave-one-out](https://img.shields.io/badge/LOO%20generalization-100%25-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
@@ -291,7 +291,8 @@ All public interfaces are methods of `ProphecyEngine` (encoding helpers in `util
 | Method | Signature | Description |
 |--------|-----------|-------------|
 | `add_tm` | `(src, tgt : String) -> String` | Add a translation-memory entry (source→target), build the TF index, return the node id. |
-| `fuzzy_match` | `(query : String, k : Int, threshold : Double) -> Json` | TM fuzzy match Top-K. Match rate = `0.7·token-cosine + 0.3·char-ratio`; returns `match_pct` / `sim_token` / `sim_char`. (建议阈值 `threshold = 0.70`；MoonBit 无默认参数，调用方需显式传入。) |
+| `fuzzy_match` | `(query : String, k : Int, threshold : Double) -> Json` | TM fuzzy match Top-K. **S1 升级评分** = `0.55·idf_dice + 0.20·char-2gram-dice + 0.15·token-set-dice + 0.10·position`（IDF 加权让罕见术语优先、2-gram 捕捉形态变体、token-set Dice 容忍词序重排）；returns `match_pct` / `sim_token` / `sim_tfidf` / `sim_char` / `sim_ngram` / `sim_tokenset`. (建议阈值 `threshold = 0.70`；MoonBit 无默认参数，调用方需显式传入。) |
+| `fuzzy_match_legacy` | `(query : String, k : Int, threshold : Double) -> Json` | 旧公式保留（`0.7·token-cosine + 0.3·char-ratio`），供 A/B 对照与平滑迁移（S1 前行为）。 |
 | `concordance` | `(term : String, k : Int) -> Json` | Concordance search: returns all TM segments containing the query term, scored by term occurrence count (distinct from the `fuzzy_match` similarity score). |
 | `load_tbx` | `(xml : String, src_lang~ : String = "en-US", tgt_lang~ : String = "zh-CN") -> Int` | Parse a TBX (ISO 30042) termbase. Resolves source/target by each `langSet`'s `xml:lang` (default en-US→zh-CN; falls back to document order when absent). Returns the number of concept entries loaded. |
 | `enforce_terms` | `(text : String) -> Json` | Term enforcement: scan text for known terms (Latin terms require word boundaries, so `log` won't false-match `logical`), return hits with translation. |
@@ -303,8 +304,8 @@ All public interfaces are methods of `ProphecyEngine` (encoding helpers in `util
 
 This extension makes translation memory and terminology **first-class citizens** alongside the predictive core. It reuses the existing `yimai_tokenize` / `tf_vector` / `cosine` / `align_diff` / `clamp01` primitives — no new dependencies, no re-invented wheel.
 
-- **`add_tm(src, tgt)`** builds a `MemoryNode` of `mtype="tm"` carrying `text=source`, `translation=target`.
-- **`fuzzy_match`** blends a token-level TF-cosine with a character-level Levenshtein ratio (`char_ratio`); only `mtype=="tm"` nodes are scanned. This mirrors industry Trados-style practice where fuzzy match % is a segment-level approximate-string score (default threshold 70%).
+- **`add_tm(src, tgt)`** builds a `MemoryNode` of `mtype="tm"` carrying `text=source`, `translation=target` (and maintains the TM document-frequency index for IDF).
+- **`fuzzy_match`** (S1 upgrade) scores `0.55·idf_dice + 0.20·char-2gram-dice + 0.15·token-set-dice + 0.10·position` over `mtype=="tm"` nodes only. The IDF table (`ln((N+1)/(df+1))+1`) down-weights frequent words so rare domain terms dominate (R23); char 2-gram catches morphological variants; token-set Dice tolerates word reordering — a Chinese reordered query scores 0.91 with the new formula while the legacy one misses it entirely (R24). The old `0.7·token-cosine + 0.3·char-ratio` formula remains as `fuzzy_match_legacy` for A/B comparison.
 - **`concordance`** counts query-term occurrences per TM segment — *concordance % is term occurrence, distinct from the fuzzy similarity score* (per the research baseline).
 - **`load_tbx`** parses `TBX 2.0` (`<ntig><termGrp><term>` or simplified `<tig><term>`), language-aware via `xml:lang`, into `mtype="term"` nodes with `is_term=true`.
 - **`enforce_terms` / `check_terms`** provide terminology lock-in and missed-term detection, with word-boundary-aware matching for Latin terms.
@@ -372,7 +373,8 @@ All six methods are covered by regression tests **R16–R22** (see [Evaluation](
 ```json
 [
   { "id":"m7", "source":"电池包热管理策略", "target":"Battery pack thermal management strategy",
-    "score":0.91, "match_pct":91.0, "sim_token":0.88, "sim_char":0.95 }
+    "score":0.91, "match_pct":91.0, "sim_token":0.90, "sim_tfidf":0.88,
+    "sim_char":0.95, "sim_ngram":0.86, "sim_tokenset":0.93 }
 ]
 ```
 
@@ -417,8 +419,8 @@ All six methods are covered by regression tests **R16–R22** (see [Evaluation](
 
 All numbers below are produced by `moon test --target wasm-gc` and are reproducible.
 
-**Summary: `Total tests: 96, passed: 96, failed: 0`**
-(4 quantitative acceptance + 10 real-world scenarios + 30 domain demos + 4 pre-existing black-box + 4 supporting + 4 benchmark/credibility + **22 roadmap regression (R1–R22**, of which **R16–R22 cover #22 TM/TB**) + **18 extension-capability regression (E1–E18, covering #2–#7**)).
+**Summary: `Total tests: 99, passed: 99, failed: 0`**
+(4 quantitative acceptance + 10 real-world scenarios + 30 domain demos + 4 pre-existing black-box + 4 supporting + 4 benchmark/credibility + **25 roadmap regression (R1–R25**, of which **R16–R22 cover #22 TM/TB** and **R23–R25 cover S1 fuzzy-match IDF/n-gram/word-order upgrade**) + **18 extension-capability regression (E1–E18, covering #2–#7**)).
 
 | Layer | Check | Result | Evidence |
 |-------|-------|--------|----------|
@@ -437,7 +439,7 @@ All numbers below are produced by `moon test --target wasm-gc` and are reproduci
 | **B2** | Leave-one-out generalization (true train/test split) | ✅ | 8/8 unseen-topic names still get correct next step via D8 role abstraction |
 | **B3** | Robustness under injected noise | ✅ | 2 unrelated observations don't break the learned next-step prediction |
 | **B4** | Quantified recall precision | ✅ | term query Top-3 hits the exact BMS term / liquid-cooled battery example |
-| **#22** | TM/TB regression (R16–R22) | ✅ | fuzzy match % / concordance / TBX load+enforce+check / serialization round-trip, incl. word-boundary (`log`≠`logical`) and 3-language `xml:lang` (`en→zh`, ignores `fr`) |
+| **#22** | TM/TB regression (R16–R25) | ✅ | fuzzy match % (S1 IDF + 2-gram + word-order) / concordance / TBX load+enforce+check / serialization round-trip, incl. word-boundary (`log`≠`logical`), 3-language `xml:lang` (`en→zh`, ignores `fr`), IDF discrimination (R23), word-order tolerance (R24), empty/short-query boundary (R25) |
 | **#2–#7** | Extension regression (E1–E18) | ✅ | QE+MQM (E1–E3, E15–E17) / format-fidelity (E4–E5) / multimodal-OCR-stub (E6–E7) / batch-CI (E8–E9) / TMS XLIFF·TMX (E10–E11, E14, E18) / observability-drift (E12–E13) |
 
 ### Credibility hardening (why the 0.8246 number is trustworthy)
@@ -453,7 +455,7 @@ Reproduce:
 
 ```bash
 cd yimai_prophecy_moonbit
-moon test --target wasm-gc      # all 96 tests
+moon test --target wasm-gc      # all 99 tests
 moon build --target wasm-gc     # library only
 cd cmd/main && moon build --target wasm-gc && moon run .
 ```
@@ -512,7 +514,7 @@ From the "translation-born skill" brainstorm — what's built vs. pending:
 
 | # | Capability | Status | Notes |
 |---|-----------|--------|-------|
-| 1 | **TM / TermBase first-class** (fuzzy match %, concordance, TBX enforcement) | ✅ Done | `moon test` 96/96; reviewed + hardened (word-boundary, `xml:lang`); open-code-review + MoA fixes for `parse_tmx` cross-language/`</tu>` split + `mqm_tags` cross-language false positives + empty-target/language-variant robustness. |
+| 1 | **TM / TermBase first-class** (fuzzy match %, concordance, TBX enforcement) | ✅ Done | `moon test` 99/99; reviewed + hardened (word-boundary, `xml:lang`); S1 fuzzy-match upgrade (IDF + 2-gram + word-order, R23–R25); open-code-review + MoA fixes for `parse_tmx` cross-language/`</tu>` split + `mqm_tags` cross-language false positives + empty-target/language-variant robustness. |
 | 2 | **Quality estimation + MQM auto-eval** | ✅ Done | `qe_score` (0.55·match + 0.30·term + 0.15·char) + `mqm_tags` (terminology/accuracy/fluency/omission w/ severity). Tested E1–E3. |
 | 3 | **Format-fidelity round-trip** | ✅ Done | `check_format_fidelity` (missing/extra tag detection) + `protect_tags` (mask tags to `__TAG__`). Tested E4–E5. |
 | 4 | **Multimodal / screenshot translation** | ✅ Done (OCR external stub) | `ocr_image` (external boundary) + `align_regions` (region ↔ TM align). Zero-dep engine speaks JSON at the OCR boundary; real OCR injected by host. Tested E6–E7. |
