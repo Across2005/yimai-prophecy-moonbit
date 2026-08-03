@@ -51,6 +51,42 @@ async fn handle_request(req : @http.Request, body : &@io.Reader, conn : @http.Se
   } else if path == "/api/consolidate" {
     handle_consolidate(body, conn)
   } else {
+    serve_static(path, conn)
+  }
+}
+
+// ===== 静态文件服务（前端工作台，async 无 serve_directory，手写）=====
+
+// 按扩展名推断 Content-Type
+fn content_type(path : String) -> String {
+  if @lib.str_contains(path, ".html") { "text/html" }
+  else if @lib.str_contains(path, ".js") { "application/javascript" }
+  else if @lib.str_contains(path, ".css") { "text/css" }
+  else if @lib.str_contains(path, ".json") { "application/json" }
+  else if @lib.str_contains(path, ".svg") { "image/svg+xml" }
+  else { "text/plain" }
+}
+
+// 服务 web/ 目录下静态文件（防路径穿越：拒绝 .. 与反斜杠）
+async fn serve_static(path : String, conn : @http.ServerConnection) -> Unit {
+  let rel = if path == "/" || path == "/index.html" {
+    "index.html"
+  } else {
+    path.substring(start=1, end=path.length())
+  }
+  if @lib.str_contains(rel, "..") || @lib.str_contains(rel, "\\") {
+    conn.send_response(403, "Forbidden")
+    conn.end_response()
+    return
+  }
+  let full = "cmd/service/web/" + rel
+  if @fs.exists(full) {
+    let data = @fs.read_file(full)
+    let body = try { data.text() } catch { _ => "" }
+    conn.send_response(200, "OK", extra_headers={ "Content-Type": content_type(rel) })
+    conn.write_string(body)
+    conn.end_response()
+  } else {
     conn.send_response(404, "Not Found")
     conn.end_response()
   }

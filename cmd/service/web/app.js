@@ -1,13 +1,18 @@
 // 译脉·先知 2.0 工作台 —— 消费 cmd/service 13 端点
 "use strict";
 
+// ---------- 基础设施 ----------
 async function api(path, body) {
-  const resp = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body || {}),
-  });
-  return { code: resp.status, json: await resp.json().catch(() => null) };
+  try {
+    const resp = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+    return { code: resp.status, json: await resp.json().catch(() => null) };
+  } catch (e) {
+    return { code: 0, json: { error: "无法连接服务（127.0.0.1:8787）。请先运行：moon run cmd/service --target native" } };
+  }
 }
 
 function esc(s) {
@@ -19,20 +24,37 @@ function esc(s) {
 
 function num(x, d = 4) { return (Number(x) || 0).toFixed(d); }
 
+// toast 反馈
+function toast(msg, type) {
+  const box = document.getElementById("toast");
+  const el = document.createElement("div");
+  el.className = "toast " + (type || "info");
+  el.textContent = msg;
+  box.appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
 // ---------- ① TM 模糊检索 ----------
 async function fuzzyMatch() {
   const box = document.getElementById("fmResult");
   box.innerHTML = '<span class="hint">检索中…</span>';
   const q = document.getElementById("fmQuery").value.trim();
-  if (!q) { box.innerHTML = '<span class="hint">请输入 query。</span>'; return; }
+  if (!q) { box.innerHTML = '<span class="hint">请输入 query，或点「示例」。</span>'; return; }
   const r = await api("/api/fuzzy_match", {
     query: q,
     k: parseInt(document.getElementById("fmK").value) || 3,
     threshold: parseFloat(document.getElementById("fmThr").value) || 0.5,
   });
-  if (r.code !== 200) { box.innerHTML = `<span class="violation">HTTP ${r.code} ${esc(r.json && r.json.error)}</span>`; return; }
+  if (r.code !== 200) {
+    box.innerHTML = `<span class="violation">⚠ ${esc(r.json && r.json.error) || ("HTTP " + r.code)}</span>`;
+    toast(r.json && r.json.error || ("HTTP " + r.code), "err");
+    return;
+  }
   const items = r.json || [];
-  if (!items.length) { box.innerHTML = '<span class="hint">无匹配（阈值内）。可先在 ③ 面板或 add_tm 灌入 TM。</span>'; return; }
+  if (!items.length) {
+    box.innerHTML = '<span class="hint">无匹配（阈值内）。先到 ③ 记录步骤灌入记忆，或降低 threshold 重试。</span>';
+    return;
+  }
   box.innerHTML = items.map(it => `
     <div class="item">
       <div class="src">${esc(it.source)}</div>
@@ -40,6 +62,14 @@ async function fuzzyMatch() {
       <div class="score">match_pct ${num(it.match_pct, 2)}% · score ${num(it.score)}</div>
       <div class="meta">sim_token ${num(it.sim_token)} · sim_tfidf ${num(it.sim_tfidf)} · sim_char ${num(it.sim_char)} · sim_ngram ${num(it.sim_ngram)} · sim_tokenset ${num(it.sim_tokenset)}</div>
     </div>`).join("");
+}
+
+function fmExample() {
+  document.getElementById("fmQuery").value = "电池包热管理方案";
+  document.getElementById("fmK").value = "3";
+  document.getElementById("fmThr").value = "0.5";
+  toast("已填入示例，正在检索…", "info");
+  fuzzyMatch();
 }
 
 // ---------- ② 术语一致性校验 ----------
@@ -50,13 +80,25 @@ async function checkTerms() {
     source: document.getElementById("ctSrc").value.trim(),
     target: document.getElementById("ctTgt").value.trim(),
   });
-  if (r.code !== 200) { box.innerHTML = `<span class="violation">HTTP ${r.code}</span>`; return; }
+  if (r.code !== 200) {
+    box.innerHTML = `<span class="violation">⚠ ${esc(r.json && r.json.error) || ("HTTP " + r.code)}</span>`;
+    toast("校验失败：" + (r.json && r.json.error || r.code), "err");
+    return;
+  }
   const viol = r.json || [];
-  if (!viol.length) { box.innerHTML = '<span class="score">✓ 术语一致，无违规。</span>'; return; }
+  if (!viol.length) { box.innerHTML = '<span class="score">✓ 术语一致，无违规。</span>'; toast("✓ 术语一致", "ok"); return; }
   box.innerHTML = viol.map(v => `
     <div class="item violation">
       术语「${esc(v.term)}」→ 期望「${esc(v.expected)}」<span class="meta">mid=${esc(v.mid)}</span>
     </div>`).join("");
+  toast(`发现 ${viol.length} 处术语违规`, "err");
+}
+
+function ctExample() {
+  document.getElementById("ctSrc").value = "install the sensor";
+  document.getElementById("ctTgt").value = "安装设备";
+  toast("已填入示例（sensor 漏译），正在校验…", "info");
+  checkTerms();
 }
 
 async function concordance() {
@@ -68,7 +110,10 @@ async function concordance() {
     term,
     k: parseInt(document.getElementById("ccK").value) || 3,
   });
-  if (r.code !== 200) { box.innerHTML = `<span class="violation">HTTP ${r.code}</span>`; return; }
+  if (r.code !== 200) {
+    box.innerHTML = `<span class="violation">⚠ ${esc(r.json && r.json.error) || ("HTTP " + r.code)}</span>`;
+    return;
+  }
   const items = r.json || [];
   if (!items.length) { box.innerHTML = '<span class="hint">TM 中暂无含该术语的段。</span>'; return; }
   box.innerHTML = items.map(it => `
@@ -84,11 +129,14 @@ async function predict() {
   const box = document.getElementById("prResult");
   box.innerHTML = '<span class="hint">预测中…</span>';
   const r = await api("/api/predict", { k: parseInt(document.getElementById("prK").value) || 3 });
-  if (r.code !== 200) { box.innerHTML = `<span class="violation">HTTP ${r.code}</span>`; return; }
+  if (r.code !== 200) {
+    box.innerHTML = `<span class="violation">⚠ ${esc(r.json && r.json.error) || ("HTTP " + r.code)}</span>`;
+    return;
+  }
   const preds = (r.json && r.json.predictions) || [];
   const conf = r.json ? r.json.confidence : 0;
   if (!preds.length) {
-    box.innerHTML = `<div class="hint">无可预测步骤（记忆为空）。可先在下方 observe 记录步骤，或在 TM 面板灌入句对。</div>`;
+    box.innerHTML = `<div class="hint">无可预测步骤（记忆为空）。点「示例」灌入两步工作流，或在下框 observe 记录步骤。</div>`;
     return;
   }
   box.innerHTML = `
@@ -106,12 +154,25 @@ async function predict() {
       </div>`).join("")}`;
 }
 
+function prExample() {
+  (async () => {
+    await api("/api/observe", { text: "解析源文件结构", mtype: "step" });
+    await api("/api/observe", { text: "提取核心术语表并锁定", mtype: "step" });
+    toast("已灌入两步工作流，正在预测第三步…", "info");
+    predict();
+    refreshCount();
+  })();
+}
+
 async function explain(mid) {
   const box = document.getElementById("ex-" + mid);
   if (!box) return;
   box.innerHTML = '<span class="hint">加载…</span>';
   const r = await api("/api/explain", { mid });
-  if (r.code !== 200) { box.innerHTML = `<span class="violation">HTTP ${r.code}</span>`; return; }
+  if (r.code !== 200) {
+    box.innerHTML = `<span class="violation">⚠ HTTP ${r.code}</span>`;
+    return;
+  }
   const j = r.json || {};
   const vb = j.value_breakdown || {};
   box.innerHTML = `
@@ -127,10 +188,10 @@ async function explain(mid) {
 async function reward(mid, score) {
   const r = await api("/api/reward", { mid, score });
   if (r.code === 200) {
-    alert(`已采纳反馈：${mid} score=${score}（predictive_value 已更新并落盘）`);
+    toast(`✓ 已${score > 0 ? "采纳" : "拒绝"} ${mid}（predictive_value 已更新并落盘）`, "ok");
     refreshCount();
   } else {
-    alert(`反馈失败：${r.json ? r.json.error : r.code}`);
+    toast(`反馈失败：${r.json ? r.json.error : r.code}`, "err");
   }
 }
 
@@ -140,17 +201,23 @@ async function observe() {
   if (!text) { box.innerHTML = '<span class="hint">请输入步骤文本。</span>'; return; }
   box.innerHTML = '<span class="hint">写入中…</span>';
   const r = await api("/api/observe", { text, mtype: "step" });
-  if (r.code !== 200) { box.innerHTML = `<span class="violation">HTTP ${r.code} ${esc(r.json && r.json.error)}</span>`; return; }
+  if (r.code !== 200) {
+    box.innerHTML = `<span class="violation">⚠ ${esc(r.json && r.json.error) || ("HTTP " + r.code)}</span>`;
+    return;
+  }
   box.innerHTML = `<span class="score">✓ 已记录 ${esc(r.json.mid)}，记忆 + 转移已落盘。</span>`;
   document.getElementById("obText").value = "";
+  toast(`✓ 已记录 ${r.json.mid}`, "ok");
   refreshCount();
 }
 
 async function refreshCount() {
-  const r = await fetch("/api/tm_count");
-  if (!r.ok) return;
-  const j = await r.json();
-  document.getElementById("tmCount").textContent = "TM: " + (j.tm_count ?? "--");
+  try {
+    const r = await fetch("/api/tm_count");
+    if (!r.ok) return;
+    const j = await r.json();
+    document.getElementById("tmCount").textContent = "TM: " + (j.tm_count ?? "--");
+  } catch (e) { /* 服务未启动时静默 */ }
 }
 
 refreshCount();

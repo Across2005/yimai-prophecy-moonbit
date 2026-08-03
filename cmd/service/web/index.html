@@ -12,11 +12,17 @@
     --mono: "Cascadia Code", Consolas, monospace;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font: 14px/1.6 system-ui, "Segoe UI", sans-serif; padding: 24px; }
-  header { display: flex; align-items: baseline; gap: 16px; margin-bottom: 20px; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.6 system-ui, "Segoe UI", sans-serif; padding: 24px; max-width: 1500px; margin: 0 auto; }
+  header { display: flex; align-items: baseline; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; }
   h1 { font-size: 20px; font-weight: 600; }
   h1 span { color: var(--acc); }
   #tmCount { color: var(--dim); font: 12px var(--mono); }
+  /* 三步引导 */
+  .guide { background: #1d2a38; border: 1px solid #2f4a63; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; display: flex; gap: 22px; flex-wrap: wrap; align-items: center; font-size: 13px; }
+  .guide .step { display: flex; gap: 8px; align-items: center; }
+  .guide .num { width: 22px; height: 22px; border-radius: 50%; background: #24506b; color: #dff6ff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; flex: 0 0 auto; }
+  .guide a { color: var(--acc); text-decoration: none; border-bottom: 1px dashed var(--acc); }
+  .guide a:hover { color: #8fe0ff; }
   .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
   @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
@@ -27,11 +33,13 @@
   button { background: #24506b; color: #dff6ff; border: 1px solid #2f6f94; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; white-space: nowrap; }
   button:hover { background: #2c6082; }
   button.mini { padding: 3px 10px; font-size: 12px; }
+  button.ex { background: #3a3a52; border-color: #4a4a6a; color: #d8d8ef; }
+  button.ex:hover { background: #46466a; }
   button.ok-btn { background: #1f5a44; border-color: #2f8a66; color: #d8fff0; }
   button.ok-btn:hover { background: #27694f; }
   button.bad-btn { background: #5a2330; border-color: #8a2f40; color: #ffdde2; }
   button.bad-btn:hover { background: #6d2a3a; }
-  .result { background: var(--panel2); border-radius: 8px; padding: 10px; font-size: 13px; max-height: 420px; overflow-y: auto; }
+  .result { background: var(--panel2); border-radius: 8px; padding: 10px; font-size: 13px; max-height: 360px; overflow-y: auto; }
   .item { border-bottom: 1px solid var(--line); padding: 8px 2px; }
   .item:last-child { border-bottom: none; }
   .item .src { color: var(--text); }
@@ -45,64 +53,82 @@
   details { margin-top: 6px; }
   summary { cursor: pointer; color: var(--acc); font-size: 12px; }
   code { font: 11px var(--mono); color: var(--dim); word-break: break-all; }
+  /* toast */
+  #toast { position: fixed; top: 18px; right: 18px; z-index: 99; display: flex; flex-direction: column; gap: 8px; }
+  .toast { padding: 10px 16px; border-radius: 8px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.4); animation: fadein .2s ease; max-width: 340px; }
+  .toast.ok { background: #1f5a44; border: 1px solid #2f8a66; color: #d8fff0; }
+  .toast.err { background: #5a2330; border: 1px solid #8a2f40; color: #ffdde2; }
+  .toast.info { background: #1d2a38; border: 1px solid #2f4a63; color: #d8ecff; }
+  @keyframes fadein { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; } }
 </style>
 </head>
 <body>
 <header>
   <h1>译脉·先知 <span>2.0</span> 工作台</h1>
   <span id="tmCount">TM: --</span>
-  <span class="hint">纯 MoonBit 服务 · 127.0.0.1:8787 · 记忆闭环：学习 → 预测 → 反馈 → 固化</span>
+  <button class="mini ex" onclick="refreshCount()" title="重新读取 TM 存量">↻ 刷新存量</button>
 </header>
+
+<!-- 三步使用引导 -->
+<div class="guide">
+  <span class="hint">三步使用：</span>
+  <span class="step"><span class="num">1</span> 先<b>灌入记忆</b>——在 ③ 记录步骤，或点「示例」一键填入</span>
+  <span class="step"><span class="num">2</span> 再<b>查询</b>——① 模糊检索 TM / ② 校验术语</span>
+  <span class="step"><span class="num">3</span> 最后<b>看证据链 + 反馈</b>——点预测项「白盒」，用「采纳/拒绝」教引擎</span>
+</div>
 
 <div class="grid">
 
   <!-- 面板 1：TM 检索 -->
-  <section class="panel">
+  <section class="panel" id="p-fm">
     <h2>① TM 模糊检索</h2>
     <div class="row">
       <input id="fmQuery" placeholder="源文 query，如：电池包热管理方案">
       <input id="fmK" style="flex:0 0 60px" value="3" title="Top-K">
       <input id="fmThr" style="flex:0 0 72px" value="0.5" title="threshold">
       <button onclick="fuzzyMatch()">检索</button>
+      <button class="ex" onclick="fmExample()" title="一键填入示例并检索">示例</button>
     </div>
-    <div class="result" id="fmResult"><span class="hint">输入源文后检索 TM，查看 S1 四分量白盒分数。</span></div>
+    <div class="result" id="fmResult"><span class="hint">👆 输入源文点「检索」；没数据先点「示例」或到 ③ 灌入。</span></div>
   </section>
 
   <!-- 面板 2：术语校验 -->
-  <section class="panel">
+  <section class="panel" id="p-ct">
     <h2>② 术语一致性校验</h2>
     <div class="row">
       <input id="ctSrc" placeholder="source：install the sensor">
       <input id="ctTgt" placeholder="target：安装设备">
       <button onclick="checkTerms()">校验</button>
+      <button class="ex" onclick="ctExample()">示例</button>
     </div>
-    <div class="result" id="ctResult"><span class="hint">check_terms 返回漏译/错译术语违规；concordance 展示术语在 TM 中的上下文。</span></div>
+    <div class="result" id="ctResult"><span class="hint">👆 check_terms 查漏译术语；点「示例」看违规样例（术语「传感器」被漏译）。</span></div>
     <div class="row" style="margin-top:10px">
-      <input id="ccTerm" placeholder="concordance 术语，如：传感器">
+      <input id="ccTerm" placeholder="concordance 术语，如：电池">
       <input id="ccK" style="flex:0 0 60px" value="3" title="k">
       <button onclick="concordance()">上下文</button>
     </div>
-    <div class="result" id="ccResult"><span class="hint">含该术语的 TM 段（按出现频次计分）。</span></div>
+    <div class="result" id="ccResult"><span class="hint">👆 查含该术语的 TM 段（按出现频次计分）。</span></div>
   </section>
 
   <!-- 面板 3：证据链 + 反馈 -->
-  <section class="panel">
+  <section class="panel" id="p-pr">
     <h2>③ 下一步预测 · 证据链 · 反馈</h2>
     <div class="row">
       <input id="prK" style="flex:0 0 60px" value="3" title="Top-K">
       <button onclick="predict()">预测下一步</button>
-      <button onclick="refreshCount()" title="刷新存量">↻ TM 数</button>
+      <button class="ex" onclick="prExample()">示例</button>
     </div>
-    <div class="result" id="prResult"><span class="hint">predict 返回 Top-K 预测 + 路径证据。点「白盒」展开 explain_card；「采纳/拒绝」调用 reward 写入反馈闭环。</span></div>
+    <div class="result" id="prResult"><span class="hint">👆 先「示例」灌入两步工作流，再预测第三步；点预测项「白盒」看证据链，「采纳/拒绝」写反馈。</span></div>
     <div class="row" style="margin-top:10px">
       <input id="obText" placeholder="observe 记录真实步骤，如：生成双语对照草稿">
       <button onclick="observe()">记录步骤</button>
     </div>
-    <div class="result" id="obResult"><span class="hint">observe 把真实步骤写入记忆 → 转移计数 → 下次预测更准。</span></div>
+    <div class="result" id="obResult"><span class="hint">👆 把真实步骤写入记忆 → 转移计数 → 下次预测更准。</span></div>
   </section>
 
 </div>
 
+<div id="toast"></div>
 <script src="/app.js"></script>
 </body>
 </html>

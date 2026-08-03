@@ -41,9 +41,6 @@ async fn save_store() -> Unit {
     @fs.write_file(tmp, json_str, create_mode=@fs.CreateMode::CreateOrTruncate)
     @fs.rename(tmp, TM_STORE_PATH)
   } catch {
-    err => {
-      let diag = "save_store error: " + err.to_string()
-      try { @fs.write_file("C:/Users/19207/save_diag.txt", diag, create_mode=@fs.CreateMode::CreateOrTruncate) } catch { _ => () }
-    }
+    err => println("save_store error: \{err}")
   }
 }
