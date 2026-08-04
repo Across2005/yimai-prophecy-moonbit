@@ -126,6 +126,20 @@
     <div class="result" id="obResult"><span class="hint">👆 把真实步骤写入记忆 → 转移计数 → 下次预测更准。</span></div>
   </section>
 
+  <!-- 面板 4：记忆图谱 -->
+  <section class="panel" id="p-graph">
+    <h2>④ 记忆图谱（可视化）</h2>
+    <div class="row">
+      <input id="grQuery" placeholder="召回查询，如：电池" value="电池">
+      <input id="grK" style="flex:0 0 60px" value="8" title="节点数上限">
+      <button onclick="graph()">绘制图谱</button>
+      <button class="ex" onclick="grExample()" title="一键填入示例并绘制">示例</button>
+    </div>
+    <div class="result" id="grResult" style="overflow-x:auto">
+      <span class="hint">👆 输入查询点「绘制图谱」：节点=召回记忆（按相似度环形布局），连线=记忆间关联（via_edges）；点节点看白盒。</span>
+    </div>
+  </section>
+
 </div>
 
 <div id="toast"></div>

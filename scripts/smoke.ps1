@@ -56,6 +56,41 @@ $call = Invoke-RestMethod -Method Post -Uri "$base/mcp" -ContentType "applicatio
         -Body '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tm_count","arguments":{}}}'
 Check "MCP tools/call tm_count" ($call.result.content.Count -ge 1)
 
+# --- 待办补齐端点（S4/M1/M2/M3/M5/FedAvg/蒸馏）---
+$rp = Invoke-RestMethod -Method Post -Uri "$base/api/retrieve_prompt" -ContentType "application/json" `
+      -Body '{"query":"电池包热管理","k":1,"threshold":0.3}'
+Check "retrieve_prompt 三段式" ($null -ne $rp.suggestions -and $null -ne $rp.terms -and $null -ne $rp.glossary)
+
+$bleu = Invoke-RestMethod -Method Post -Uri "$base/api/bleu" -ContentType "application/json" `
+        -Body '{"ref":"the cat is on the mat","hyp":"the cat is on the mat"}'
+Check "bleu 完全匹配=1" ($bleu.bleu -eq 1)
+
+$chrf = Invoke-RestMethod -Method Post -Uri "$base/api/chrf" -ContentType "application/json" `
+        -Body '{"ref":"the cat is on the mat","hyp":"the cat is on the mat"}'
+Check "chrf 完全匹配=1" ($chrf.chrf -eq 1)
+
+$sc = Invoke-RestMethod -Method Post -Uri "$base/api/style_check" -ContentType "application/json" `
+      -Body '{"text":"测试。。"}'
+Check "style_check 返回数组" ($sc -is [array])
+
+$ba = Invoke-RestMethod -Method Post -Uri "$base/api/back_align" -ContentType "application/json" `
+      -Body '{"source":"install sensor","target":"install the sensor"}'
+Check "back_align 分数" ($ba.align_score -gt 0.5)
+
+$tc = Invoke-RestMethod -Method Post -Uri "$base/api/term_conflicts" -ContentType "application/json" -Body '{}'
+Check "term_conflicts 返回数组" ($tc -is [array])
+
+$fe = Invoke-RestMethod -Method Post -Uri "$base/api/fed_export" -ContentType "application/json" -Body '{}'
+Check "fed_export" ($null -ne $fe.added)
+
+$di = Invoke-RestMethod -Method Post -Uri "$base/api/distill_inject" -ContentType "application/json" `
+      -Body '{"table":{"测试":0.5}}'
+Check "distill_inject" ($di.status -eq "injected")
+
+$mcp22 = Invoke-RestMethod -Method Post -Uri "$base/mcp" -ContentType "application/json" `
+         -Body '{"jsonrpc":"2.0","id":9,"method":"tools/list"}'
+Check "MCP tools/list = 22" ($mcp22.result.tools.Count -eq 22)
+
 Write-Host ""
 Write-Host "== smoke result: $pass passed, $fail failed =="
 if ($fail -gt 0) { exit 1 }
