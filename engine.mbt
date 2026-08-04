@@ -648,12 +648,38 @@ pub fn ProphecyEngine::recall(
     }
     return out
   }
-  // 种子：与查询最相似的若干节点
+  // 种子：先按角色索引（role_members）剪枝候选池（S2），空池降级全图
+  let role_keys = roles_of(query)
+  let pool : Map[String, Bool] = Map::from_iter(([] : Array[(String, Bool)]).iter())
+  for rk in role_keys {
+    match self.role_members.get(rk) {
+      Some(mids) =>
+        for mid in mids {
+          pool.set(mid, true)
+        }
+      None => ()
+    }
+  }
   let sims : Array[(String, Double)] = []
-  for mid, m in self.memories.iter2() {
-    let s = cosine(qvec, m.vec)
-    if s > 0.05 {
-      sims.push((mid, s))
+  if pool.size() > 0 {
+    for mid, _ in pool.iter2() {
+      match self.memories.get(mid) {
+        Some(m) => {
+          let s = cosine(qvec, m.vec)
+          if s > 0.05 {
+            sims.push((mid, s))
+          }
+        }
+        None => ()
+      }
+    }
+  } else {
+    // 降级：全图扫描（角色索引为空时保持原行为）
+    for mid, m in self.memories.iter2() {
+      let s = cosine(qvec, m.vec)
+      if s > 0.05 {
+        sims.push((mid, s))
+      }
     }
   }
   if sims.length() == 0 {
@@ -2581,3 +2607,212 @@ pub fn ProphecyEngine::from_json(data : Json) -> ProphecyEngine {
   e.rebuild_tm_idf()   // S1：内部态不进 to_json，恢复后重建 IDF 表（幂等）
   e
 }
+
+// ===== M1 风格一致性检查（启发式，确定性）=====
+pub fn ProphecyEngine::style_check(self : ProphecyEngine, text : String) -> Json {
+  let issues : Array[Json] = []
+  let sentences = text.split("。").to_array().map(fn(x) { x.to_string() })
+  // 1. 句长（>80 字符提示）
+  for s in sentences {
+    if s.length() > 80 {
+      issues.push(obj([
+        ("rule", str_json("sentence_length")),
+        ("level", str_json("info")),
+        ("message", str_json("句子过长（" + s.length().to_string() + " 字符），建议拆分。")),
+      ]))
+    }
+  }
+  // 2. 重复标点 / 连续空格
+  if str_contains(text, "  ") {
+    issues.push(obj([
+      ("rule", str_json("double_space")),
+      ("level", str_json("warning")),
+      ("message", str_json("存在连续空格。")),
+    ]))
+  }
+  if str_contains(text, "..") || str_contains(text, "。。") {
+    issues.push(obj([
+      ("rule", str_json("repeated_punct")),
+      ("level", str_json("warning")),
+      ("message", str_json("存在重复标点。")),
+    ]))
+  }
+  // 3. 全角/半角括号混用
+  let has_full = str_contains(text, "（") || str_contains(text, "）")
+  let has_half = str_contains(text, "(") || str_contains(text, ")")
+  if has_full && has_half {
+    issues.push(obj([
+      ("rule", str_json("bracket_mix")),
+      ("level", str_json("info")),
+      ("message", str_json("全角/半角括号混用，建议统一。")),
+    ]))
+  }
+  // 4. 术语命中提示（术语库中出现的词）
+  let term_hits = self.enforce_terms(text)
+  let hit_count = match term_hits {
+    Json::Array(a) => a.length()
+    _ => 0
+  }
+  if hit_count > 0 {
+    issues.push(obj([
+      ("rule", str_json("term_hits")),
+      ("level", str_json("info")),
+      ("message", str_json("命中 " + hit_count.to_string() + " 个库内术语，注意按术语库译文统一。")),
+    ]))
+  }
+  arr_json(issues)
+}
+
+// ===== M2 回译验证（LCS 对齐质量）=====
+pub fn ProphecyEngine::back_align(self : ProphecyEngine, source : String, target : String) -> Json {
+  let ops = align_diff(source, target)
+  let mut match_n = 0
+  let mis : Array[Json] = []
+  let mut cur_a = ""
+  let mut cur_b = ""
+  for op in ops {
+    match op {
+      (0, _, _) => {
+        if cur_a != "" {
+          mis.push(obj([("side", str_json("a")), ("frag", str_json(cur_a))]))
+          cur_a = ""
+        }
+        if cur_b != "" {
+          mis.push(obj([("side", str_json("b")), ("frag", str_json(cur_b))]))
+          cur_b = ""
+        }
+        match_n = match_n + 1
+      }
+      (1, i, _) => {
+        if i < source.length() {
+          cur_a = cur_a + (match source[i].to_char() { Some(ch) => ch.to_string(); None => "" })
+        }
+      }
+      (2, _, j) => {
+        if j < target.length() {
+          cur_b = cur_b + (match target[j].to_char() { Some(ch) => ch.to_string(); None => "" })
+        }
+      }
+      _ => ()
+    }
+  }
+  if cur_a != "" {
+    mis.push(obj([("side", str_json("a")), ("frag", str_json(cur_a))]))
+  }
+  if cur_b != "" {
+    mis.push(obj([("side", str_json("b")), ("frag", str_json(cur_b))]))
+  }
+  let denom = if source.length() > target.length() { source.length() } else { target.length() }
+  let score = if denom > 0 { r4(match_n.to_double() / denom.to_double()) } else { 1.0 }
+  obj([
+    ("align_score", num_json(score)),
+    ("match_chars", num_json(match_n.to_double())),
+    ("misaligns", arr_json(mis)),
+  ])
+}
+
+// ===== M3 术语冲突检测（一词多译 / 多词一译）=====
+pub fn ProphecyEngine::term_conflicts(self : ProphecyEngine) -> Json {
+  // 收集术语节点：text -> translation
+  let by_src : Map[String, Array[String]] = Map::from_iter(([] : Array[(String, Array[String])]).iter())
+  let by_tgt : Map[String, Array[String]] = Map::from_iter(([] : Array[(String, Array[String])]).iter())
+  for mid, m in self.memories.iter2() {
+    if m.is_term && m.translation != "" {
+      let s1 = match by_src.get(m.text) {
+        Some(v) => v
+        None => []
+      }
+      let s2 = s1
+      let mut dup_src = false
+      for t in s2 {
+        if t == m.translation { dup_src = true }
+      }
+      if !dup_src {
+        s2.push(m.translation)
+        by_src.set(m.text, s2)
+      }
+      let t1 = match by_tgt.get(m.translation) {
+        Some(v) => v
+        None => []
+      }
+      let t2 = t1
+      let mut dup_tgt = false
+      for s in t2 {
+        if s == m.text { dup_tgt = true }
+      }
+      if !dup_tgt {
+        t2.push(m.text)
+        by_tgt.set(m.translation, t2)
+      }
+    }
+  }
+  let conflicts : Array[Json] = []
+  // 一词多译
+  for src, tgts in by_src.iter2() {
+    if tgts.length() > 1 {
+      let ts : Array[Json] = Array::map(tgts, fn(t) { str_json(t) })
+      conflicts.push(obj([
+        ("kind", str_json("one_to_many")),
+        ("term", str_json(src)),
+        ("translations", arr_json(ts)),
+      ]))
+    }
+  }
+  // 多词一译
+  for tgt, srcs in by_tgt.iter2() {
+    if srcs.length() > 1 {
+      let ss : Array[Json] = Array::map(srcs, fn(s) { str_json(s) })
+      conflicts.push(obj([
+        ("kind", str_json("many_to_one")),
+        ("translation", str_json(tgt)),
+        ("terms", arr_json(ss)),
+      ]))
+    }
+  }
+  arr_json(conflicts)
+}
+
+// ===== M1 风格一致性检查（启发式，确定性）=====
+// ===== M5 TMPlm：为 LLM prompt 组装检索上下文（三段式，全复用既有能力）=====
+// 返回 {"suggestions": TM 相似句, "terms": 术语命中, "glossary": 术语上下文}
+pub fn ProphecyEngine::retrieve_for_prompt(
+  self : ProphecyEngine,
+  query : String,
+  k : Int,
+  threshold : Double,
+) -> Json {
+  let suggestions = self.fuzzy_match(query, k, threshold)
+  let term_hits = self.enforce_terms(query)
+  // glossary：术语 → concordance 上下文（按 id 去重）
+  let gloss : Array[Json] = []
+  let seen : Map[String, Bool] = Map::from_iter(([] : Array[(String, Bool)]).iter())
+  match term_hits {
+    Json::Array(items) =>
+      for item in items {
+        let term = get_str(item, "term")
+        if term != "" {
+          let ctx = self.concordance(term, 3)
+          match ctx {
+            Json::Array(arr) =>
+              for c in arr {
+                let cid = get_str(c, "id")
+                if cid != "" && not(seen.contains(cid)) {
+                  seen.set(cid, true)
+                  gloss.push(c)
+                }
+              }
+            _ => ()
+          }
+        }
+      }
+    _ => ()
+  }
+  obj([
+    ("suggestions", suggestions),
+    ("terms", term_hits),
+    ("glossary", arr_json(gloss)),
+  ])
+}
+
+// ===== M5 TMPlm：为 LLM prompt 组装检索上下文（三段式，全复用既有能力）=====
+// 返回 {"suggestions": TM 相似句, "terms": 术语命中, "glossary": 术语上下文}

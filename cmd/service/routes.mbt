@@ -50,6 +50,24 @@ async fn handle_request(req : @http.Request, body : &@io.Reader, conn : @http.Se
     handle_reward(body, conn)
   } else if path == "/api/consolidate" {
     handle_consolidate(body, conn)
+  } else if path == "/api/retrieve_prompt" {
+    handle_retrieve_prompt(body, conn)
+  } else if path == "/api/bleu" {
+    handle_bleu(body, conn)
+  } else if path == "/api/chrf" {
+    handle_chrf(body, conn)
+  } else if path == "/api/style_check" {
+    handle_style_check(body, conn)
+  } else if path == "/api/back_align" {
+    handle_back_align(body, conn)
+  } else if path == "/api/term_conflicts" {
+    handle_term_conflicts(body, conn)
+  } else if path == "/api/fed_export" {
+    handle_fed_export(body, conn)
+  } else if path == "/api/fed_import" {
+    handle_fed_import(body, conn)
+  } else if path == "/api/distill_inject" {
+    handle_distill_inject(body, conn)
   } else if path == "/mcp" {
     // MCP Server 变体（spec 2025-11-25，Streamable HTTP；实现见 mcp.mbt）
     handle_mcp(req, body, conn)
@@ -319,3 +337,142 @@ async fn handle_consolidate(body : &@io.Reader, conn : @http.ServerConnection) -
     _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
   }
 }
+
+// ===== 待办补齐端点（S4/M1/M2/M3/M5/FedAvg/蒸馏）=====
+
+// POST /api/retrieve_prompt  {"query","k","threshold"}  TMPlm 三段式 prompt 上下文
+async fn handle_retrieve_prompt(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let parsed = read_json_body(body)
+  match parsed {
+    Some(Json::Object(o)) => {
+      let query = json_str(o, "query")
+      let k = match o.get("k") {
+        Some(Json::Number(n, ..)) => n.to_int()
+        _ => 3
+      }
+      let thr = match o.get("threshold") {
+        Some(Json::Number(n, ..)) => n
+        _ => 0.70
+      }
+      let result = engine_ref.val.retrieve_for_prompt(query, k, thr)
+      send_json(conn, 200, result.stringify())
+    }
+    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+  }
+}
+
+// POST /api/bleu  {"ref","hyp"}  BLEU-4 评测
+async fn handle_bleu(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let parsed = read_json_body(body)
+  match parsed {
+    Some(Json::Object(o)) => {
+      let ref = json_str(o, "ref")
+      let hyp = json_str(o, "hyp")
+      let score = @lib.bleu_score(ref, hyp)
+      send_json(conn, 200, "{\"bleu\":" + score.to_string() + "}")
+    }
+    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+  }
+}
+
+// POST /api/chrf  {"ref","hyp"}  chrF++ 评测
+async fn handle_chrf(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let parsed = read_json_body(body)
+  match parsed {
+    Some(Json::Object(o)) => {
+      let ref = json_str(o, "ref")
+      let hyp = json_str(o, "hyp")
+      let score = @lib.chrf_score(ref, hyp)
+      send_json(conn, 200, "{\"chrf\":" + score.to_string() + "}")
+    }
+    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+  }
+}
+
+// POST /api/style_check  {"text"}  风格一致性检查
+async fn handle_style_check(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let parsed = read_json_body(body)
+  match parsed {
+    Some(Json::Object(o)) => {
+      let text = json_str(o, "text")
+      let result = engine_ref.val.style_check(text)
+      send_json(conn, 200, result.stringify())
+    }
+    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+  }
+}
+
+// POST /api/back_align  {"source","target"}  回译 LCS 对齐
+async fn handle_back_align(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let parsed = read_json_body(body)
+  match parsed {
+    Some(Json::Object(o)) => {
+      let source = json_str(o, "source")
+      let target = json_str(o, "target")
+      let result = engine_ref.val.back_align(source, target)
+      send_json(conn, 200, result.stringify())
+    }
+    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+  }
+}
+
+// POST /api/term_conflicts  {}  术语冲突检测
+async fn handle_term_conflicts(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let result = engine_ref.val.term_conflicts()
+  send_json(conn, 200, result.stringify())
+}
+
+// POST /api/fed_export  {}  联邦增量导出
+async fn handle_fed_export(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let result = engine_ref.val.fed_export()
+  send_json(conn, 200, result.stringify())
+}
+
+// POST /api/fed_import  {"added","updated"}  联邦增量导入（写操作落盘）
+async fn handle_fed_import(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let parsed = read_json_body(body)
+  match parsed {
+    Some(Json::Object(o)) => {
+      let added = match o.get("added") {
+        Some(Json::Number(n, ..)) => n.to_int()
+        _ => 0
+      }
+      let updated = match o.get("updated") {
+        Some(Json::Number(n, ..)) => n.to_int()
+        _ => 0
+      }
+      engine_ref.val.fed_import(added, updated)
+      try { save_store() } catch { err => println("save_store error: \{err}") }
+      send_json(conn, 200, "{\"status\":\"imported\"}")
+    }
+    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+  }
+}
+
+// POST /api/distill_inject  {"table":{"role":0.5}}  蒸馏表注入（写操作落盘）
+async fn handle_distill_inject(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let parsed = read_json_body(body)
+  match parsed {
+    Some(Json::Object(o)) => {
+      let table : Map[String, Double] = Map::new()
+      match o.get("table") {
+        Some(Json::Object(t)) =>
+          for k, v in t.iter2() {
+            match v {
+              Json::Number(n, ..) => table.set(k, n)
+              _ => ()
+            }
+          }
+        _ => ()
+      }
+      engine_ref.val.inject_distillation(table)
+      try { save_store() } catch { err => println("save_store error: \{err}") }
+      send_json(conn, 200, "{\"status\":\"injected\",\"keys\":" + table.size().to_string() + "}")
+    }
+    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+  }
+}
+
+// ===== 待办补齐端点（S4/M1/M2/M3/M5/FedAvg/蒸馏）=====
+
+// POST /api/retrieve_prompt  {"query","k","threshold"}  TMPlm 三段式 prompt 上下文

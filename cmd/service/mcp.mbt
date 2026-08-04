@@ -163,13 +163,43 @@ fn all_tools() -> Json {
     ], []),
     tool_def("tm_count", "TM 条目存量统计", [], []),
     tool_def("ping", "健康检查", [], []),
+    tool_def("retrieve_prompt", "TMPlm：为 LLM prompt 组装三段式检索上下文（suggestions/terms/glossary）", [
+      ("query", schema_prop("string", "源文查询")),
+      ("k", schema_prop("integer", "Top-K（默认 3）")),
+      ("threshold", schema_prop("number", "相似度阈值（默认 0.70）")),
+    ], ["query"]),
+    tool_def("bleu", "BLEU-4 评测（ref vs hyp）", [
+      ("ref", schema_prop("string", "参考译文")),
+      ("hyp", schema_prop("string", "候选译文")),
+    ], ["ref", "hyp"]),
+    tool_def("chrf", "chrF++ 评测（ref vs hyp）", [
+      ("ref", schema_prop("string", "参考译文")),
+      ("hyp", schema_prop("string", "候选译文")),
+    ], ["ref", "hyp"]),
+    tool_def("style_check", "风格一致性检查（句长/标点/括号/术语命中）", [
+      ("text", schema_prop("string", "待检查文本")),
+    ], ["text"]),
+    tool_def("back_align", "回译 LCS 对齐验证", [
+      ("source", schema_prop("string", "源文")),
+      ("target", schema_prop("string", "译文")),
+    ], ["source", "target"]),
+    tool_def("term_conflicts", "术语冲突检测（一词多译/多词一译）", [], []),
+    tool_def("fed_export", "联邦增量导出", [], []),
+    tool_def("fed_import", "联邦增量导入", [
+      ("added", schema_prop("integer", "新增数（默认 0）")),
+      ("updated", schema_prop("integer", "更新数（默认 0）")),
+    ], []),
+    tool_def("distill_inject", "蒸馏偏置表注入", [
+      ("table", schema_prop("object", "角色→偏置 Map")),
+    ], []),
   ]
   @lib.arr_json(tools)
 }
 
 fn is_known_tool(name : String) -> Bool {
   let known = ["fuzzy_match", "add_tm", "check_terms", "concordance", "qe_auto", "predict", "observe",
-    "recall", "explain", "reward", "consolidate", "tm_count", "ping"]
+    "recall", "explain", "reward", "consolidate", "tm_count", "ping", "retrieve_prompt", "bleu", "chrf",
+    "style_check", "back_align", "term_conflicts", "fed_export", "fed_import", "distill_inject"]
   let mut found = false
   for k in known {
     if k == name { found = true }
@@ -217,6 +247,44 @@ async fn invoke_tool(name : String, args : Json) -> Json {
     @lib.obj([("tm_count", @lib.num_json(tm_count().to_double()))])
   } else if name == "ping" {
     @lib.obj([("status", @lib.str_json("ok"))])
+  } else if name == "retrieve_prompt" {
+    engine_ref.val.retrieve_for_prompt(arg_str(args, "query"), arg_int(args, "k", 3), arg_num(args, "threshold", 0.70))
+  } else if name == "bleu" {
+    @lib.obj([("bleu", @lib.num_json(@lib.bleu_score(arg_str(args, "ref"), arg_str(args, "hyp"))))])
+  } else if name == "chrf" {
+    @lib.obj([("chrf", @lib.num_json(@lib.chrf_score(arg_str(args, "ref"), arg_str(args, "hyp"))))])
+  } else if name == "style_check" {
+    engine_ref.val.style_check(arg_str(args, "text"))
+  } else if name == "back_align" {
+    engine_ref.val.back_align(arg_str(args, "source"), arg_str(args, "target"))
+  } else if name == "term_conflicts" {
+    engine_ref.val.term_conflicts()
+  } else if name == "fed_export" {
+    engine_ref.val.fed_export()
+  } else if name == "fed_import" {
+    engine_ref.val.fed_import(arg_int(args, "added", 0), arg_int(args, "updated", 0))
+    try { save_store() } catch { err => println("save_store error: \{err}") }
+    @lib.obj([("status", @lib.str_json("imported"))])
+  } else if name == "distill_inject" {
+    let table : Map[String, Double] = Map::new()
+    let tbl = args
+    match tbl {
+      Json::Object(o) =>
+        match o.get("table") {
+          Some(Json::Object(t)) =>
+            for k, v in t.iter2() {
+              match v {
+                Json::Number(n, ..) => table.set(k, n)
+                _ => ()
+              }
+            }
+          _ => ()
+        }
+      _ => ()
+    }
+    engine_ref.val.inject_distillation(table)
+    try { save_store() } catch { err => println("save_store error: \{err}") }
+    @lib.obj([("status", @lib.str_json("injected")), ("keys", @lib.num_json(table.size().to_double()))])
   } else {
     @lib.obj([("error", @lib.str_json("unknown tool"))])
   }

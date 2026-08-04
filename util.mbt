@@ -715,3 +715,174 @@ fn json_to_smap(j : Json) -> Map[String, String] {
   }
   out
 }
+
+// ===== S4 评测：BLEU / chrF++（零依赖自实现，确定性）=====
+
+// 生成 n-gram 列表（token 级）
+fn ngrams(toks : Array[String], n : Int) -> Array[Array[String]] {
+  let out : Array[Array[String]] = []
+  let len = toks.length()
+  let mut i = 0
+  while i + n <= len {
+    let g : Array[String] = []
+    let mut j = 0
+    while j < n {
+      g.push(toks[i + j])
+      j = j + 1
+    }
+    out.push(g)
+    i = i + 1
+  }
+  out
+}
+
+// n-gram 计数（key = join with unit separator）
+fn ngram_counts(toks : Array[String], n : Int) -> Map[String, Int] {
+  let counts : Map[String, Int] = Map::new()
+  let gs = ngrams(toks, n)
+  for g in gs {
+    let mut key = ""
+    for t in g {
+      key = key + t + "\u001F"
+    }
+    let cur = match counts.get(key) {
+      Some(v) => v
+      None => 0
+    }
+    counts.set(key, cur + 1)
+  }
+  counts
+}
+
+// BLEU-4：modified n-gram precision（clipped）+ Add-1 平滑 + BP（Papineni 2002 口径）
+pub fn bleu_score(ref_text : String, hyp_text : String) -> Double {
+  let ref_toks = yimai_tokenize(ref_text)
+  let hyp_toks = yimai_tokenize(hyp_text)
+  let r_len = ref_toks.length()
+  let c_len = hyp_toks.length()
+  if c_len == 0 {
+    return 0.0
+  }
+  let bp = if c_len > r_len { 1.0 } else { @math.exp(1.0 - r_len.to_double() / c_len.to_double()) }
+  let mut log_sum = 0.0
+  let mut orders = 0.0
+  let mut n = 1
+  while n <= 4 {
+    let hyp_counts = ngram_counts(hyp_toks, n)
+    let ref_counts = ngram_counts(ref_toks, n)
+    let mut clipped = 0.0
+    for key, hyp_c in hyp_counts.iter2() {
+      let ref_c = match ref_counts.get(key) {
+        Some(v) => v
+        None => 0
+      }
+      let m = if hyp_c < ref_c { hyp_c } else { ref_c }
+      clipped = clipped + m.to_double()
+    }
+    let total = ngrams(hyp_toks, n).length().to_double()
+    let p_n = if total > 0.0 { (clipped + 1.0) / (total + 1.0) } else { 1.0 }
+    log_sum = log_sum + @math.ln(p_n)
+    orders = orders + 1.0
+    n = n + 1
+  }
+  let bleu = bp * @math.exp(log_sum / orders)
+  r4(bleu)
+}
+
+// 字符串码点数组（跳过空白）
+fn chars_of(s : String) -> Array[String] {
+  let out : Array[String] = []
+  for c in s.iter() {
+    if c != ' ' && c != '\n' && c != '\t' && c != '\r' {
+      out.push(c.to_string())
+    }
+  }
+  out
+}
+
+// 字符 n-gram 计数
+fn char_ngram_counts(chars : Array[String], n : Int) -> Map[String, Int] {
+  let counts : Map[String, Int] = Map::new()
+  let len = chars.length()
+  let mut i = 0
+  while i + n <= len {
+    let mut key = ""
+    let mut j = 0
+    while j < n {
+      key = key + chars[i + j]
+      j = j + 1
+    }
+    let cur = match counts.get(key) {
+      Some(v) => v
+      None => 0
+    }
+    counts.set(key, cur + 1)
+    i = i + 1
+  }
+  counts
+}
+
+// chrF++：字符 1..6-gram + 词 1..2-gram，F-beta（beta=2）（Popović 2017 口径）
+pub fn chrf_score(ref_text : String, hyp_text : String) -> Double {
+  let ref_chars = chars_of(ref_text)
+  let hyp_chars = chars_of(hyp_text)
+  let ref_words = ref_text.split(" ").to_array().map(fn(x) { x.to_string() })
+  let hyp_words = hyp_text.split(" ").to_array().map(fn(x) { x.to_string() })
+  if ref_chars.length() == 0 && hyp_chars.length() == 0 {
+    return 1.0
+  }
+  if ref_chars.length() == 0 || hyp_chars.length() == 0 {
+    return 0.0
+  }
+  let mut sum_p = 0.0
+  let mut sum_r = 0.0
+  let mut orders = 0.0
+  let mut n = 1
+  while n <= 6 {
+    let hc = char_ngram_counts(hyp_chars, n)
+    let rc = char_ngram_counts(ref_chars, n)
+    let mut match_n = 0.0
+    for key, h in hc.iter2() {
+      let r = match rc.get(key) {
+        Some(v) => v
+        None => 0
+      }
+      let m = if h < r { h } else { r }
+      match_n = match_n + m.to_double()
+    }
+    let hyp_total = ngrams(hyp_chars, n).length().to_double()
+    let ref_total = ngrams(ref_chars, n).length().to_double()
+    sum_p = sum_p + (if hyp_total > 0.0 { match_n / hyp_total } else { 0.0 })
+    sum_r = sum_r + (if ref_total > 0.0 { match_n / ref_total } else { 0.0 })
+    orders = orders + 1.0
+    n = n + 1
+  }
+  let mut w = 1
+  while w <= 2 {
+    let hc = ngram_counts(hyp_words, w)
+    let rc = ngram_counts(ref_words, w)
+    let mut match_n = 0.0
+    for key, h in hc.iter2() {
+      let r = match rc.get(key) {
+        Some(v) => v
+        None => 0
+      }
+      let m = if h < r { h } else { r }
+      match_n = match_n + m.to_double()
+    }
+    let hyp_total = ngrams(hyp_words, w).length().to_double()
+    let ref_total = ngrams(ref_words, w).length().to_double()
+    sum_p = sum_p + (if hyp_total > 0.0 { match_n / hyp_total } else { 0.0 })
+    sum_r = sum_r + (if ref_total > 0.0 { match_n / ref_total } else { 0.0 })
+    orders = orders + 1.0
+    w = w + 1
+  }
+  let p = sum_p / orders
+  let r = sum_r / orders
+  if p == 0.0 && r == 0.0 {
+    return 0.0
+  }
+  let beta2 = 4.0
+  let f = (1.0 + beta2) * p * r / (beta2 * p + r)
+  r4(f)
+}
