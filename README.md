@@ -291,7 +291,7 @@ The ten domains and their sourced terminology (Chinese ⇄ English):
 
 | 维度 | 旧架构（v1） | 新架构（v2，当前） |
 |---|---|---|
-| **总体形态** | 单一纯库（零依赖内核）+ `cmd/main` demo | **三层**：Layer0 零依赖内核 / Layer2 纯 MoonBit 服务层 / Layer1 知识层（文档 + 前端规划） |
+| **总体形态** | 单一纯库（零依赖内核）+ `cmd/main` demo | **三层**：Layer0 零依赖内核 / Layer2 纯 MoonBit 服务层 / Layer1 知识层（文档 + 前端工作台已实现） |
 | **I/O 能力** | 无 stdin / 无文件 I/O（wasm-gc 内存态） | `async/fs` **原子写持久化**（`tm_store.json`，tmp+rename）+ 重启恢复闭环 |
 | **对外接口** | 仅 MoonBit 函数调用（`moon add` 后进程内调用） | **13 个 HTTP REST 端点**，前端 / Agent / LLM 宿主可直接消费 |
 | **集成路径** | 2 条：库引用、算法移植 | **4 条**：A 构建运行 / B wasm-gc exports / **C HTTP 服务（新增，已实测）** / D 算法移植 |
@@ -651,8 +651,8 @@ The "fast / accurate / beautiful" algorithm kernel is **fully landed** and contr
 | **S1 fuzzy-match upgrade** | `fuzzy_match`（IDF + 2-gram + word-order）/ `fuzzy_match_legacy` | ✅ |
 | **Pure-MoonBit HTTP service** | `cmd/service`：13 端点 + 记忆闭环 + 原子写持久化 + 重启恢复 | ✅ (new) |
 | **MCP Server (/mcp)** | `cmd/service/mcp.mbt`：13 引擎能力 → MCP tools（spec 2025-11-25） | ✅ (new) |
-| SKILL.md 编排壳 / TMPlm 桥接 (M5) | — | ⬜ 待办（阶段 E 剩余） |
-| Translator workbench (web front-end) | `cmd/service/web`（服务层托管静态页） | ⬜ 规划（阶段 C） |
+| SKILL.md 编排壳 / TMPlm 桥接 (M5) | — | ⬜ 待办（MCP 已落地，此两项为阶段 E 剩余） |
+| Translator workbench (web front-end) | `cmd/service/web`（三面板：TM 检索 / 术语校验 / 证据链+反馈） | ✅ (new，阶段 C 已交付) |
 | Federation coordinator (FedAvg service) | — | ⬜ needs external service |
 | Distillation training pipeline | — | ⬜ needs separate training flow |
 | Visual memory graph | — | ⬜ needs front-end (data interface ready) |
