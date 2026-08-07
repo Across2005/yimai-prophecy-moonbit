@@ -44,7 +44,7 @@
 - **Deterministic & reproducible** — a logical clock replaces wall-clock time; identical call sequences yield byte-identical `to_json` output (no RNG).
 - **Zero third-party dependencies** — pure MoonBit core (`json` + `math` only); nothing to install beyond the `moon` toolchain.
 - **Serializable** — full engine state exports/imports as JSON for persistence and cross-session restore.
-- **Fast inference (快)** — role inverted-index (`role_members`) + per-source Top-8 pruning keep the hot path off full-graph scans; an LRU `pred_cache` short-circuits repeated `(context, k)` queries.
+- **Fast inference (快)** — role inverted-index (`role_members`) + per-source Top-8 pruning keep the hot path off full-graph scans; a `pred_cache` (fully invalidated on any engine change, not LRU) short-circuits repeated `(context, k)` queries.
 - **Accurate (准)** — second-order Markov (`trans2`, `P(w3|w1,w2)` blended at `λ=0.4`), multi-granularity role keys (前二/前四/前后各二), elastic forgetting (recency-aware edge decay), adaptive Hebbian LR, per-domain bias `ΔW` (LoRA-style), online contrastive learning (`cl_step`), and attention-gated edge weights in recall.
 - **Explainable & bilingual (美)** — `TermNode` (`mark_term`) boosts terminology recall with a +5.0 activation and a "term hit" flag; `explain_card` returns a white-box `activation_path` / `prediction_path` / `value_breakdown` JSON; `align_diff` gives a character-level LCS edit script for bilingual alignment.
 - **TM / TermBase (检索 + 守门)** — `#22` 新增 `add_tm` / `fuzzy_match` / `concordance` / `load_tbx` / `enforce_terms` / `check_terms`：真正的 fuzzy match（匹配率 %）、concordance 检索、`TBX(ISO 30042)` 术语库解析、术语强制对齐与一致性校验（见 [§#22](#22-tmtb--translation-memory--termbase)）。

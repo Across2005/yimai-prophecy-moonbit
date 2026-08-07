@@ -417,22 +417,10 @@ fn starts_with(s : String, p : String) -> Bool {
 }
 
 pub fn str_contains(s : String, sub : String) -> Bool {
-  let n = s.length()
-  let m = sub.length()
-  if m == 0 { return true }
-  if m > n { return false }
-  let mut i = 0
-  while i + m <= n {
-    let mut j = 0
-    let mut ok = true
-    while j < m {
-      if s[i + j] != sub[j] { ok = false; break }
-      j = j + 1
-    }
-    if ok { return true }
-    i = i + 1
+  match str_index(s, sub, 0) {
+    Some(_) => true
+    None => false
   }
-  false
 }
 
 fn split_on(s : String, sep : String) -> Array[String] {

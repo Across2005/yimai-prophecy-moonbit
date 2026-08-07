@@ -53,6 +53,9 @@ pub struct MemoryNode {
   mut last_active : Double              // 最近一次被激活/命中（逻辑时钟），用于弹性遗忘的真实时差折扣
   mut is_term : Bool                     // 术语节点（美：高初始激活 + 命中高亮，mark_term 置位）
   translation : String                   // TM 译文 / TB 目标术语（#22 TM/TB 一等公民）
+  // ---- TM 特征缓存（内部派生态，不进 to_json；add_tm 构建 / from_json 后重建）----
+  mut tm_toks : Array[String]           // yimai_tokenize(text)（未去重，供 fuzzy token 集合 + concordance 计数）
+  mut tm_ngrams : Array[String]         // char_ngrams(text, 2)（供 fuzzy 字符 2-gram 分项）
 }
 
 // 预测价值分解（D4）的命名返回值：供 _recompute_values 与 explain_card 共用，避免 8 元组位置歧义
@@ -92,7 +95,7 @@ pub struct ProphecyEngine {
   mut hebb_lr : Double                             // 动态赫布学习率（#18 自适应，consolidate 中重赋值）
   mut attn_alpha : Double                           // 注意力边权系数 α（#19，默认 0=关，set_attention 开启）
   mut attn_beta : Double                            // 注意力边权系数 β（#19，角色匹配项）
-  mut pred_cache : Map[String, Json]               // 预测缓存 LRU（#16 快）
+  mut pred_cache : Map[String, Json]               // 预测缓存（#16 快）：引擎变更时全量失效（非 LRU 淘汰）
   mut cache_epoch : Int                            // 引擎变更计数，失效预测缓存
   cl_buf : Array[Json]                             // 在线对比学习缓冲（#19）
   mut wal_log : Array[String]                      // 增量固化 WAL 日志（#21，事件溯源）
@@ -103,6 +106,9 @@ pub struct ProphecyEngine {
   mut tm_df : Map[String, Int]                     // TM 文档频率：token -> 含该 token 的 TM 数
   mut tm_idf : Map[String, Double]                 // 预计算 IDF：ln((N+1)/(df+1)) + 1
   mut tm_idf_dirty : Bool                          // add_tm/剪枝后置真，fuzzy_match 惰性重算
+  // ---- P4-2 术语首字符倒排（内部态，不进 to_json；from_json 后重建）----
+  mut term_idx : Map[String, Array[String]]        // term 首字符 -> term 节点 mid 列表（enforce/check 候选剪枝加速）
+  mut term_idx_dirty : Bool                        // load_tbx/mark_term/剪枝后置真，惰性重建
 }
 
 // ---------------------------------------------------------------------------
@@ -191,9 +197,21 @@ fn ProphecyEngine::invalidate_pred_cache(self : ProphecyEngine) -> Unit {
   self.cache_epoch = self.cache_epoch + 1
 }
 
+// pred_cache 容量上限：超过后清空整表（预测缓存是内部态，仅影响下一次是否命中，
+// 不改变预测结果本身，故对确定性输出零影响；清空比 LRU 更简单且无损正确性）
+const PRED_CACHE_MAX : Int = 512
+
 // WAL：追加一条增量固化操作日志（#21）
+const WAL_AUTO_LIMIT : Int = 4096   // P3-1：超过此条数自动压缩（防服务长跑 WAL 无界增长）
+const WAL_AUTO_KEEP : Int = 2048    // P3-1：压缩后保留的最近条数（确定性阈值，同输入同压缩点）
 fn ProphecyEngine::wal_append(self : ProphecyEngine, line : String) -> Unit {
   self.wal_log.push(line)
+  // 自动压缩：仅当超过上限时裁剪到最近 WAL_AUTO_KEEP 条（幂等、确定性；对 ≤ 上限的既有行为零影响）。
+  // 注意：压缩后 WAL 仅保证最近 WAL_AUTO_KEEP 条（近段增量），wal_replay 不再保证完整事件溯源；
+  // 完整持久化/恢复请走 to_json/from_json（memories 全量序列化），勿依赖 wal_replay 作为唯一容灾来源。
+  if self.wal_log.length() >= WAL_AUTO_LIMIT {
+    self.wal_compact(WAL_AUTO_KEEP)
+  }
 }
 
 fn ProphecyEngine::edges_count(self : ProphecyEngine) -> Int {
@@ -237,23 +255,65 @@ fn parse_episodes(a : Array[Json]) -> Array[Array[String]] {
   out
 }
 
-// 泛型降序排序（选择排序，零依赖）：按 key 抽取的数值字段对 arr 做原地降序重排。
+// 泛型降序排序（稳定自底向上归并，零依赖）：按 key 抽取的数值字段对 arr 做原地降序重排。
 // 统一取代原 sort_sd / sort_si / sort_scored 三份近重复的选型排序，
 // 以及 fuzzy_match / concordance 内联的插入排序。
+// P2-1：将原 O(n²) 选择排序替换为 O(n log n)，且为稳定归并（相等 key 保持原相对顺序，
+// 与原选择排序逐位一致，故对确定性输出零影响）。
 fn[T] sort_desc_by_key(arr : Array[T], key : (T) -> Double) -> Unit {
-  for i = 0; i < arr.length(); i = i + 1 {
-    let mut bi = i
-    for j = i + 1; j < arr.length(); j = j + 1 {
-      if key(arr[j]) > key(arr[bi]) {
-        bi = j
-      }
-    }
-    if bi != i {
-      let t = arr[i]
-      arr[i] = arr[bi]
-      arr[bi] = t
-    }
+  let n = arr.length()
+  if n <= 1 {
+    return
   }
+  // 辅助数组（长度与源一致），自底向上归并
+  let aux : Array[T] = []
+  for i = 0; i < n; i = i + 1 {
+    aux.push(arr[i])
+  }
+  let mut width = 1
+  while width < n {
+    let mut lo = 0
+    while lo < n {
+      let mid = if lo + width < n { lo + width } else { n }
+      let hi = if lo + 2 * width < n { lo + 2 * width } else { n }
+      // 合并 arr[lo:mid] 与 arr[mid:hi] 到 aux[lo:hi]：取左优先 ⇒ 稳定
+      let mut i = lo
+      let mut j = mid
+      let mut k = lo
+      while k < hi {
+        if j >= hi || (i < mid && key(arr[i]) >= key(arr[j])) {
+          aux[k] = arr[i]
+          i = i + 1
+        } else {
+          aux[k] = arr[j]
+          j = j + 1
+        }
+        k = k + 1
+      }
+      lo = lo + 2 * width
+    }
+    // 一趟结束：aux 写回 arr，供下一轮读取
+    for k = 0; k < n; k = k + 1 {
+      arr[k] = aux[k]
+    }
+    width = width * 2
+  }
+}
+
+// 泛型 Top-K 打包（P2-3）：对已按 score 降序的候选数组取前 k 个，经 pack 映射为 Json。
+// 与 fuzzy_match / fuzzy_match_legacy 原内联 while 循环逐位等价（None 跳过、None 不压缩索引）。
+fn[T] pack_topk_json(scored : Array[T], k : Int, pack : (T) -> Option[Json]) -> Array[Json] {
+  let out : Array[Json] = []
+  let lim = if k > scored.length() { scored.length() } else { k }
+  let mut i = 0
+  while i < lim {
+    match pack(scored[i]) {
+      Some(j) => out.push(j)
+      None => ()
+    }
+    i = i + 1
+  }
+  out
 }
 
 // 节点 -> Json
@@ -295,6 +355,8 @@ fn node_from_json(j : Json) -> MemoryNode {
     last_active: get_num(j, "last_active"),
     is_term: get_num(j, "is_term") != 0.0,
     translation: get_str(j, "translation"),
+    tm_toks: [],
+    tm_ngrams: [],
   }
 }
 
@@ -366,6 +428,8 @@ pub fn ProphecyEngine::make() -> ProphecyEngine {
     tm_df: Map::from_iter(([] : Array[(String, Int)]).iter()),
     tm_idf: Map::from_iter(([] : Array[(String, Double)]).iter()),
     tm_idf_dirty: false,
+    term_idx: Map::from_iter(([] : Array[(String, Array[String])]).iter()),
+    term_idx_dirty: false,
   }
 }
 
@@ -417,6 +481,77 @@ fn ProphecyEngine::ensure_tm_idf(self : ProphecyEngine) -> Unit {
   if self.tm_idf_dirty {
     self.rebuild_tm_idf()
   }
+}
+
+// 全量重建 TM 特征缓存（幂等；from_json 后调用，使 tm_toks/tm_ngrams 与重建的 IDF 表对齐）
+fn ProphecyEngine::rebuild_tm_features(self : ProphecyEngine) -> Unit {
+  for mid, m in self.memories.iter2() {
+    if m.mtype != "tm" {
+      continue
+    }
+    let m2 = m
+    m2.tm_toks = yimai_tokenize(m.text)
+    m2.tm_ngrams = char_ngrams(m.text, 2)
+    self.memories.set(mid, m2)
+  }
+}
+
+// ---- P4-2 术语首字符倒排（内部态，不进 to_json；惰性重建，幂等）----
+
+fn ProphecyEngine::mark_term_index_dirty(self : ProphecyEngine) -> Unit {
+  self.term_idx_dirty = true
+}
+
+fn ProphecyEngine::ensure_term_index(self : ProphecyEngine) -> Unit {
+  if self.term_idx_dirty {
+    self.rebuild_term_index()
+  }
+}
+
+fn ProphecyEngine::rebuild_term_index(self : ProphecyEngine) -> Unit {
+  let idx : Map[String, Array[String]] = Map::from_iter(([] : Array[(String, Array[String])]).iter())
+  for mid, m in self.memories.iter2() {
+    if !m.is_term || m.text.length() == 0 {
+      continue
+    }
+    // 与 term_candidates 的 text.iter() 同路径取首字符（统一按 Unicode 标量，避免切片语义差异）
+    let c = match m.text.iter().next() {
+      Some(ch) => ch.to_string()
+      None => continue
+    }
+    match idx.get(c) {
+      Some(arr) => arr.push(mid)
+      None => {
+        let a : Array[String] = [mid]
+        idx.set(c, a)
+      }
+    }
+  }
+  self.term_idx = idx
+  self.term_idx_dirty = false
+}
+
+// 收集 text 首字符能命中的候选 term mid 集合（按首字符索引粗筛）。
+// 完备性：term_hit(text,term)=true ⟹ term[0] 必作为字符出现在 text 中（CJK 子串 / 拉丁边界均成立），
+// 故候选集合是超集；终判仍用 term_hit 精确复验，保证输出与全量扫描逐项等价。
+fn ProphecyEngine::term_candidates(self : ProphecyEngine, text : String) -> Map[String, Bool] {
+  let cand : Map[String, Bool] = Map::from_iter(([] : Array[(String, Bool)]).iter())
+  let seen : Map[String, Bool] = Map::from_iter(([] : Array[(String, Bool)]).iter())
+  for ch in text.iter() {
+    let c = ch.to_string()
+    if seen.contains(c) {
+      continue
+    }
+    seen.set(c, true)
+    match self.term_idx.get(c) {
+      Some(mids) =>
+        for mid in mids {
+          cand.set(mid, true)
+        }
+      None => ()
+    }
+  }
+  cand
 }
 
 // IDF 加权集合 Dice = 2·Σ_{t∈A∩B} idf(t) / (Σ_{t∈A} idf(t) + Σ_{t∈B} idf(t))。
@@ -529,15 +664,28 @@ pub fn ProphecyEngine::remember(
     let m = self.memories[best]
     m.text = text
     m.vec = vec
+    // 若合并目标是 TM 节点，text 已改写，须同步重建特征缓存并刷新 IDF（P2-2）
+    if m.mtype == "tm" {
+      m.tm_toks = yimai_tokenize(m.text)
+      m.tm_ngrams = char_ngrams(m.text, 2)
+      self.mark_tm_idf_dirty()
+    }
+    if m.is_term {
+      self.mark_term_index_dirty()   // P4-2：术语 text 被改写，首字符索引可能失配
+    }
     m.use_count = m.use_count + 1
     m.last_used = self.clock
     m.last_active = self.clock
+    // role_index 增量维护：对 text 全部角色粒度 set 到合并节点（role_index 是序列化字段，
+    // 保持与新建分支 L713-717 的一致，非主角色条目同样重指向 best）
     self.role_index.set(role_of(text), best)
     for rk in roles_of(text) {
       self.role_index.set(rk, best)
-      self.role_members_add(rk, best)
     }
     self.memories.set(best, m)
+    // P4-1：text 已改写，role_members 全量重建（清掉旧角色残留 mid；本索引内部态不进
+    // to_json，只做角色限定召回的剪枝，幂等/确定性零影响；与 consolidate/restore 同源）
+    self.rebuild_role_members()
     self._wire(best, ctx)
     self.wal_append("remember" + WAL_SEP + best + WAL_SEP + text + WAL_SEP + mtype)
     self.invalidate_pred_cache()
@@ -561,6 +709,11 @@ pub fn ProphecyEngine::remember(
     predict_count: 0,
     is_term: false,
     translation: "",
+    tm_toks: if mtype == "tm" { yimai_tokenize(text) } else { [] },
+    tm_ngrams: if mtype == "tm" { char_ngrams(text, 2) } else { [] },
+  }
+  if mtype == "tm" {
+    self.mark_tm_idf_dirty()
   }
   self.role_index.set(role_of(text), mid)
   for rk in roles_of(text) {
@@ -775,7 +928,7 @@ pub fn ProphecyEngine::recall(
 // ---------------------------------------------------------------------------
 
 pub fn ProphecyEngine::predict(self : ProphecyEngine, k : Int) -> Json {
-  // 快：预测缓存 LRU（相同上下文签名且引擎未变更时直接返回，跳过转移聚合）
+  // 快：预测缓存（相同上下文签名且引擎未变更时直接返回，跳过转移聚合；引擎变更时全量失效，非 LRU）
   let ckeyb = StringBuilder()
   for i = 0; i < self.context.length(); i = i + 1 {
     if i > 0 {
@@ -1037,6 +1190,10 @@ pub fn ProphecyEngine::predict(self : ProphecyEngine, k : Int) -> Json {
     ("confidence", num_json(if preds.length() > 0 { r4(ranked[0].1) } else { 0.0 })),
     ("uncertainty", num_json(r4(entropy))),
   ])
+  // 容量守卫：pred_cache 超上限时清空（内部态，零确定性影响；防长跑无界增长）
+  if self.pred_cache.length() >= PRED_CACHE_MAX {
+    self.pred_cache = Map::from_iter(([] : Array[(String, Json)]).iter())
+  }
   self.pred_cache.set(ckey, obj([("out", out), ("topk", arr_json(topk.map(fn(s) { str_json(s) })))]))
   out
 }
@@ -1050,7 +1207,8 @@ pub fn ProphecyEngine::observe(
   text : String,
   mtype : String,
 ) -> String {
-  self.clock = self.clock + 1.0
+  // 时钟语义（P4-1 修正）：一次 observe 推进一个逻辑时刻（+1）。
+  // remember 内部已自增（L652），故此处不再单独自增，避免每次 observe 竟 +2。
   let mid = self.remember(text, mtype, self.context)
   // D3 转移计数：仅由「紧邻前驱」建立一阶马尔可夫边
   if self.context.length() > 0 {
@@ -1295,6 +1453,7 @@ pub fn ProphecyEngine::consolidate(self : ProphecyEngine, prune : Bool) -> Json 
   self.fed_upd = self.fed_upd + 1
   self.stats_evolutions = self.stats_evolutions + 1
   self.mark_tm_idf_dirty()   // S1：剪枝可能删 TM 节点，IDF 表需重算（fuzzy_match 惰性触发）
+  self.mark_term_index_dirty()   // P4-2：剪枝可能删术语节点，索引需重建
   obj([
     ("pruned", num_json(removed.to_double())),
     ("nodes", num_json(self.memories.length().to_double())),
@@ -1321,6 +1480,8 @@ pub fn ProphecyEngine::restore(self : ProphecyEngine) -> Json {
       self.snap_role = None
       self.invalidate_pred_cache()
       self.rebuild_role_members()
+      self.rebuild_tm_features()
+      self.rebuild_term_index()   // P4-2：回滚后重建术语首字符索引（幂等）
       obj([("ok", true.to_json()), ("nodes", num_json(self.memories.length().to_double()))])
     }
     None => obj([("ok", false.to_json()), ("reason", str_json("no snapshot"))])
@@ -1432,6 +1593,7 @@ pub fn ProphecyEngine::mark_term(self : ProphecyEngine, mid : String) -> Bool {
       m.last_active = self.clock
       self.memories.set(mid, m)
       self.invalidate_pred_cache()
+      self.mark_term_index_dirty()   // P4-2：新增术语节点，索引需重建
       self.fed_upd = self.fed_upd + 1
       true
     }
@@ -1511,6 +1673,8 @@ pub fn ProphecyEngine::add_tm(self : ProphecyEngine, src : String, tgt : String)
     predict_count: 0,
     is_term: false,
     translation: tgt,
+    tm_toks: yimai_tokenize(src),
+    tm_ngrams: char_ngrams(src, 2),
   }
   self.memories.set(mid, node)
   self.invalidate_pred_cache()
@@ -1538,8 +1702,8 @@ pub fn ProphecyEngine::fuzzy_match(self : ProphecyEngine, query : String, k : In
       continue
     }
     let sim_tok = idf_dice(qv, m.vec, self.tm_idf)
-    let sim_ng = dice_coeff(q2, char_ngrams(m.text, 2))
-    let sim_ts = dice_coeff(qtok, unique(yimai_tokenize(m.text)))
+    let sim_ng = dice_coeff(q2, m.tm_ngrams)
+    let sim_ts = dice_coeff(qtok, unique(m.tm_toks))
     let sim_pos = if anchor != "" && term_hit(m.text, anchor) { 1.0 } else { 0.0 }
     let score = 0.55 * sim_tok + 0.20 * sim_ng + 0.15 * sim_ts + 0.10 * sim_pos
     if score >= threshold {
@@ -1547,15 +1711,11 @@ pub fn ProphecyEngine::fuzzy_match(self : ProphecyEngine, query : String, k : In
     }
   }
   sort_desc_by_key(cands, fn(c){ c.1 })
-  let sorted = cands
-  let lim = if k > sorted.length() { sorted.length() } else { k }
-  let out : Array[Json] = []
-  let mut i = 0
-  while i < lim {
-    let (mid, score, st, sng, sts) = sorted[i]
+  let out = pack_topk_json(cands, k, fn(c) {
+    let (mid, score, st, sng, sts) = c
     match self.memories.get(mid) {
       Some(m) =>
-        out.push(obj([
+        Some(obj([
           ("id", str_json(mid)),
           ("source", str_json(m.text)),
           ("target", str_json(m.translation)),
@@ -1567,10 +1727,9 @@ pub fn ProphecyEngine::fuzzy_match(self : ProphecyEngine, query : String, k : In
           ("sim_ngram", num_json(r4(sng))),
           ("sim_tokenset", num_json(r4(sts))),
         ]))
-      None => ()
+      None => None
     }
-    i = i + 1
-  }
+  })
   arr_json(out)
 }
 
@@ -1591,15 +1750,11 @@ pub fn ProphecyEngine::fuzzy_match_legacy(self : ProphecyEngine, query : String,
     }
   }
   sort_desc_by_key(cands, fn(c){ c.1 })
-  let sorted = cands
-  let lim = if k > sorted.length() { sorted.length() } else { k }
-  let out : Array[Json] = []
-  let mut i = 0
-  while i < lim {
-    let (mid, score, st, sc) = sorted[i]
+  let out = pack_topk_json(cands, k, fn(c) {
+    let (mid, score, st, sc) = c
     match self.memories.get(mid) {
       Some(m) =>
-        out.push(obj([
+        Some(obj([
           ("id", str_json(mid)),
           ("source", str_json(m.text)),
           ("target", str_json(m.translation)),
@@ -1608,10 +1763,9 @@ pub fn ProphecyEngine::fuzzy_match_legacy(self : ProphecyEngine, query : String,
           ("sim_token", num_json(r4(st))),
           ("sim_char", num_json(r4(sc))),
         ]))
-      None => ()
+      None => None
     }
-    i = i + 1
-  }
+  })
   arr_json(out)
 }
 
@@ -1623,7 +1777,7 @@ pub fn ProphecyEngine::concordance(self : ProphecyEngine, term : String, k : Int
   let cands : Array[(String, Int)] = []
   for mid, m in self.memories.iter2() {
     if m.mtype != "tm" { continue }
-    let toks = yimai_tokenize(m.text)
+    let toks = m.tm_toks
     let mut hits = 0
     for t in toks {
       if t == qkey { hits = hits + 1 }
@@ -1697,9 +1851,12 @@ pub fn ProphecyEngine::load_tbx(
         predict_count: 0,
         is_term: true,
         translation: tgt_term,
+        tm_toks: [],
+        tm_ngrams: [],
       }
       self.memories.set(mid, node)
       self.invalidate_pred_cache()
+      self.mark_term_index_dirty()   // P4-2：新增术语节点，索引需重建
       count = count + 1
     }
   }
@@ -1709,9 +1866,12 @@ pub fn ProphecyEngine::load_tbx(
 // 术语强制对齐：扫描文本，返回所有命中已知术语的位置与译文（翻译时高亮/锁定）。
 // 用 term_hit 做词边界判定，避免 log⊂logical 这类子串误报。
 pub fn ProphecyEngine::enforce_terms(self : ProphecyEngine, text : String) -> Json {
+  self.ensure_term_index()
+  let cand = self.term_candidates(text)
   let out : Array[Json] = []
   for mid, m in self.memories.iter2() {
     if !m.is_term { continue }
+    if !cand.contains(mid) { continue }
     if term_hit(text, m.text) {
       out.push(obj([
         ("term", str_json(m.text)),
@@ -1726,9 +1886,12 @@ pub fn ProphecyEngine::enforce_terms(self : ProphecyEngine, text : String) -> Js
 // 术语一致性校验：源文识别到的术语，其译文是否出现在译文中；返回违规项。
 // 源/译文均用 term_hit 做边界判定，保证拉丁文术语不会因子串包含而误判。
 pub fn ProphecyEngine::check_terms(self : ProphecyEngine, source : String, target : String) -> Json {
+  self.ensure_term_index()
+  let cand = self.term_candidates(source)
   let violations : Array[Json] = []
   for mid, m in self.memories.iter2() {
     if !m.is_term { continue }
+    if !cand.contains(mid) { continue }
     if term_hit(source, m.text) && m.translation != "" {
       if !term_hit(target, m.translation) {
         violations.push(obj([
@@ -2605,6 +2768,8 @@ pub fn ProphecyEngine::from_json(data : Json) -> ProphecyEngine {
   e.wal_log = get_str_arr(data, "wal_log")
   e.rebuild_role_members()
   e.rebuild_tm_idf()   // S1：内部态不进 to_json，恢复后重建 IDF 表（幂等）
+  e.rebuild_tm_features()   // P2-2：恢复后重建 TM 特征缓存（幂等）
+  e.rebuild_term_index()   // P4-2：恢复后重建术语首字符索引（幂等）
   e
 }
 

@@ -151,9 +151,7 @@ async fn handle_fuzzy_match(body : &@io.Reader, conn : @http.ServerConnection) -
 
 // POST /api/add_tm  {"src":"..","tgt":".."}
 async fn handle_add_tm(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let data = body.read_all()
-  let s = try { data.text() } catch { _ => "" }
-  let parsed : Option[Json] = try { Some(@json.parse(s)) } catch { _ => None }
+  let parsed = read_json_body(body)
   match parsed {
     Some(Json::Object(o)) => {
       let src = match o.get("src") {
@@ -472,7 +470,3 @@ async fn handle_distill_inject(body : &@io.Reader, conn : @http.ServerConnection
     _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
   }
 }
-
-// ===== 待办补齐端点（S4/M1/M2/M3/M5/FedAvg/蒸馏）=====
-
-// POST /api/retrieve_prompt  {"query","k","threshold"}  TMPlm 三段式 prompt 上下文
