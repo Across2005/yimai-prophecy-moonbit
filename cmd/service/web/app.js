@@ -406,8 +406,8 @@ async function wbQE() {
   const j = r.json || {};
   const mqm = Array.isArray(j.mqm) ? j.mqm : [];
   box.innerHTML = `
-    <div class="score">qe_score <b>${num(j.qe_score)}</b> · term_ok ${j.term_ok === true ? "✓" : "✗"}</div>
-    ${mqm.length ? `<div style="margin-top:6px">MQM：</div>` + mqm.map(m => `<div class="item"><span class="meta">${esc(m.severity || "")}</span> ${esc(m.category || "")} <span class="hint">${esc(m.message || "")}</span></div>`).join("") : `<div class="hint" style="margin-top:6px">无 MQM 标签。</div>`}`;
+    <div class="score">qe_score <b>${num(j.qe_score)}</b> · term_ok ${Number(j.term_ok) === 1 ? "✓" : "✗"}</div>
+    ${mqm.length ? `<div style="margin-top:6px">MQM：</div>` + mqm.map(m => `<div class="item"><span class="meta">${esc(m.severity || "")}</span> ${esc(m.dimension || "")} <span class="hint">${esc(m.detail || "")}</span></div>`).join("") : `<div class="hint" style="margin-top:6px">无 MQM 标签。</div>`}`;
 }
 
 async function wbPredict() {
