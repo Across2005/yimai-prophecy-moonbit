@@ -20,7 +20,7 @@ tips: >-
 - **翻译记忆（TM）+ 术语库（TB）**：#22 模块 —— add_tm / fuzzy_match（S1 四分量白盒：token/tfidf/char/ngram/tokenset）/ concordance / load_tbx / enforce_terms / check_terms。
 - **记忆闭环**：observe（记录步骤）→ predict（下一步预测+证据链）→ reward（采纳/拒绝反馈）→ consolidate（固化重放），重启不丢（tm_store.json 原子落盘）。
 - **质量与扩展**：qe_auto（QE+MQM）、style_check（风格一致性）、back_align（回译 LCS 对齐）、term_conflicts（术语冲突）、bleu_score / chrf_score（MT 评测）、retrieve_for_prompt（TMPlm 三段式 prompt 上下文）。
-- **多形态消费**：13 REST 端点 + 9 补充端点（共 22）+ `/mcp` MCP Server（22 tools）+ 前端工作台（4 面板，含记忆图谱可视化）。
+- **多形态消费**：13 REST 端点 + 10 补充端点（共 23）+ `/mcp` MCP Server（23 tools）+ 前端工作台（7 面板，含记忆图谱可视化、职业译员双栏工作台、双语对齐热力图、主动学习推荐）。
 
 ## 调用条件（触发场景）
 
@@ -59,10 +59,11 @@ powershell -ExecutionPolicy Bypass -File scripts/dev.ps1
 | `/api/retrieve_prompt` | `{"query","k","threshold"}` | **TMPlm 三段**：suggestions/terms/glossary |
 | `/api/bleu` · `/api/chrf` | `{"ref","hyp"}` | MT 质量评测分数 |
 | `/api/style_check` | `{"text"}` | 风格问题数组（rule/level/message） |
-| `/api/back_align` | `{"source","target"}` | `{align_score,misaligns}` |
+| `/api/back_align` | `{"source","target"}` | `{align_score,misaligns,ops}` 含字符级对齐脚本 |
 | `/api/term_conflicts` | — | 一词多译/多词一译 |
 | `/api/fed_export` · `/api/fed_import` | `{"added","updated"}` | 联邦增量 |
 | `/api/distill_inject` | `{"table":{k:v}}` | 蒸馏偏置注入 |
+| `/api/active_learning` | `{"k"}` | 主动学习推荐：待标注句 Top-K（uncertainty×0.6+novelty×0.4，角色去重） |
 | `/api/ping` | — | 健康检查 |
 
 ## MCP 接入（Claude Desktop / 通用 MCP 客户端）
@@ -71,7 +72,7 @@ powershell -ExecutionPolicy Bypass -File scripts/dev.ps1
 { "mcpServers": { "yimai": { "url": "http://127.0.0.1:8787/mcp" } } }
 ```
 
-22 个 MCP tools 与上表端点一一对应（initialize → tools/list → tools/call）。
+23 个 MCP tools 与上表端点一一对应（initialize → tools/list → tools/call）。
 
 ## 数据契约
 

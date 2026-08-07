@@ -68,6 +68,8 @@ async fn handle_request(req : @http.Request, body : &@io.Reader, conn : @http.Se
     handle_fed_import(body, conn)
   } else if path == "/api/distill_inject" {
     handle_distill_inject(body, conn)
+  } else if path == "/api/active_learning" {
+    handle_active_learning(body, conn)
   } else if path == "/mcp" {
     // MCP Server 变体（spec 2025-11-25，Streamable HTTP；实现见 mcp.mbt）
     handle_mcp(req, body, conn)
@@ -400,7 +402,7 @@ async fn handle_style_check(body : &@io.Reader, conn : @http.ServerConnection) -
   }
 }
 
-// POST /api/back_align  {"source","target"}  回译 LCS 对齐
+// POST /api/back_align  {"source","target"}  回译 LCS 对齐（含字符级 ops 供热力图）
 async fn handle_back_align(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
   let parsed = read_json_body(body)
   match parsed {
@@ -408,7 +410,31 @@ async fn handle_back_align(body : &@io.Reader, conn : @http.ServerConnection) ->
       let source = json_str(o, "source")
       let target = json_str(o, "target")
       let result = engine_ref.val.back_align(source, target)
-      send_json(conn, 200, result.stringify())
+      match result {
+        Json::Object(base) => {
+          // 追加字符级编辑脚本 ops：[op,i,j]（0=对齐 1=删A 2=插B），供热力图逐字着色
+          let ops_json : Array[Json] = []
+          for op in @lib.align_diff(source, target) {
+            match op {
+              (k, i, j) => ops_json.push(@lib.arr_json([k.to_json(), i.to_json(), j.to_json()]))
+            }
+          }
+          let score = match base.get("align_score") { Some(v) => v; None => @lib.num_json(0.0) }
+          let matches = match base.get("match_chars") { Some(v) => v; None => @lib.num_json(0.0) }
+          let mis = match base.get("misaligns") { Some(v) => v; None => @lib.arr_json([]) }
+          send_json(
+            conn,
+            200,
+            @lib.obj([
+              ("align_score", score),
+              ("match_chars", matches),
+              ("misaligns", mis),
+              ("ops", @lib.arr_json(ops_json)),
+            ]).stringify(),
+          )
+        }
+        _ => send_json(conn, 500, "{\"error\":\"align failed\"}")
+      }
     }
     _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
   }
@@ -466,6 +492,22 @@ async fn handle_distill_inject(body : &@io.Reader, conn : @http.ServerConnection
       engine_ref.val.inject_distillation(table)
       try { save_store() } catch { err => println("save_store error: \{err}") }
       send_json(conn, 200, "{\"status\":\"injected\",\"keys\":" + table.size().to_string() + "}")
+    }
+    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+  }
+}
+
+// POST /api/active_learning  {"k":5}  主动学习推荐（uncertainty×0.6 + novelty×0.4，角色多样性）
+async fn handle_active_learning(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let parsed = read_json_body(body)
+  match parsed {
+    Some(Json::Object(o)) => {
+      let k = match o.get("k") {
+        Some(Json::Number(n, ..)) => n.to_int()
+        _ => 5
+      }
+      let result = engine_ref.val.active_learning_candidates(k)
+      send_json(conn, 200, @lib.arr_json(result).stringify())
     }
     _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
   }

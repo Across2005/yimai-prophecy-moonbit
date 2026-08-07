@@ -1,5 +1,5 @@
 # ============================================================
-# yimai_prophecy_moonbit - smoke test (22 REST endpoints + MCP)
+# yimai_prophecy_moonbit - smoke test (23 REST endpoints + MCP)
 # Usage:  powershell -ExecutionPolicy Bypass -File scripts/smoke.ps1
 # Assumes the service is running on 127.0.0.1:8787
 # ============================================================
@@ -50,7 +50,7 @@ Check "MCP initialize" ($init.result.protocolVersion -eq "2025-11-25")
 
 $tools = Invoke-RestMethod -Method Post -Uri "$base/mcp" -ContentType "application/json" `
          -Body '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
-Check "MCP tools/list = 22" ($tools.result.tools.Count -eq 22)
+Check "MCP tools/list = 23" ($tools.result.tools.Count -eq 23)
 
 $call = Invoke-RestMethod -Method Post -Uri "$base/mcp" -ContentType "application/json" `
         -Body '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tm_count","arguments":{}}}'
@@ -86,6 +86,19 @@ Check "fed_export" ($null -ne $fe.added)
 $di = Invoke-RestMethod -Method Post -Uri "$base/api/distill_inject" -ContentType "application/json" `
       -Body '{"table":{"测试":0.5}}'
 Check "distill_inject" ($di.status -eq "injected")
+
+# --- 中期任务新增端点 ---
+$al = Invoke-RestMethod -Method Post -Uri "$base/api/active_learning" -ContentType "application/json" `
+      -Body '{"k":3}'
+Check "active_learning 返回数组" ($al -is [array])
+
+$ba2 = Invoke-RestMethod -Method Post -Uri "$base/api/back_align" -ContentType "application/json" `
+       -Body '{"source":"install sensor","target":"install the sensor"}'
+Check "back_align ops 字符级脚本" ($null -ne $ba2.ops -and $ba2.ops.Count -ge 1)
+
+$alM = Invoke-RestMethod -Method Post -Uri "$base/mcp" -ContentType "application/json" `
+       -Body '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"active_learning","arguments":{"k":2}}}'
+Check "MCP active_learning 工具调用" ($alM.result.content.Count -ge 1)
 
 Write-Host ""
 Write-Host "== smoke result: $pass passed, $fail failed =="

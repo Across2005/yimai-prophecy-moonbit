@@ -1,4 +1,4 @@
-// 译脉·先知 2.0 工作台 —— 消费 cmd/service 22 端点
+// 译脉·先知 2.0 工作台 —— 消费 cmd/service 23 端点
 "use strict";
 
 // ---------- 基础设施 ----------
@@ -285,5 +285,164 @@ function grExample() {
   document.getElementById("grK").value = "8";
   toast("已填入示例，正在绘制记忆图谱…", "info");
   graph();
+}
+
+// ---------- ⑥ 双语对齐热力图（字符级 ops 着色）----------
+function heatmap() {
+  const box = document.getElementById("hmResult");
+  const src = document.getElementById("hmSrc").value.trim();
+  const tgt = document.getElementById("hmTgt").value.trim();
+  if (!src || !tgt) { box.innerHTML = '<span class="hint">请填写 source 与 target。</span>'; return; }
+  box.innerHTML = '<span class="hint">对齐中…</span>';
+  api("/api/back_align", { source: src, target: tgt }).then(r => {
+    if (r.code !== 200) { box.innerHTML = `<span class="violation">⚠ HTTP ${r.code}</span>`; return; }
+    box.innerHTML = renderHeat(src, tgt, r.json);
+  });
+}
+
+function renderHeat(src, tgt, j) {
+  // ops: [[op,i,j]…] 0=对齐 1=删A 2=插B；A=源文 B=译文
+  const ops = Array.isArray(j.ops) ? j.ops : [];
+  let aChars = "", bChars = "";
+  for (const op of ops) {
+    const kind = op[0], i = op[1], jj = op[2];
+    if (kind === 0) {
+      const ch = src[i] ?? "";
+      aChars += `<span class="chr m">${esc(ch)}</span>`;
+      bChars += `<span class="chr m">${esc(ch)}</span>`;
+    } else if (kind === 1) {
+      aChars += `<span class="chr d">${esc(src[i] ?? "")}</span>`;
+      bChars += `<span class="chr" style="opacity:.15">&nbsp;</span>`;
+    } else {
+      aChars += `<span class="chr" style="opacity:.15">&nbsp;</span>`;
+      bChars += `<span class="chr i">${esc(tgt[jj] ?? "")}</span>`;
+    }
+  }
+  return `
+    <div class="hint">align_score <b>${num(j.align_score)}</b> · match_chars ${num(j.match_chars)}</div>
+    <div class="hm">
+      <div class="side"><h4>源文 source</h4><div class="chars">${aChars}</div></div>
+      <div class="side"><h4>译文 target</h4><div class="chars">${bChars}</div></div>
+    </div>
+    <div class="legend"><span class="sw" style="background:rgba(93,202,165,.6)"></span>对齐
+      <span class="sw" style="background:rgba(224,93,111,.6)"></span>源文独有(删)
+      <span class="sw" style="background:rgba(239,159,39,.6)"></span>译文独有(插)
+    </div>`;
+}
+
+function hmExample() {
+  document.getElementById("hmSrc").value = "install sensor";
+  document.getElementById("hmTgt").value = "install the sensor";
+  toast("已填入示例（译文多 the），正在对齐…", "info");
+  heatmap();
+}
+
+// ---------- ⑦ 主动学习推荐 ----------
+async function activeLearning() {
+  const box = document.getElementById("alResult");
+  box.innerHTML = '<span class="hint">推荐中…</span>';
+  const r = await api("/api/active_learning", { k: parseInt(document.getElementById("alK").value) || 5 });
+  if (r.code !== 200) { box.innerHTML = `<span class="violation">⚠ HTTP ${r.code}</span>`; return; }
+  const items = r.json || [];
+  if (!items.length) { box.innerHTML = '<span class="hint">暂无待标注句（记忆为空或已充分学习）。</span>'; return; }
+  box.innerHTML = items.map(it => `
+    <div class="al-item">
+      <span class="unc">unc ${num(it.uncertainty)}</span>
+      <span class="role">${esc(it.role)}</span>
+      <span class="txt" title="${esc(it.text)}">${esc(it.text)}</span>
+      <button class="mini" onclick="explain('${esc(it.id)}')">白盒</button>
+    </div>`).join("") +
+    `<div class="hint" style="margin-top:6px">共 ${items.length} 条：uncertainty×0.6 + novelty×0.4，角色去重。</div>`;
+}
+
+function alExample() {
+  document.getElementById("alK").value = "5";
+  toast("已请求主动学习推荐 Top-5…", "info");
+  activeLearning();
+}
+
+// ---------- ⑤ 职业译员双栏工作台 ----------
+async function wbAlign() {
+  const box = document.getElementById("wbHeat");
+  const src = document.getElementById("wbSrc").value.trim();
+  const tgt = document.getElementById("wbTgt").value.trim();
+  if (!src || !tgt) { box.innerHTML = '<span class="hint">请先填写源文与译文。</span>'; return; }
+  box.innerHTML = '<span class="hint">对齐中…</span>';
+  const r = await api("/api/back_align", { source: src, target: tgt });
+  if (r.code !== 200) { box.innerHTML = `<span class="violation">⚠ HTTP ${r.code}</span>`; return; }
+  box.innerHTML = renderHeat(src, tgt, r.json);
+}
+
+async function wbTerms() {
+  const box = document.getElementById("wbTermsR");
+  const src = document.getElementById("wbSrc").value.trim();
+  const tgt = document.getElementById("wbTgt").value.trim();
+  if (!src || !tgt) { box.innerHTML = '<span class="hint">请先填写源文与译文。</span>'; return; }
+  box.innerHTML = '<span class="hint">校验中…</span>';
+  const r = await api("/api/check_terms", { source: src, target: tgt });
+  if (r.code !== 200) { box.innerHTML = `<span class="violation">⚠ HTTP ${r.code}</span>`; return; }
+  const viol = r.json || [];
+  if (!viol.length) { box.innerHTML = '<span class="score">✓ 术语一致，无违规。</span>'; return; }
+  // 源文术语高亮（命中违规术语处标红）
+  let hl = esc(src);
+  for (const v of viol) {
+    const t = esc(v.term);
+    hl = hl.split(t).join(`<span class="violation">${t}</span>`);
+  }
+  box.innerHTML = `
+    <div style="margin-bottom:6px"><b>术语违规 ${viol.length} 处：</b></div>
+    ${viol.map(v => `<div class="item violation">「${esc(v.term)}」→ 期望「${esc(v.expected)}」<span class="meta">mid=${esc(v.mid)}</span></div>`).join("")}
+    <div class="hint" style="margin-top:6px">源文术语高亮：<span style="word-break:break-all">${hl}</span></div>`;
+}
+
+async function wbQE() {
+  const box = document.getElementById("wbQER");
+  const src = document.getElementById("wbSrc").value.trim();
+  const tgt = document.getElementById("wbTgt").value.trim();
+  if (!src || !tgt) { box.innerHTML = '<span class="hint">请先填写源文与译文。</span>'; return; }
+  box.innerHTML = '<span class="hint">评分中…</span>';
+  const r = await api("/api/qe_auto", { source: src, target: tgt, match_rate: 0 });
+  if (r.code !== 200) { box.innerHTML = `<span class="violation">⚠ HTTP ${r.code}</span>`; return; }
+  const j = r.json || {};
+  const mqm = Array.isArray(j.mqm) ? j.mqm : [];
+  box.innerHTML = `
+    <div class="score">qe_score <b>${num(j.qe_score)}</b> · term_ok ${j.term_ok === true ? "✓" : "✗"}</div>
+    ${mqm.length ? `<div style="margin-top:6px">MQM：</div>` + mqm.map(m => `<div class="item"><span class="meta">${esc(m.severity || "")}</span> ${esc(m.category || "")} <span class="hint">${esc(m.message || "")}</span></div>`).join("") : `<div class="hint" style="margin-top:6px">无 MQM 标签。</div>`}`;
+}
+
+async function wbPredict() {
+  const box = document.getElementById("wbPred");
+  box.innerHTML = '<span class="hint">预测中…</span>';
+  const r = await api("/api/predict", { k: parseInt(document.getElementById("wbK").value) || 3 });
+  if (r.code !== 200) { box.innerHTML = `<span class="violation">⚠ HTTP ${r.code}</span>`; return; }
+  const preds = (r.json && r.json.predictions) || [];
+  if (!preds.length) { box.innerHTML = '<div class="hint">无可预测步骤（记忆为空）。先到 ③ observe 记录步骤。</div>'; return; }
+  box.innerHTML = `
+    <div class="hint" style="margin-bottom:6px">confidence ${num(r.json.confidence)} · uncertainty ${num(r.json.uncertainty)}</div>
+    ${preds.map(p => `
+      <div class="item">
+        <div class="src">${esc(p.text)} <span class="score">prob ${num(p.prob)}</span></div>
+        <div class="path">${esc((p.path || []).map(x => x.from + "→").join(""))}${esc(p.id || "")}</div>
+        <div class="flex">
+          <button class="mini" onclick="explain('${esc(p.id)}')">白盒</button>
+          <button class="mini ok-btn" onclick="reward('${esc(p.id)}',1)">采纳 +1</button>
+          <button class="mini bad-btn" onclick="reward('${esc(p.id)}',-1)">拒绝 -1</button>
+        </div>
+        <div id="ex-${esc(p.id)}"></div>
+      </div>`).join("")}`;
+}
+
+async function wbAll() {
+  toast("一键全检：对齐 + 术语 + QE 并行…", "info");
+  await Promise.all([wbAlign(), wbTerms(), wbQE()]);
+}
+
+function wbExample() {
+  document.getElementById("wbSrc").value = "请翻译：该车的快充功率可达 150 kW，支持 800 V 高压平台。";
+  document.getElementById("wbTgt").value = "Please translate: this vehicle supports fast charging up to 150 kW on an 800 V high-voltage platform.";
+  document.getElementById("wbK").value = "3";
+  toast("已填入示例，正在一键全检…", "info");
+  wbAll();
+  wbPredict();
 }
 

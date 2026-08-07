@@ -1,6 +1,6 @@
 // mcp.mbt —— /mcp 端点：MCP (Model Context Protocol) Server 变体
 // spec 2025-11-25 · Streamable HTTP 传输（挂 8787 服务，POST 单 JSON-RPC 消息，application/json 响应）
-// 22 个引擎能力映射为 MCP tools，供 Claude Desktop / 通用 MCP 客户端消费。
+// 23 个引擎能力映射为 MCP tools，供 Claude Desktop / 通用 MCP 客户端消费。
 // 注：MoonBit Json 为 FFI 类型，构造一律走 @lib.obj/str_json/num_json/arr_json。
 
 // ===== JSON-RPC 响应构造 =====
@@ -192,6 +192,9 @@ fn all_tools() -> Json {
     tool_def("distill_inject", "蒸馏偏置表注入", [
       ("table", schema_prop("object", "角色→偏置 Map")),
     ], []),
+    tool_def("active_learning", "主动学习推荐：按 uncertainty+diversity 推 Top-K 待标注句", [
+      ("k", schema_prop("integer", "Top-K（默认 5）")),
+    ], []),
   ]
   @lib.arr_json(tools)
 }
@@ -199,7 +202,8 @@ fn all_tools() -> Json {
 fn is_known_tool(name : String) -> Bool {
   let known = ["fuzzy_match", "add_tm", "check_terms", "concordance", "qe_auto", "predict", "observe",
     "recall", "explain", "reward", "consolidate", "tm_count", "ping", "retrieve_prompt", "bleu", "chrf",
-    "style_check", "back_align", "term_conflicts", "fed_export", "fed_import", "distill_inject"]
+    "style_check", "back_align", "term_conflicts", "fed_export", "fed_import", "distill_inject",
+    "active_learning"]
   let mut found = false
   for k in known {
     if k == name { found = true }
@@ -285,6 +289,8 @@ async fn invoke_tool(name : String, args : Json) -> Json {
     engine_ref.val.inject_distillation(table)
     try { save_store() } catch { err => println("save_store error: \{err}") }
     @lib.obj([("status", @lib.str_json("injected")), ("keys", @lib.num_json(table.size().to_double()))])
+  } else if name == "active_learning" {
+    @lib.arr_json(engine_ref.val.active_learning_candidates(arg_int(args, "k", 5)))
   } else {
     @lib.obj([("error", @lib.str_json("unknown tool"))])
   }

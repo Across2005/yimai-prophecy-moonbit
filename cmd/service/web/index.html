@@ -25,6 +25,31 @@
   .guide a:hover { color: #8fe0ff; }
   .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
   @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
+  .grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 16px; }
+  @media (max-width: 1100px) { .grid2 { grid-template-columns: 1fr; } }
+  /* 双栏工作台 */
+  .wb { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 1100px) { .wb { grid-template-columns: 1fr; } }
+  .wb textarea { width: 100%; min-height: 110px; background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: 6px; padding: 8px; font: 13px/1.7 var(--mono); resize: vertical; }
+  .wb textarea:focus { outline: 1px solid var(--acc); }
+  .wb label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 4px; }
+  /* 对齐热力图字符着色 */
+  .hm { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; }
+  .hm .side { flex: 1; min-width: 200px; }
+  .hm .side h4 { font-size: 12px; color: var(--dim); margin-bottom: 6px; font-weight: 500; }
+  .hm .chars { font: 14px/1.8 var(--mono); word-break: break-all; }
+  .hm .chr { display: inline-block; padding: 1px 2px; border-radius: 3px; margin: 0 1px; }
+  .hm .chr.m { color: var(--ok); background: rgba(93,202,165,.10); }
+  .hm .chr.d { color: var(--bad); background: rgba(224,93,111,.16); }
+  .hm .chr.i { color: var(--warn); background: rgba(239,159,39,.16); }
+  .legend { font-size: 11px; color: var(--dim); margin-top: 6px; }
+  .legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin: 0 4px 0 10px; vertical-align: -1px; }
+  /* 主动学习项 */
+  .al-item { display: flex; gap: 8px; align-items: center; padding: 6px 2px; border-bottom: 1px solid var(--line); }
+  .al-item .unc { font: 11px var(--mono); color: var(--warn); white-space: nowrap; }
+  .al-item .role { font: 10px var(--mono); color: var(--acc); background: #142a38; padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
+  .al-item .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .panel.full { grid-column: 1 / -1; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
   .panel h2 { font-size: 13px; color: var(--acc); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; }
   .row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
@@ -75,6 +100,7 @@
   <span class="step"><span class="num">1</span> 先<b>灌入记忆</b>——在 ③ 记录步骤，或点「示例」一键填入</span>
   <span class="step"><span class="num">2</span> 再<b>查询</b>——① 模糊检索 TM / ② 校验术语</span>
   <span class="step"><span class="num">3</span> 最后<b>看证据链 + 反馈</b>——点预测项「白盒」，用「采纳/拒绝」教引擎</span>
+  <span class="step"><span class="num">+</span> ⑤ 职业译员工作台：源文/译文双栏 · 对齐热力图 · 术语高亮 · QE · 预测流</span>
 </div>
 
 <div class="grid">
@@ -140,6 +166,60 @@
     </div>
   </section>
 
+  <!-- 面板 5：职业译员双栏工作台（旗舰） -->
+  <section class="panel full" id="p-wb">
+    <h2>⑤ 职业译员工作台 · 双语对齐 + 术语高亮 + 预测流</h2>
+    <div class="wb">
+      <div>
+        <label for="wbSrc">源文（source）</label>
+        <textarea id="wbSrc" placeholder="请输入源文，如：请翻译：该车的快充功率可达 150 kW，支持 800 V 高压平台。"></textarea>
+      </div>
+      <div>
+        <label for="wbTgt">译文（target）</label>
+        <textarea id="wbTgt" placeholder="请输入译文，对齐/术语/QE 将在此高亮，如：Please translate: this vehicle supports fast charging up to 150 kW on an 800 V platform."></textarea>
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button onclick="wbAlign()">① 对齐热力图</button>
+      <button onclick="wbTerms()">② 术语校验</button>
+      <button onclick="wbQE()">③ QE 评分</button>
+      <button onclick="wbAll()" class="ok-btn">一键全检</button>
+      <button class="ex" onclick="wbExample()">示例</button>
+      <button onclick="wbPredict()">④ 预测下一步</button>
+      <input id="wbK" style="flex:0 0 60px" value="3" title="预测 Top-K">
+    </div>
+    <div class="result" id="wbHeat" style="max-height:none"><span class="hint">👆 对齐热力图：字符级 Myers/LCS 对齐着色（绿=对齐 红=源文独有 橙=译文独有），术语违规处标红，附 align_score。</span></div>
+    <div class="result" id="wbTermsR" style="margin-top:10px"><span class="hint">👆 术语一致性（check_terms）结果与源文术语高亮。</span></div>
+    <div class="result" id="wbQER" style="margin-top:10px"><span class="hint">👆 QE 评分（qe_auto）与 MQM 标签。</span></div>
+    <div class="result" id="wbPred" style="margin-top:10px"><span class="hint">👆 预测流卡片：点「白盒」看证据链。</span></div>
+  </section>
+
+</div>
+
+<!-- 5/6 面板占一行 -->
+<div class="grid2">
+  <!-- 面板 6：双语对齐热力图（独立） -->
+  <section class="panel" id="p-hm">
+    <h2>⑥ 双语对齐热力图</h2>
+    <div class="row">
+      <input id="hmSrc" placeholder="source，如：install sensor">
+      <input id="hmTgt" placeholder="target，如：install the sensor">
+      <button onclick="heatmap()">对齐</button>
+      <button class="ex" onclick="hmExample()">示例</button>
+    </div>
+    <div class="result" id="hmResult" style="max-height:none"><span class="hint">👆 字符级对齐着色：绿=匹配 · 红=源文独有(删) · 橙=译文独有(插)。</span></div>
+  </section>
+
+  <!-- 面板 7：主动学习推荐 -->
+  <section class="panel" id="p-al">
+    <h2>⑦ 主动学习推荐</h2>
+    <div class="row">
+      <input id="alK" style="flex:0 0 60px" value="5" title="Top-K">
+      <button onclick="activeLearning()">推荐待标注句</button>
+      <button class="ex" onclick="alExample()">示例</button>
+    </div>
+    <div class="result" id="alResult"><span class="hint">👆 按 uncertainty×0.6 + novelty×0.4 排序、角色去重后推送 Top-K 待标注句（active_learning_candidates）。</span></div>
+  </section>
 </div>
 
 <div id="toast"></div>
