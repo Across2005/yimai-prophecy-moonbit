@@ -1,7 +1,7 @@
 # ============================================================
 # yimai_prophecy_moonbit - run the HTTP service (native)
 # Usage:  powershell -ExecutionPolicy Bypass -File scripts/run.ps1
-# Service: http://127.0.0.1:8787  (13 REST endpoints + /mcp MCP server + web workbench)
+# Service: http://127.0.0.1:8787  (22 REST endpoints + /mcp MCP server + web workbench)
 # ============================================================
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root

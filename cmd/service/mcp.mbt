@@ -1,6 +1,6 @@
 // mcp.mbt —— /mcp 端点：MCP (Model Context Protocol) Server 变体
 // spec 2025-11-25 · Streamable HTTP 传输（挂 8787 服务，POST 单 JSON-RPC 消息，application/json 响应）
-// 13 个引擎能力映射为 MCP tools，供 Claude Desktop / 通用 MCP 客户端消费。
+// 22 个引擎能力映射为 MCP tools，供 Claude Desktop / 通用 MCP 客户端消费。
 // 注：MoonBit Json 为 FFI 类型，构造一律走 @lib.obj/str_json/num_json/arr_json。
 
 // ===== JSON-RPC 响应构造 =====

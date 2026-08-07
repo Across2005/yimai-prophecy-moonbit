@@ -1,4 +1,4 @@
-// 译脉·先知 2.0 工作台 —— 消费 cmd/service 13 端点
+// 译脉·先知 2.0 工作台 —— 消费 cmd/service 22 端点
 "use strict";
 
 // ---------- 基础设施 ----------
@@ -287,67 +287,3 @@ function grExample() {
   graph();
 }
 
-// ---------- ④ 记忆图谱（SVG 确定性环布局）----------
-async function graph() {
-  const box = document.getElementById("grResult");
-  const q = document.getElementById("grQuery").value.trim() || "电池";
-  const k = parseInt(document.getElementById("grK").value) || 8;
-  box.innerHTML = '<span class="hint">绘制中…</span>';
-  const r = await api("/api/recall", { query: q, k: Math.min(k, 8) });
-  if (r.code !== 200) { box.innerHTML = `<span class="violation">⚠ ${esc(r.json && r.json.error) || ("HTTP " + r.code)}</span>`; return; }
-  const items = r.json || [];
-  if (!items.length) { box.innerHTML = '<span class="hint">无召回记忆。先到 ③ 记录步骤/灌入 TM。</span>'; return; }
-  renderGraph(box, items);
-}
-
-function renderGraph(box, items) {
-  const n = items.length;
-  const W = 560, H = 380, cx = W / 2, cy = H / 2, R = 150;
-  const nodeR = 34;
-  // 确定性环布局（按 score 降序，顺时针；无随机）
-  const pos = items.map((it, i) => {
-    const ang = (i / n) * 2 * Math.PI - Math.PI / 2;
-    return { x: cx + R * Math.cos(ang), y: cy + R * Math.sin(ang) };
-  });
-  // 边：via_edges 引用其他节点（id 匹配）
-  const edges = [];
-  for (let i = 0; i < n; i++) {
-    for (const e of (items[i].via_edges || [])) {
-      const j = items.findIndex(x => x.id === e.to);
-      if (j >= 0) edges.push({ i, j, w: e.w });
-    }
-  }
-  let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`;
-  svg += `<defs><marker id="ar" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#5dc9e2"/></marker></defs>`;
-  svg += `<rect width="${W}" height="${H}" fill="transparent"/>`;
-  // 边
-  for (const e of edges) {
-    const a = pos[e.i], b = pos[e.j];
-    svg += `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" stroke="#3a6a8a" stroke-width="${Math.max(0.5, e.w * 2).toFixed(1)}" marker-end="url(#ar)" opacity="0.7"/>`;
-    svg += `<text x="${((a.x + b.x) / 2).toFixed(1)}" y="${((a.y + b.y) / 2 - 4).toFixed(1)}" font-size="9" fill="#9aa3b5" text-anchor="middle">${num(e.w)}</text>`;
-  }
-  // 节点
-  for (let i = 0; i < n; i++) {
-    const it = items[i], p = pos[i];
-    const isTerm = it.type === "term";
-    const isTm = it.type === "tm";
-    const fill = isTerm ? "#ef9f27" : isTm ? "#5dcaa5" : "#5dc9e2";
-    const label = (it.text || "").length > 10 ? (it.text || "").slice(0, 10) + "…" : (it.text || it.id);
-    svg += `<g onclick="explain('${esc(it.id)}')" style="cursor:pointer">`;
-    svg += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${nodeR}" fill="${fill}" opacity="0.18" stroke="${fill}" stroke-width="1.5"/>`;
-    svg += `<text x="${p.x.toFixed(1)}" y="${(p.y - 14).toFixed(1)}" font-size="10" fill="#e8e8f0" text-anchor="middle">${esc(it.id)}</text>`;
-    svg += `<text x="${p.x.toFixed(1)}" y="${(p.y + 4).toFixed(1)}" font-size="9" fill="#d8d8e8" text-anchor="middle">${esc(label)}</text>`;
-    svg += `<text x="${p.x.toFixed(1)}" y="${(p.y + 20).toFixed(1)}" font-size="8" fill="#9aa3b5" text-anchor="middle">${num(it.score)}</text>`;
-    svg += `</g>`;
-  }
-  svg += `</svg>`;
-  svg += `<div class="hint" style="margin-top:4px">节点 ${n} · 边 ${edges.length} · 点节点查看白盒（explain）</div>`;
-  box.innerHTML = svg;
-}
-
-function grExample() {
-  document.getElementById("grQuery").value = "电池";
-  document.getElementById("grK").value = "8";
-  toast("已填入示例，正在绘制记忆图谱…", "info");
-  graph();
-}

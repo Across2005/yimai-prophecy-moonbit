@@ -361,7 +361,7 @@ POST /api/fuzzy_match  {"query":"电池包热管理方案","k":3,"threshold":0.5
 
 ### MCP Server（/mcp 端点）—— 供 Claude Desktop / 通用 MCP 客户端消费
 
-`cmd/service` 同时暴露 **MCP（Model Context Protocol）Server 变体**（spec **2025-11-25**，Streamable HTTP）：挂 `/mcp` 端点，POST 单 JSON-RPC 消息、`application/json` 响应（无需 SSE）。**13 个引擎能力直接映射为 MCP tools**：
+`cmd/service` 同时暴露 **MCP（Model Context Protocol）Server 变体**（spec **2025-11-25**，Streamable HTTP）：挂 `/mcp` 端点，POST 单 JSON-RPC 消息、`application/json` 响应（无需 SSE）。**22 个引擎能力直接映射为 MCP tools**：
 
 | MCP tool | 参数 | 说明 |
 |---|---|---|
@@ -377,6 +377,13 @@ POST /api/fuzzy_match  {"query":"电池包热管理方案","k":3,"threshold":0.5
 | `reward` | mid / score | 采纳/拒绝反馈 |
 | `consolidate` | prune | 固化重放 |
 | `tm_count` / `ping` | — | 存量 / 健康检查 |
+| `retrieve_prompt` | query / k / threshold | TMPlm：为 LLM prompt 组装三段式检索上下文（suggestions/terms/glossary） |
+| `bleu` / `chrf` | ref / hyp | MT 质量评测（零依赖自实现） |
+| `style_check` | text | 风格一致性（句长/标点/括号/术语命中） |
+| `back_align` | source / target | 回译 LCS 对齐验证 |
+| `term_conflicts` | — | 术语冲突检测（一词多译/多词一译） |
+| `fed_export` / `fed_import` | added / updated | 联邦增量导出/导入 |
+| `distill_inject` | table | 蒸馏偏置表注入 |
 
 ```bash
 # MCP 握手（curl 模拟客户端）
@@ -385,7 +392,7 @@ curl -X POST localhost:8787/mcp -d '{"jsonrpc":"2.0","id":2,"method":"tools/list
 curl -X POST localhost:8787/mcp -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"fuzzy_match","arguments":{"query":"电池","k":2}}}'
 ```
 
-> 协议：`initialize`（protocolVersion 2025-11-25 + capabilities.tools）/ `notifications/initialized`（202）/ `tools/list`（13 tools，inputSchema JSON Schema 2020-12）/ `tools/call`（未知工具 `-32602`，引擎异常 `isError:true`）；GET /mcp 回 405。实现为自建轻量 JSON-RPC 2.0 层（`cmd/service/mcp.mbt`，MoonBit 无现成 MCP 库），全程复用引擎 `@lib.obj/str_json/num_json` 构造（Json 为 FFI 类型）。
+> 协议：`initialize`（protocolVersion 2025-11-25 + capabilities.tools）/ `notifications/initialized`（202）/ `tools/list`（22 tools，inputSchema JSON Schema 2020-12）/ `tools/call`（未知工具 `-32602`，引擎异常 `isError:true`）；GET /mcp 回 405。实现为自建轻量 JSON-RPC 2.0 层（`cmd/service/mcp.mbt`，MoonBit 无现成 MCP 库），全程复用引擎 `@lib.obj/str_json/num_json` 构造（Json 为 FFI 类型）。
 
 ### 持久化
 
@@ -662,8 +669,8 @@ The "fast / accurate / beautiful" algorithm kernel is **fully landed** and contr
 | Neural-symbolic distillation (consume side) | `inject_distillation` | ✅ |
 | **#22 TM / TermBase** | `add_tm` / `fuzzy_match` / `concordance` / `load_tbx` / `enforce_terms` / `check_terms` | ✅ (new) |
 | **S1 fuzzy-match upgrade** | `fuzzy_match`（IDF + 2-gram + word-order）/ `fuzzy_match_legacy` | ✅ |
-| **Pure-MoonBit HTTP service** | `cmd/service`：13 端点 + 记忆闭环 + 原子写持久化 + 重启恢复 | ✅ (new) |
-| **MCP Server (/mcp)** | `cmd/service/mcp.mbt`：13 引擎能力 → MCP tools（spec 2025-11-25） | ✅ (new) |
+| **Pure-MoonBit HTTP service** | `cmd/service`：22 端点 + 记忆闭环 + 原子写持久化 + 重启恢复 | ✅ (new) |
+| **MCP Server (/mcp)** | `cmd/service/mcp.mbt`：22 引擎能力 → MCP tools（spec 2025-11-25） | ✅ (new) |
 | **TMPlm 桥接 (M5)** | `retrieve_for_prompt` + `/api/retrieve_prompt`（三段式） | ✅ (new) |
 | **SKILL.md 编排壳** | `docs/skill/SKILL.md`（agent_created，安装见 For Agents） | ✅ (new) |
 | Translator workbench (web front-end) | `cmd/service/web`（四面板 + 记忆图谱） | ✅ (new，阶段 C 已交付) |
@@ -715,7 +722,7 @@ Then `moon add Across2005/yimai_prophecy_moonbit` and call any of the `ProphecyE
 
 `engine.mbt` is pure-stdlib, zero-I/O, with constants (`HEBB_LR`, `EDGE_DECAY`, `BETA`, …) that map 1:1 to D1–D8. It can be reimplemented in Python / TypeScript / Go by reading the source — the most portable route for cross-language agent loading.
 
-**Path E — MCP client (Claude Desktop / any MCP host):** ✅ 已实测。`cmd/service` 暴露 `/mcp` 端点（MCP spec 2025-11-25 Streamable HTTP），13 个引擎能力映射为 MCP tools（fuzzy_match / add_tm / check_terms / concordance / qe_auto / predict / observe / recall / explain / reward / consolidate / tm_count / ping）。Claude Desktop 配置：
+**Path E — MCP client (Claude Desktop / any MCP host):** ✅ 已实测。`cmd/service` 暴露 `/mcp` 端点（MCP spec 2025-11-25 Streamable HTTP），22 个引擎能力映射为 MCP tools（fuzzy_match / add_tm / check_terms / concordance / qe_auto / predict / observe / recall / explain / reward / consolidate / tm_count / ping / retrieve_prompt / bleu / chrf / style_check / back_align / term_conflicts / fed_export / fed_import / distill_inject）。Claude Desktop 配置：
 
 ```json
 { "mcpServers": { "yimai": { "url": "http://127.0.0.1:8787/mcp" } } }
