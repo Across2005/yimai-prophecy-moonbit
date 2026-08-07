@@ -1,3 +1,25 @@
 #!/bin/sh
+# yimai_prophecy_moonbit — 本地提交门禁（纯本地、零云端依赖）
+# 在每次 commit 前自动运行：类型检查 + wasm-gc 全量确定性回归。
+# 任一失败即中止提交，保护「确定性硬契约」不被破坏。
+#
+# moon 定位：优先 MoonBit 官方安装目录 (~/.moon/bin)，排除 PATH 中其它
+# 同名 moon（例如 npm 的 moon.cmd）。找不到则快速失败，避免挂起。
 
-moon check
+if [ -x "$HOME/.moon/bin/moon" ]; then
+  MOON="$HOME/.moon/bin/moon"
+elif command -v moon >/dev/null 2>&1; then
+  MOON="$(command -v moon)"
+else
+  echo "[FAIL] MoonBit toolchain ('moon') not found. Install: https://www.moonbitlang.com/download" 1>&2
+  exit 1
+fi
+echo "== [pre-commit] using moon: $MOON =="
+
+echo "== [pre-commit] moon check =="
+"$MOON" check || { echo "[FAIL] moon check" 1>&2; exit 1; }
+
+echo "== [pre-commit] moon test --target wasm-gc =="
+"$MOON" test --target wasm-gc || { echo "[FAIL] moon test" 1>&2; exit 1; }
+
+echo "== [pre-commit] regressive gate passed =="

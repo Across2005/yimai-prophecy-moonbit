@@ -6,27 +6,33 @@
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-Write-Host "==== Step 1/5: environment check ===="
+Write-Host "==== Step 0/6: 引擎契约回归（纯本地，零云端） ===="
+& moon test --target wasm-gc
+if ($LASTEXITCODE -ne 0) { Write-Host "[FAIL] moon test"; exit 1 }
+Write-Host "[OK] engine regression passed"
+
+Write-Host ""
+Write-Host "==== Step 1/6: environment check ===="
 & "$PSScriptRoot/setup.ps1"
 
 Write-Host ""
-Write-Host "==== Step 2/5: build (native) ===="
+Write-Host "==== Step 2/6: build (native) ===="
 & "$PSScriptRoot/build.ps1"
 if ($LASTEXITCODE -ne 0) { Write-Host "[FAIL] build"; exit 1 }
 
 Write-Host ""
-Write-Host "==== Step 3/5: start service (background) ===="
+Write-Host "==== Step 3/6: start service (background) ===="
 $exe = Join-Path $root "_build/native/debug/build/cmd/service/service.exe"
 $p = Start-Process -FilePath $exe -PassThru -WindowStyle Hidden
 Write-Host "service PID: $($p.Id)"
 Start-Sleep -Seconds 2
 
 Write-Host ""
-Write-Host "==== Step 4/5: seed sample TM ===="
+Write-Host "==== Step 4/6: seed sample TM ===="
 & "$PSScriptRoot/seed.ps1"
 
 Write-Host ""
-Write-Host "==== Step 5/5: smoke test ===="
+Write-Host "==== Step 5/6: smoke test ===="
 & "$PSScriptRoot/smoke.ps1"
 if ($LASTEXITCODE -ne 0) {
   Write-Host "[FAIL] smoke"; Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; exit 1
