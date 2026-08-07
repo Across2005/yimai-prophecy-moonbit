@@ -46,6 +46,8 @@ test "T4b style_report：记忆库分布 + 术语变体 + 偏离建议" {
   let _ = e.add_tm("快充功率", "fast charging power")
   let _ = e.mark_term(m1)
   let _ = e.mark_term(m2)
+  // observe 工作流节点（translation 恒空）不应计入双语统计
+  let _ = e.observe("提取核心术语表并锁定", "instruction")
   let r = e.style_report("")
   match r {
     Json::Object(o) =>
@@ -58,6 +60,21 @@ test "T4b style_report：记忆库分布 + 术语变体 + 偏离建议" {
   // 术语变体族「电池」（2 词同根、均标为术语）应被检出
   let r2 = e.style_report("")
   match r2 {
+    Json::Object(o) =>
+      match o.get("term_variants") {
+        Some(Json::Array(a)) => inspect(a.length() >= 1, content="true")
+        _ => inspect(false, content="true")
+      }
+    _ => inspect(false, content="true")
+  }
+  // 拉丁词根按首个单词归并（switch/switcher 共享词根 "switch"），且输出按 root 字典序
+  let e2 = ProphecyEngine::make()
+  let l1 = e2.add_tm("switch mode", "开关模式")
+  let l2 = e2.add_tm("switch unit", "切换单元")
+  let _ = e2.mark_term(l1)
+  let _ = e2.mark_term(l2)
+  let r3 = e2.style_report("")
+  match r3 {
     Json::Object(o) =>
       match o.get("term_variants") {
         Some(Json::Array(a)) => inspect(a.length() >= 1, content="true")

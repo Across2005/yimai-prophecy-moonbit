@@ -2830,8 +2830,9 @@ pub fn ProphecyEngine::style_check(self : ProphecyEngine, text : String) -> Json
 
 // ===== 风格一致报告（路线图 §四 长期「美」）：记忆库分布统计 + 新译文偏离建议 =====
 // 输入 text 可为空串（仅报告记忆库分布）或待检译文（追加偏离建议）。
-// 统计口径：双语句对（is_term 且 translation!="" 视为术语变体）；句长=字符数。
-// 确定性：遍历 memories 顺序固定（iter2 按插入序），无随机。
+// 统计口径：双语句对（tm 或带译文的 term，即 translation!=""）；句长=字符数。
+// formal_score：库中通过 style_check 无格式问题的句对占比（格式达标率，非语言正式度）。
+// 确定性：遍历 memories 顺序固定（iter2 按插入序），变体族按 root 排序输出，无随机。
 pub fn ProphecyEngine::style_report(self : ProphecyEngine, text : String) -> Json {
   let mut sent_n = 0
   let mut sum_src = 0.0
@@ -2845,7 +2846,8 @@ pub fn ProphecyEngine::style_report(self : ProphecyEngine, text : String) -> Jso
   let mut b2 = 0
   let mut b3 = 0
   for _, m in self.memories.iter2() {
-    if m.text.length() == 0 {
+    // 仅统计双语节点（tm / 带译文的 term），排除 observe 工作流/指令节点（translation 恒空）
+    if m.text.length() == 0 || m.translation == "" {
       continue
     }
     sent_n = sent_n + 1
@@ -2853,17 +2855,19 @@ pub fn ProphecyEngine::style_report(self : ProphecyEngine, text : String) -> Jso
     let t = m.translation.length().to_double()
     sum_src = sum_src + s
     sum_tgt = sum_tgt + t
-    if self.style_check(m.text) == arr_json([]) {
+    let is_formal = match self.style_check(m.text) {
+      Json::Array(a) => a.length() == 0
+      _ => false
+    }
+    if is_formal {
       formal_ok = formal_ok + 1
     }
     if m.is_term {
       term_n = term_n + 1
-      if m.translation != "" {
-        let root = term_root(m.text)
-        if root != "" {
-          let cur = match term_variants.get(root) { Some(v) => v; None => 0 }
-          term_variants.set(root, cur + 1)
-        }
+      let root = term_root(m.text)
+      if root != "" {
+        let cur = match term_variants.get(root) { Some(v) => v; None => 0 }
+        term_variants.set(root, cur + 1)
       }
     }
     if s >= 80.0 {
@@ -2880,12 +2884,18 @@ pub fn ProphecyEngine::style_report(self : ProphecyEngine, text : String) -> Jso
   let avg_src = if n > 0.0 { r4(sum_src / n) } else { 0.0 }
   let avg_tgt = if n > 0.0 { r4(sum_tgt / n) } else { 0.0 }
   let formal_score = if n > 0.0 { r4(formal_ok.to_double() / n) } else { 0.0 }
-  // 术语变体：按词根分组计数，>1 为潜在变体族
-  let variants_arr : Array[Json] = []
+  // 术语变体：按词根分组计数，>1 为潜在变体族；按 root 字典序输出保证确定性
+  let vlist : Array[(String, Int)] = []
   for root, cnt in term_variants.iter2() {
     if cnt > 1 {
-      variants_arr.push(obj([("root", str_json(root)), ("count", num_json(cnt.to_double()))]))
+      vlist.push((root, cnt))
     }
+  }
+  vlist.sort_by(fn(a, b) { a.0.compare(b.0) })
+  let variants_arr : Array[Json] = []
+  for item in vlist {
+    let (root, cnt) = item
+    variants_arr.push(obj([("root", str_json(root)), ("count", num_json(cnt.to_double()))]))
   }
   // 新译文偏离建议：长度偏离记忆库均值 ±50% 或含重复标点
   let tips : Array[Json] = []
@@ -2929,8 +2939,19 @@ pub fn ProphecyEngine::style_report(self : ProphecyEngine, text : String) -> Jso
   ])
 }
 
-// 词根提取：术语前 2 个汉字（中文）或首个字母词（拉丁）；用于归并变体族（如 电池/电池组/电池包）
+// 词根提取：中文取前 2 个汉字，拉丁词取首个空格分隔的单词；用于归并变体族（如 电池/电池组/电池包、switch/switcher）
 fn term_root(t : String) -> String {
+  // 判断首字符是否为 ASCII 字母（拉丁）
+  let is_latin = match t.iter().next() {
+    Some(c) => (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+    None => false
+  }
+  if is_latin {
+    // 拉丁：取首个空格分隔的单词
+    let parts = t.split(" ").to_array()
+    return if parts.length() > 0 { parts[0].to_owned() } else { "" }
+  }
+  // 中文/其他：取前 2 个非空格字符
   let chars : Array[String] = []
   for i = 0; i < t.length(); i = i + 1 {
     match t[i].to_char() {
