@@ -24,7 +24,7 @@ let snap = eng.to_json()               // 持久化导出
 
 ## 服务层（HTTP + MCP）
 
-`cmd/service` 提供 23 个 REST 端点 + `/mcp` MCP Server（23 tools，spec 2025-11-25）+ 前端工作台。详见仓库 `README.md` 的「Service Layer」章节；`scripts/dev.ps1` 一键构建-启动-灌数据-冒烟。
+`cmd/service` 提供 24 个 REST 端点 + `/mcp` MCP Server（24 tools，spec 2025-11-25）+ 前端工作台。详见仓库 `README.md` 的「Service Layer」章节；`scripts/dev.ps1` 一键构建-启动-灌数据-冒烟。
 
 ## 测试
 

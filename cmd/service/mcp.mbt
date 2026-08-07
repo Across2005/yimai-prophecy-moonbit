@@ -1,6 +1,6 @@
 // mcp.mbt —— /mcp 端点：MCP (Model Context Protocol) Server 变体
 // spec 2025-11-25 · Streamable HTTP 传输（挂 8787 服务，POST 单 JSON-RPC 消息，application/json 响应）
-// 23 个引擎能力映射为 MCP tools，供 Claude Desktop / 通用 MCP 客户端消费。
+// 24 个引擎能力映射为 MCP tools，供 Claude Desktop / 通用 MCP 客户端消费。
 // 注：MoonBit Json 为 FFI 类型，构造一律走 @lib.obj/str_json/num_json/arr_json。
 
 // ===== JSON-RPC 响应构造 =====
@@ -179,6 +179,9 @@ fn all_tools() -> Json {
     tool_def("style_check", "风格一致性检查（句长/标点/括号/术语命中）", [
       ("text", schema_prop("string", "待检查文本")),
     ], ["text"]),
+    tool_def("style_report", "风格一致报告：记忆库句长/正式度分布 + 术语变体族 + 新译文偏离建议", [
+      ("text", schema_prop("string", "待检译文（可空：仅报告记忆库分布）")),
+    ], []),
     tool_def("back_align", "回译 LCS 对齐验证", [
       ("source", schema_prop("string", "源文")),
       ("target", schema_prop("string", "译文")),
@@ -202,7 +205,7 @@ fn all_tools() -> Json {
 fn is_known_tool(name : String) -> Bool {
   let known = ["fuzzy_match", "add_tm", "check_terms", "concordance", "qe_auto", "predict", "observe",
     "recall", "explain", "reward", "consolidate", "tm_count", "ping", "retrieve_prompt", "bleu", "chrf",
-    "style_check", "back_align", "term_conflicts", "fed_export", "fed_import", "distill_inject",
+    "style_check", "style_report", "back_align", "term_conflicts", "fed_export", "fed_import", "distill_inject",
     "active_learning"]
   let mut found = false
   for k in known {
@@ -259,6 +262,8 @@ async fn invoke_tool(name : String, args : Json) -> Json {
     @lib.obj([("chrf", @lib.num_json(@lib.chrf_score(arg_str(args, "ref"), arg_str(args, "hyp"))))])
   } else if name == "style_check" {
     engine_ref.val.style_check(arg_str(args, "text"))
+  } else if name == "style_report" {
+    engine_ref.val.style_report(arg_str(args, "text"))
   } else if name == "back_align" {
     engine_ref.val.back_align(arg_str(args, "source"), arg_str(args, "target"))
   } else if name == "term_conflicts" {

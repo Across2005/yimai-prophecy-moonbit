@@ -2828,6 +2828,127 @@ pub fn ProphecyEngine::style_check(self : ProphecyEngine, text : String) -> Json
   arr_json(issues)
 }
 
+// ===== 风格一致报告（路线图 §四 长期「美」）：记忆库分布统计 + 新译文偏离建议 =====
+// 输入 text 可为空串（仅报告记忆库分布）或待检译文（追加偏离建议）。
+// 统计口径：双语句对（is_term 且 translation!="" 视为术语变体）；句长=字符数。
+// 确定性：遍历 memories 顺序固定（iter2 按插入序），无随机。
+pub fn ProphecyEngine::style_report(self : ProphecyEngine, text : String) -> Json {
+  let mut sent_n = 0
+  let mut sum_src = 0.0
+  let mut sum_tgt = 0.0
+  let mut formal_ok = 0
+  let mut term_n = 0
+  let term_variants : Map[String, Int] = Map::from_iter(([] : Array[(String, Int)]).iter())
+  // 句长分布桶（字符）：<20 / 20-39 / 40-79 / >=80
+  let mut b0 = 0
+  let mut b1 = 0
+  let mut b2 = 0
+  let mut b3 = 0
+  for _, m in self.memories.iter2() {
+    if m.text.length() == 0 {
+      continue
+    }
+    sent_n = sent_n + 1
+    let s = m.text.length().to_double()
+    let t = m.translation.length().to_double()
+    sum_src = sum_src + s
+    sum_tgt = sum_tgt + t
+    if self.style_check(m.text) == arr_json([]) {
+      formal_ok = formal_ok + 1
+    }
+    if m.is_term {
+      term_n = term_n + 1
+      if m.translation != "" {
+        let root = term_root(m.text)
+        if root != "" {
+          let cur = match term_variants.get(root) { Some(v) => v; None => 0 }
+          term_variants.set(root, cur + 1)
+        }
+      }
+    }
+    if s >= 80.0 {
+      b3 = b3 + 1
+    } else if s >= 40.0 {
+      b2 = b2 + 1
+    } else if s >= 20.0 {
+      b1 = b1 + 1
+    } else {
+      b0 = b0 + 1
+    }
+  }
+  let n = sent_n.to_double()
+  let avg_src = if n > 0.0 { r4(sum_src / n) } else { 0.0 }
+  let avg_tgt = if n > 0.0 { r4(sum_tgt / n) } else { 0.0 }
+  let formal_score = if n > 0.0 { r4(formal_ok.to_double() / n) } else { 0.0 }
+  // 术语变体：按词根分组计数，>1 为潜在变体族
+  let variants_arr : Array[Json] = []
+  for root, cnt in term_variants.iter2() {
+    if cnt > 1 {
+      variants_arr.push(obj([("root", str_json(root)), ("count", num_json(cnt.to_double()))]))
+    }
+  }
+  // 新译文偏离建议：长度偏离记忆库均值 ±50% 或含重复标点
+  let tips : Array[Json] = []
+  if text.length() > 0 {
+    let tl = text.length().to_double()
+    if n > 0.0 && avg_tgt > 0.0 {
+      let ratio = tl / avg_tgt
+      if ratio > 1.5 {
+        tips.push(obj([
+          ("rule", str_json("length_deviation")),
+          ("level", str_json("warning")),
+          ("message", str_json("译文长度 " + text.length().to_string() + " 字，为库均值 " + avg_tgt.to_string() + " 的 " + r4(ratio).to_string() + "×（>1.5×），建议精简。")),
+        ]))
+      } else if ratio < 0.5 {
+        tips.push(obj([
+          ("rule", str_json("length_deviation")),
+          ("level", str_json("warning")),
+          ("message", str_json("译文长度 " + text.length().to_string() + " 字，为库均值 " + avg_tgt.to_string() + " 的 " + r4(ratio).to_string() + "×（<0.5×），疑似漏译。")),
+        ]))
+      }
+    }
+    let style_issues = self.style_check(text)
+    match style_issues {
+      Json::Array(a) => {
+        for i in a {
+          tips.push(i)
+        }
+      }
+      _ => ()
+    }
+  }
+  obj([
+    ("sentence_count", num_json(sent_n.to_double())),
+    ("term_count", num_json(term_n.to_double())),
+    ("avg_src_len", num_json(avg_src)),
+    ("avg_tgt_len", num_json(avg_tgt)),
+    ("formal_score", num_json(formal_score)),
+    ("distribution", arr_json([num_json(b0.to_double()), num_json(b1.to_double()), num_json(b2.to_double()), num_json(b3.to_double())])),
+    ("term_variants", arr_json(variants_arr)),
+    ("tips", arr_json(tips)),
+  ])
+}
+
+// 词根提取：术语前 2 个汉字（中文）或首个字母词（拉丁）；用于归并变体族（如 电池/电池组/电池包）
+fn term_root(t : String) -> String {
+  let chars : Array[String] = []
+  for i = 0; i < t.length(); i = i + 1 {
+    match t[i].to_char() {
+      Some(ch) => {
+        let c = ch.to_string()
+        if c != " " {
+          chars.push(c)
+        }
+        if chars.length() >= 2 {
+          break
+        }
+      }
+      None => ()
+    }
+  }
+  chars.join("")
+}
+
 // ===== M2 回译验证（LCS 对齐质量）=====
 pub fn ProphecyEngine::back_align(self : ProphecyEngine, source : String, target : String) -> Json {
   let ops = align_diff(source, target)

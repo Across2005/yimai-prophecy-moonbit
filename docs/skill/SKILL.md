@@ -3,8 +3,8 @@ name: yimai-prophecy
 agent_created: true
 description: >-
   译脉·先知 2.0 翻译记忆预测引擎（确定性记忆网络 + TM/术语库 + 下一步预测）。当用户需要翻译记忆检索、
-  术语一致性校验、下一步预测、记忆闭环反馈、MT 质量评测（BLEU/chrF++）、风格检查、回译对齐、术语冲突检测，
-  或把翻译记忆注入 LLM prompt（TMPlm）时使用。服务形态：本地 HTTP 服务（13 REST + 9 补充端点 + /mcp MCP Server +
+  术语一致性校验、下一步预测、记忆闭环反馈、MT 质量评测（BLEU/chrF++）、风格检查、风格一致报告、回译对齐、术语冲突检测，
+  或把翻译记忆注入 LLM prompt（TMPlm）时使用。服务形态：本地 HTTP 服务（13 REST + 11 补充端点 + /mcp MCP Server +
   前端工作台）。
 tips: >-
   触发词：翻译记忆、TM 检索、术语校验、check_terms、下一步预测、predict、记忆闭环、reward、consolidate、
@@ -19,8 +19,8 @@ tips: >-
 - **确定性记忆网络**：D1-D8 模块（Hebbian 学习、二阶马尔可夫、角色索引、预测缓存、自适应学习率、弹性遗忘、领域偏置、对比学习、注意力边权、WAL、联邦增量、主动学习、双语对齐），零第三方依赖，同输入必同输出。
 - **翻译记忆（TM）+ 术语库（TB）**：#22 模块 —— add_tm / fuzzy_match（S1 四分量白盒：token/tfidf/char/ngram/tokenset）/ concordance / load_tbx / enforce_terms / check_terms。
 - **记忆闭环**：observe（记录步骤）→ predict（下一步预测+证据链）→ reward（采纳/拒绝反馈）→ consolidate（固化重放），重启不丢（tm_store.json 原子落盘）。
-- **质量与扩展**：qe_auto（QE+MQM）、style_check（风格一致性）、back_align（回译 LCS 对齐）、term_conflicts（术语冲突）、bleu_score / chrf_score（MT 评测）、retrieve_for_prompt（TMPlm 三段式 prompt 上下文）。
-- **多形态消费**：13 REST 端点 + 10 补充端点（共 23）+ `/mcp` MCP Server（23 tools）+ 前端工作台（7 面板，含记忆图谱可视化、职业译员双栏工作台、双语对齐热力图、主动学习推荐）。
+- **质量与扩展**：qe_auto（QE+MQM）、style_check（风格一致性）、style_report（风格一致报告）、back_align（回译 LCS 对齐）、term_conflicts（术语冲突）、bleu_score / chrf_score（MT 评测）、retrieve_for_prompt（TMPlm 三段式 prompt 上下文）。
+- **多形态消费**：13 REST 端点 + 11 补充端点（共 24）+ `/mcp` MCP Server（24 tools）+ 前端工作台（8 面板，含记忆图谱可视化、职业译员双栏工作台、双语对齐热力图、主动学习推荐、风格一致报告）。
 
 ## 调用条件（触发场景）
 
@@ -59,6 +59,7 @@ powershell -ExecutionPolicy Bypass -File scripts/dev.ps1
 | `/api/retrieve_prompt` | `{"query","k","threshold"}` | **TMPlm 三段**：suggestions/terms/glossary |
 | `/api/bleu` · `/api/chrf` | `{"ref","hyp"}` | MT 质量评测分数 |
 | `/api/style_check` | `{"text"}` | 风格问题数组（rule/level/message） |
+| `/api/style_report` | `{"text"?}` | 风格一致报告：句长/正式度分布 + 术语变体族 + 新译文偏离建议 |
 | `/api/back_align` | `{"source","target"}` | `{align_score,misaligns,ops}` 含字符级对齐脚本 |
 | `/api/term_conflicts` | — | 一词多译/多词一译 |
 | `/api/fed_export` · `/api/fed_import` | `{"added","updated"}` | 联邦增量 |
@@ -72,7 +73,7 @@ powershell -ExecutionPolicy Bypass -File scripts/dev.ps1
 { "mcpServers": { "yimai": { "url": "http://127.0.0.1:8787/mcp" } } }
 ```
 
-23 个 MCP tools 与上表端点一一对应（initialize → tools/list → tools/call）。
+24 个 MCP tools 与上表端点一一对应（initialize → tools/list → tools/call）。
 
 ## 数据契约
 

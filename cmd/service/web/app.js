@@ -1,4 +1,4 @@
-// 译脉·先知 2.0 工作台 —— 消费 cmd/service 23 端点
+// 译脉·先知 2.0 工作台 —— 消费 cmd/service 24 端点
 "use strict";
 
 // ---------- 基础设施 ----------
@@ -444,5 +444,43 @@ function wbExample() {
   toast("已填入示例，正在一键全检…", "info");
   wbAll();
   wbPredict();
+}
+
+// ---------- ⑧ 风格一致报告（记忆库分布 + 术语变体 + 新译文偏离建议）----------
+async function styleReport() {
+  const box = document.getElementById("srResult");
+  const text = document.getElementById("srText").value.trim();
+  box.innerHTML = '<span class="hint">统计中…</span>';
+  const r = await api("/api/style_report", { text });
+  if (r.code !== 200) { box.innerHTML = `<span class="violation">⚠ ${esc(r.json && r.json.error) || ("HTTP " + r.code)}</span>`; return; }
+  const j = r.json || {};
+  const dist = Array.isArray(j.distribution) ? j.distribution : [0, 0, 0, 0];
+  const labels = ["<20 字", "20–39", "40–79", "≥80"];
+  const max = Math.max(1, ...dist.map(Number));
+  const bars = dist.map((v, i) => {
+    const h = (Number(v) / max) * 100;
+    return `<div class="bar" title="${labels[i]}：${Number(v)} 条"><div class="bar-fill" style="height:${h.toFixed(0)}%"></div><div class="bar-label">${labels[i]}</div><div class="bar-val">${Number(v)}</div></div>`;
+  }).join("");
+  const variants = (j.term_variants || []).map(v =>
+    `<div class="sr-var"><span class="meta">词根</span> ${esc(v.root)} <span class="badge">×${Number(v.count)}</span></div>`).join("") || '<span class="hint">无非同根术语变体。</span>';
+  const tips = (j.tips || []).map(t =>
+    `<div class="sr-tip ${esc(t.level || "info")}">${esc(t.message || "")}</div>`).join("") || '<span class="hint">新译文与记忆库风格一致。</span>';
+  box.innerHTML = `
+    <div class="sr-metrics">
+      <div class="metric"><b>${Number(j.sentence_count) || 0}</b><span>句对</span></div>
+      <div class="metric"><b>${Number(j.term_count) || 0}</b><span>术语</span></div>
+      <div class="metric"><b>${num(j.avg_src_len)}</b><span>源均长</span></div>
+      <div class="metric"><b>${num(j.avg_tgt_len)}</b><span>译均长</span></div>
+      <div class="metric"><b>${num(j.formal_score)}</b><span>正式度</span></div>
+    </div>
+    <div class="sr-bars">${bars}</div>
+    <div class="sr-block"><h4>术语变体族</h4>${variants}</div>
+    <div class="sr-block"><h4>新译文偏离建议</h4>${tips}</div>`;
+}
+
+function srExample() {
+  document.getElementById("srText").value = "该车支持高达 150 千瓦的快充功率，并配备 800 伏特的高压平台系统，具备良好的热管理表现与长久的续航里程表现。";
+  toast("已填入示例译文，正在生成风格报告…", "info");
+  styleReport();
 }
 

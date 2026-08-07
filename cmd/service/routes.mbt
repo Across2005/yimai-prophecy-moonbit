@@ -58,6 +58,8 @@ async fn handle_request(req : @http.Request, body : &@io.Reader, conn : @http.Se
     handle_chrf(body, conn)
   } else if path == "/api/style_check" {
     handle_style_check(body, conn)
+  } else if path == "/api/style_report" {
+    handle_style_report(body, conn)
   } else if path == "/api/back_align" {
     handle_back_align(body, conn)
   } else if path == "/api/term_conflicts" {
@@ -396,6 +398,19 @@ async fn handle_style_check(body : &@io.Reader, conn : @http.ServerConnection) -
     Some(Json::Object(o)) => {
       let text = json_str(o, "text")
       let result = engine_ref.val.style_check(text)
+      send_json(conn, 200, result.stringify())
+    }
+    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+  }
+}
+
+// POST /api/style_report  {"text"?}  风格一致报告（记忆库分布 + 新译文偏离建议）
+async fn handle_style_report(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let parsed = read_json_body(body)
+  match parsed {
+    Some(Json::Object(o)) => {
+      let text = json_str(o, "text")
+      let result = engine_ref.val.style_report(text)
       send_json(conn, 200, result.stringify())
     }
     _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")

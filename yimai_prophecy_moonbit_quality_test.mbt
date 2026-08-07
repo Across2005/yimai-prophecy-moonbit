@@ -39,6 +39,34 @@ test "T4 style_check：检测重复标点" {
   }
 }
 
+test "T4b style_report：记忆库分布 + 术语变体 + 偏离建议" {
+  let e = ProphecyEngine::make()
+  let m1 = e.add_tm("电池包热管理", "battery pack thermal management")
+  let m2 = e.add_tm("电池管理系统", "battery management system")
+  let _ = e.add_tm("快充功率", "fast charging power")
+  let _ = e.mark_term(m1)
+  let _ = e.mark_term(m2)
+  let r = e.style_report("")
+  match r {
+    Json::Object(o) =>
+      match o.get("sentence_count") {
+        Some(Json::Number(n, ..)) => inspect(n == 3.0, content="true")
+        _ => inspect(false, content="true")
+      }
+    _ => inspect(false, content="true")
+  }
+  // 术语变体族「电池」（2 词同根、均标为术语）应被检出
+  let r2 = e.style_report("")
+  match r2 {
+    Json::Object(o) =>
+      match o.get("term_variants") {
+        Some(Json::Array(a)) => inspect(a.length() >= 1, content="true")
+        _ => inspect(false, content="true")
+      }
+    _ => inspect(false, content="true")
+  }
+}
+
 test "T5 back_align：LCS 对齐分数合理" {
   let e = ProphecyEngine::make()
   let r = e.back_align("install sensor", "install the sensor")

@@ -15,7 +15,7 @@ Three layers, one language (no bridge code):
 | Layer | Where | What |
 |---|---|---|
 | Layer 0 · engine | `engine.mbt` / `util.mbt` | D1-D8 memory network + #22 TM/TB + #2-#7 extensions + S1 fuzzy-match |
-| Layer 2 · service | `cmd/service/` | 23 REST endpoints (`/api/*`) + `/mcp` MCP server + web workbench |
+| Layer 2 · service | `cmd/service/` | 24 REST endpoints (`/api/*`) + `/mcp` MCP server + web workbench |
 | Layer 1 · knowledge | `README.md`, `AGENTS.md`, web workbench | docs + how-to |
 
 ## Fast start (Windows, verified environment)
@@ -43,10 +43,10 @@ moon test --target wasm-gc        # 106/106 green
 
 ## Consuming the service
 
-- **REST**: 23 个 `/api/*` 端点（多数 `POST` JSON 体，`/api/ping` 与 `/api/tm_count` 为 GET）。示例
+- **REST**: 24 个 `/api/*` 端点（多数 `POST` JSON 体，`/api/ping` 与 `/api/tm_count` 为 GET）。示例
   `POST /api/fuzzy_match {"query":"电池包热管理方案","k":3,"threshold":0.5}` → Top-K with
   white-box scores (`sim_token/sim_tfidf/sim_char/sim_ngram/sim_tokenset`)（详见 `README.md` → Service Layer）。
-- **MCP**: `POST /mcp` speaks JSON-RPC 2.0 (spec 2025-11-25). `initialize` → `tools/list` (23 tools)
+- **MCP**: `POST /mcp` speaks JSON-RPC 2.0 (spec 2025-11-25). `initialize` → `tools/list` (24 tools)
   → `tools/call {"name":"fuzzy_match","arguments":{...}}`. Claude Desktop config:
   `{"mcpServers":{"yimai":{"url":"http://127.0.0.1:8787/mcp"}}}`.
 - **Web workbench**: open `http://127.0.0.1:8787/` (three panels: TM search / term check / evidence chain).

@@ -6,23 +6,28 @@
 <title>译脉·先知 2.0 工作台</title>
 <style>
   :root {
-    --bg: #12141c; --panel: #1b1f2b; --panel2: #232838;
-    --line: #2e3547; --text: #e8e8f0; --dim: #9aa3b5;
-    --acc: #5dc9e2; --ok: #5dcaa5; --warn: #ef9f27; --bad: #e05d6f;
-    --mono: "Cascadia Code", Consolas, monospace;
+    --bg: #0e1419; --bg2: #0a0f13;
+    --panel: #15202a; --panel2: #1a2733;
+    --line: #26364a; --line2: #2e4056;
+    --text: #e9eef4; --dim: #93a3b5;
+    --ink: #0b0f13; --paper: #e8e0cf;
+    --acc: #6fd6b2; --acc2: #3fa985;
+    --gold: #d9b36a; --ok: #58c9a3; --warn: #e8a24d; --bad: #e0696f;
+    --mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font: 14px/1.6 system-ui, "Segoe UI", sans-serif; padding: 24px; max-width: 1500px; margin: 0 auto; }
-  header { display: flex; align-items: baseline; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; }
-  h1 { font-size: 20px; font-weight: 600; }
+  body { background: radial-gradient(1200px 700px at 85% -10%, #1a2a20 0%, transparent 55%), var(--bg); color: var(--text); font: 14px/1.6 "Nunito Sans", "Segoe UI", system-ui, sans-serif; padding: 28px; max-width: 1500px; margin: 0 auto; }
+  header { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+  header h1 { font-size: 25px; font-weight: 800; letter-spacing: .01em; font-family: "Playfair Display", Georgia, serif; }
+  header h1 .kicker { display: block; font: 700 11px var(--mono); color: var(--gold); letter-spacing: .34em; text-transform: uppercase; }
   h1 span { color: var(--acc); }
-  #tmCount { color: var(--dim); font: 12px var(--mono); }
+  #tmCount { color: var(--dim); font: 12px var(--mono); margin-left: auto; }
   /* 三步引导 */
-  .guide { background: #1d2a38; border: 1px solid #2f4a63; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; display: flex; gap: 22px; flex-wrap: wrap; align-items: center; font-size: 13px; }
-  .guide .step { display: flex; gap: 8px; align-items: center; }
-  .guide .num { width: 22px; height: 22px; border-radius: 50%; background: #24506b; color: #dff6ff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; flex: 0 0 auto; }
+  .guide { background: linear-gradient(180deg, #1a2832, #15202a); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin-bottom: 18px; display: flex; gap: 20px; flex-wrap: wrap; align-items: center; font-size: 13px; box-shadow: 0 6px 18px rgba(0,0,0,.25); }
+  .guide .step { display: flex; gap: 9px; align-items: center; }
+  .guide .num { width: 24px; height: 24px; border-radius: 8px; background: linear-gradient(135deg, var(--acc), var(--acc2)); color: var(--ink); display: inline-flex; align-items: center; justify-content: center; font: 700 12px var(--mono); flex: 0 0 auto; box-shadow: 0 2px 6px rgba(0,0,0,.3); }
   .guide a { color: var(--acc); text-decoration: none; border-bottom: 1px dashed var(--acc); }
-  .guide a:hover { color: #8fe0ff; }
+  .guide a:hover { color: #a8f0d6; }
   .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
   @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
   .grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 16px; }
@@ -50,21 +55,21 @@
   .al-item .role { font: 10px var(--mono); color: var(--acc); background: #142a38; padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
   .al-item .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .panel.full { grid-column: 1 / -1; }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
-  .panel h2 { font-size: 13px; color: var(--acc); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; }
+  .panel { background: linear-gradient(180deg, var(--panel2), var(--panel)); border: 1px solid var(--line); border-radius: 12px; padding: 16px; box-shadow: 0 4px 14px rgba(0,0,0,.22); position: relative; }
+  .panel::before { content: ""; position: absolute; top: 0; left: 14px; right: 14px; height: 1px; background: linear-gradient(90deg, transparent, var(--line2), transparent); }
+  .panel h2 { font-size: 13px; color: var(--acc); font-family: var(--mono); font-weight: 600; letter-spacing: .08em; margin-bottom: 12px; }
+  .panel h2::first-letter { color: var(--gold); }
   .row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
-  input, select { background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: 6px; padding: 6px 9px; font: 13px var(--mono); flex: 1; min-width: 90px; }
-  input:focus { outline: 1px solid var(--acc); }
-  button { background: #24506b; color: #dff6ff; border: 1px solid #2f6f94; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; white-space: nowrap; }
-  button:hover { background: #2c6082; }
-  button.mini { padding: 3px 10px; font-size: 12px; }
-  button.ex { background: #3a3a52; border-color: #4a4a6a; color: #d8d8ef; }
-  button.ex:hover { background: #46466a; }
-  button.ok-btn { background: #1f5a44; border-color: #2f8a66; color: #d8fff0; }
-  button.ok-btn:hover { background: #27694f; }
-  button.bad-btn { background: #5a2330; border-color: #8a2f40; color: #ffdde2; }
-  button.bad-btn:hover { background: #6d2a3a; }
-  .result { background: var(--panel2); border-radius: 8px; padding: 10px; font-size: 13px; max-height: 360px; overflow-y: auto; }
+  input, select { background: var(--panel); border: 1px solid var(--line2); color: var(--text); border-radius: 8px; padding: 7px 10px; font: 13px var(--mono); flex: 1; min-width: 90px; transition: border-color .15s; }
+  input:focus, select:focus { outline: none; border-color: var(--acc); box-shadow: 0 0 0 2px rgba(111,214,178,.18); }
+  button { background: linear-gradient(180deg, #2a4a56, #1e3a44); color: #dff8ee; border: 1px solid var(--acc2); border-radius: 8px; padding: 7px 16px; cursor: pointer; font-size: 13px; font-weight: 600; white-space: nowrap; transition: filter .15s, transform .05s; }
+  button:hover { filter: brightness(1.12); }
+  button:active { transform: translateY(1px); }
+  button.mini { padding: 4px 11px; font-size: 12px; }
+  button.ex { background: linear-gradient(180deg, #2c3346, #232b3c); border-color: #3d4a63; color: #cfe0f5; }
+  button.ok-btn { background: linear-gradient(180deg, #23694d, #1b5239); border-color: #3fa985; color: #e6fff4; }
+  button.bad-btn { background: linear-gradient(180deg, #6a2f3b, #52222c); border-color: #a04a5a; color: #ffe4e8; }
+  .result { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; font-size: 13px; max-height: 360px; overflow-y: auto; }
   .item { border-bottom: 1px solid var(--line); padding: 8px 2px; }
   .item:last-child { border-bottom: none; }
   .item .src { color: var(--text); }
@@ -85,11 +90,28 @@
   .toast.err { background: #5a2330; border: 1px solid #8a2f40; color: #ffdde2; }
   .toast.info { background: #1d2a38; border: 1px solid #2f4a63; color: #d8ecff; }
   @keyframes fadein { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; } }
+  /* ⑧ 风格一致报告 */
+  .sr-metrics { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .sr-metrics .metric { flex: 1; min-width: 76px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; text-align: center; }
+  .sr-metrics .metric b { display: block; font: 16px/1.3 var(--mono); color: var(--acc); }
+  .sr-metrics .metric span { font-size: 11px; color: var(--dim); }
+  .sr-bars { display: flex; align-items: flex-end; gap: 14px; height: 120px; padding: 8px 4px 0; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
+  .bar { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; flex: 1; height: 100%; min-width: 42px; }
+  .bar-fill { width: 100%; max-width: 44px; background: linear-gradient(180deg, var(--acc), #2f7d8f); border-radius: 4px 4px 0 0; min-height: 2px; }
+  .bar-label { font-size: 10px; color: var(--dim); margin-top: 6px; }
+  .bar-val { font: 10px var(--mono); color: var(--acc); }
+  .sr-block { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
+  .sr-block h4 { font-size: 12px; color: var(--dim); margin-bottom: 6px; font-weight: 500; letter-spacing: .04em; }
+  .sr-var { display: flex; align-items: center; gap: 8px; padding: 4px 2px; border-bottom: 1px dashed var(--line); font-size: 13px; }
+  .sr-var .badge { font: 11px var(--mono); color: var(--warn); background: rgba(239,159,39,.12); padding: 0 6px; border-radius: 4px; }
+  .sr-tip { padding: 5px 8px; margin: 4px 0; border-radius: 6px; font-size: 12px; }
+  .sr-tip.warning { color: var(--warn); background: rgba(239,159,39,.1); }
+  .sr-tip.info { color: var(--acc); background: rgba(93,201,226,.08); }
 </style>
 </head>
 <body>
 <header>
-  <h1>译脉·先知 <span>2.0</span> 工作台</h1>
+  <h1><span class="kicker">译脉 · 先知 02 · 工作台</span>译脉·先知 <span>2.0</span> 工作台</h1>
   <span id="tmCount">TM: --</span>
   <button class="mini ex" onclick="refreshCount()" title="重新读取 TM 存量">↻ 刷新存量</button>
 </header>
@@ -100,7 +122,7 @@
   <span class="step"><span class="num">1</span> 先<b>灌入记忆</b>——在 ③ 记录步骤，或点「示例」一键填入</span>
   <span class="step"><span class="num">2</span> 再<b>查询</b>——① 模糊检索 TM / ② 校验术语</span>
   <span class="step"><span class="num">3</span> 最后<b>看证据链 + 反馈</b>——点预测项「白盒」，用「采纳/拒绝」教引擎</span>
-  <span class="step"><span class="num">+</span> ⑤ 职业译员工作台：源文/译文双栏 · 对齐热力图 · 术语高亮 · QE · 预测流</span>
+  <span class="step"><span class="num">+</span> ⑤ 工作台 · ⑧ 风格报告：双栏对齐 · 术语高亮 · QE · 预测流 · 风格一致</span>
 </div>
 
 <div class="grid">
@@ -219,6 +241,17 @@
       <button class="ex" onclick="alExample()">示例</button>
     </div>
     <div class="result" id="alResult"><span class="hint">👆 按 uncertainty×0.6 + novelty×0.4 排序、角色去重后推送 Top-K 待标注句（active_learning_candidates）。</span></div>
+  </section>
+
+  <!-- 面板 8：风格一致报告 -->
+  <section class="panel" id="p-sr">
+    <h2>⑧ 风格一致报告</h2>
+    <div class="row">
+      <input id="srText" placeholder="待检译文（留空仅统计记忆库分布）">
+      <button onclick="styleReport()">生成报告</button>
+      <button class="ex" onclick="srExample()">示例</button>
+    </div>
+    <div class="result" id="srResult"><span class="hint">👆 统计记忆库句长分布 / 正式度 / 术语变体族；输入译文后追加长度偏离与风格建议。</span></div>
   </section>
 </div>
 

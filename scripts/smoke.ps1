@@ -1,5 +1,5 @@
 # ============================================================
-# yimai_prophecy_moonbit - smoke test (23 REST endpoints + MCP)
+# yimai_prophecy_moonbit - smoke test (24 REST endpoints + MCP)
 # Usage:  powershell -ExecutionPolicy Bypass -File scripts/smoke.ps1
 # Assumes the service is running on 127.0.0.1:8787
 # ============================================================
@@ -50,7 +50,7 @@ Check "MCP initialize" ($init.result.protocolVersion -eq "2025-11-25")
 
 $tools = Invoke-RestMethod -Method Post -Uri "$base/mcp" -ContentType "application/json" `
          -Body '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
-Check "MCP tools/list = 23" ($tools.result.tools.Count -eq 23)
+Check "MCP tools/list = 24" ($tools.result.tools.Count -eq 24)
 
 $call = Invoke-RestMethod -Method Post -Uri "$base/mcp" -ContentType "application/json" `
         -Body '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tm_count","arguments":{}}}'
@@ -99,6 +99,19 @@ Check "back_align ops 字符级脚本" ($null -ne $ba2.ops -and $ba2.ops.Count -
 $alM = Invoke-RestMethod -Method Post -Uri "$base/mcp" -ContentType "application/json" `
        -Body '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"active_learning","arguments":{"k":2}}}'
 Check "MCP active_learning 工具调用" ($alM.result.content.Count -ge 1)
+
+# --- 风格一致报告（路线图 §四 长期「美」）---
+$sr = Invoke-RestMethod -Method Post -Uri "$base/api/style_report" -ContentType "application/json" `
+      -Body '{"text":""}'
+Check "style_report 记忆库分布" ($null -ne $sr.sentence_count -and $sr.distribution.Count -eq 4)
+
+$sr2 = Invoke-RestMethod -Method Post -Uri "$base/api/style_report" -ContentType "application/json" `
+       -Body '{"text":"this is an extremely long translated sentence that far exceeds the average length of the memory base corpus by a huge margin"}'
+Check "style_report 长度偏离建议" ($sr2.tips.Count -ge 1)
+
+$srM = Invoke-RestMethod -Method Post -Uri "$base/mcp" -ContentType "application/json" `
+       -Body '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"style_report","arguments":{"text":""}}}'
+Check "MCP style_report 工具调用" ($srM.result.content.Count -ge 1)
 
 Write-Host ""
 Write-Host "== smoke result: $pass passed, $fail failed =="
