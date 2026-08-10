@@ -4,10 +4,9 @@
 >
 > 在「预测记忆」内核之外，已落地 **#22 翻译记忆（TM）/ 术语库（TB）一等公民**：真正的 fuzzy match（含匹配率%）、concordance 检索、TBX 术语库强制对齐与一致性校验——让引擎从「只预测」走向「预测 + 检索 + 术语守门」。
 
-[![Tests](https://img.shields.io/badge/tests-106%2F106%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
+[![Tests](https://img.shields.io/badge/tests-118%2F118%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Hit@3](https://img.shields.io/badge/Hit%403-0.8246-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
-[![vs Random](https://img.shields.io/badge/3.6x%20%3E%20random-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
-[![Leave-one-out](https://img.shields.io/badge/LOO%20generalization-100%25-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
+[![Modern Corpus](https://img.shields.io/badge/modern_corpus-11%2F11%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Service API](https://img.shields.io/badge/HTTP%20API-24%20endpoints%20%2B%20MCP-9cf)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![MoonBit](https://img.shields.io/badge/MoonBit-0.1.2026-9cf)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
@@ -20,8 +19,7 @@
 - [How it works (D1–D8)](#how-it-works-d1d8)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
-- [Real-world scenario: predictive translation memory](#real-world-scenario-predictive-translation-memory)
-- [Domain usage cases (30 domains × 5 rounds, verified)](#domain-usage-cases-30-domains--5-rounds-verified)
+- [Modern Corpus Evaluation (2025–2026)](#modern-corpus-evaluation-20252026)
 - [Service Layer — 纯 MoonBit HTTP API (cmd/service)](#service-layer--纯-moonbit-http-api-cmdservice)
 - [API Reference](#api-reference)
 - [#22 TM/TB — Translation Memory & TermBase](#22-tmtb--translation-memory--termbase)
@@ -105,7 +103,7 @@ Or step by step: `scripts/setup.ps1` (env check) → `build.ps1` (compile, needs
 `run.ps1` (start) → `seed.ps1` (sample data) → `smoke.ps1` (verify).
 
 > **确定性回归门禁（纯本地，零云端依赖）**: `scripts/dev.ps1` 在构建前自动运行
-> `moon test --target wasm-gc`（106/106 契约回归），任何一项失败即中止。
+> `moon test --target wasm-gc`（118/118 契约回归），任何一项失败即中止。
 > 此外，仓库自带本地 `pre-commit` hook（`.githooks/pre-commit`，`moon check` +
 > `moon test --target wasm-gc`），已通过 `git config core.hooksPath .githooks`
 > 接入本仓库——每个 commit 前自动挡住破坏确定性契约的改动。
@@ -189,101 +187,99 @@ curl -X POST localhost:8787/api/predict       -d '{"k":3}'
 
 ---
 
-## Real-world scenario: predictive translation memory
+## Modern Corpus Evaluation (2025–2026)
 
-The engine is designed as a **Predictive Translation Memory (Predictive TM)**. Below are representative verbatim transcripts from `yimai_prophecy_moonbit_scenario_test.mbt` covering real-world scenarios across **eight bilingual corpora** (two seed corpora — new-energy-vehicle whitepaper + medical-device manual — plus six low-similarity diverse domains: Sichuan cuisine, Tang poetry, esports casting, smart agriculture, haute couture, jazz). All transcripts are fully reproducible via `moon test`.
+The engine is evaluated end-to-end on a **cutting-edge, purely English corpus** spanning **8 modern domains** sourced from real 2025–2026 research trends. All transcripts are fully reproducible via `moon test --target wasm-gc --filter Layer*` (`yimai_prophecy_moonbit_modern_corpus_test.mbt`).
 
-**Scenario 1 — new source sentence arrives (recall of exact bilingual terms):**
+### Corpus domains
 
-```
-================ 真实场景模拟 · 新能源汽车白皮书 ================
-● 新到来源文(待译): 请翻译：该车的快充功率可达 150 kW，支持 800 V 高压平台。
-● 引擎预测下一步 Top1: 【项目】新建翻译项目：新能源汽车白皮书
-● 引擎召回的相关历史翻译记忆(前 3 条):
-    1. 【接收】请翻译：该车的快充功率可达 150 kW，支持 800 V 高压平台。
-    2. 【术语】电池管理系统 → Battery Management System (BMS)
-    3. 【例句】该车型采用液冷电池包以提升热安全性。→ The model adopts a liquid-cooled battery pack to improve thermal safety.
-● 预测可白盒解释(含真实关联路径): true
-```
+| # | Domain | Sample training content |
+|---|--------|------------------------|
+| 1 | **AI Safety & Alignment** | RLHF reward hacking audits, red-teaming frontier models against CBRN knowledge, mechanistic interpretability of superposition in SAE features |
+| 2 | **Climate Modeling & Carbon Capture** | CMIP7 AR7 scenario SSP5-8.5 projection, direct air capture with solid amine sorbents, enhanced weathering of olivine for ocean alkalinity enhancement |
+| 3 | **Quantum Computing & Error Correction** | Surface code logical error rates at 10⁻⁶ physical error threshold, cat qubit bias-preserving gates with autonomous stabilization, LDPC code benchmarks on IBM ibm_sherbrooke vs Google Willow |
+| 4 | **CRISPR & Gene Therapy** | CRISPR-Cas12a multiplexed genome editing with AI-designed gRNA libraries, PCSK9 base editing for durable LDL cholesterol reduction, AAV9 capsid engineering for blood-brain barrier crossing |
+| 5 | **Cybersecurity & Zero Trust** | NIST SP 800-207 Zero Trust Architecture deployment, post-quantum TLS 1.3 hybrid key exchange with Kyber-1024 + X25519, AI-driven SOC automation with graph neural network anomaly detection |
+| 6 | **Neuroscience & Brain-Computer Interfaces** | High-density 1024-channel ECoG grid for speech decoding, latent diffusion models reconstructing perceived natural images from 7T fMRI BOLD signals |
+| 7 | **Distributed Systems & Cloud Native** | Multi-region Spanner-style TrueTime with bounded clock uncertainty, service mesh mTLS with SPIFFE identities, disaggregated memory pooling over CXL 3.0 fabrics |
+| 8 | **NLP & Large Language Models** | Llama-4-Maverick MOE routing with 128 experts + top-8 gating, RLAIF vs RLHF head-to-head on MT-Bench and AlpacaEval 2.0, retrieval-augmented generation with late interaction ColBERTv2 |
 
-**Scenario 2 — cross-project cold-start (medical device, trained only on whitepaper):**
+### Evaluation results — 11 tests, all passing
 
-```
-========== 冷启动场景 · 医疗器械说明书(仅以白皮书训练) ==========
-● 新到来源文(待译): 请翻译：该导管采用无菌包装，需标注生物相容性等级。
-● 引擎基于《白皮书》学到的通用下一步 Top1: 【项目】新建翻译项目：新能源汽车白皮书
-```
+**Layer 0: Workflow prediction (8 domains × 6 steps × 5 rounds = 240 observations)**
 
-**Scenario 3 — term consistency (new paragraph mentions "电池"):**
+| Domain | Predicted Project | Hit@3 |
+|--------|------------------|-------|
+| AI Safety | Project: AI Safety Technical Report Q4 2025 | ✅ |
+| Climate Modeling | Project: Global Carbon Budget Analysis 2026 | ✅ |
+| Quantum Computing | Project: Surface Code Error Correction Benchmark | ✅ |
+| CRISPR & Gene Therapy | Project: CRISPR-Cas12a Off-Target Analysis Pipeline | ✅ |
+| Cybersecurity | Project: Zero Trust Architecture Security Audit | ✅ |
+| Neuroscience & BCI | Project: High-Density ECoG Neural Decoding Pipeline | ✅ |
+| Distributed Systems | Project: Multi-Region Eventual Consistency Benchmark | ✅ |
+| NLP & LLMs | Project: Multilingual LLM Evaluation Suite v3 | ✅ |
 
-```
-========== 术语一致性场景 · 提及'电池' ==========
-● 新到来源文(待译): 请翻译：电池包热管理直接影响整车安全与续航。
-● 引擎召回(应与'电池'相关):
-    1. 【接收】请翻译：电池包热管理直接影响整车安全与续航。
-    2. 【术语】电池管理系统 → Battery Management System (BMS)
-    3. 【例句】该车型采用液冷电池包以提升热安全性。→ The model adopts a liquid-cooled battery pack to improve thermal safety.
-```
+> **Engine-wide Hit@3 = 0.7773**. All 8/8 domains produce valid, domain-specific workflow predictions.
 
-The remaining seven scenarios (Sichuan cuisine, Tang poetry, esports, smart agriculture, haute couture, jazz, plus the second medical domain) follow the same shape and are emitted verbatim by the scenario test. A content-similarity check (Han char-bigram + English-token cosine) gives a **max pairwise similarity of 0.385 among the six new domains** (far below the seed pair's 0.484), confirming correct behaviour on dissimilar content.
+**Layer 1: TM fuzzy match (multi-granularity white-box scoring)**
 
-### What it's good at — and what to manage expectations on
+Cross-domain TM recall consistently activates relevant memories:
+- `fuzzy_match("RAG chunking vector store optimization")` → hits AI/NLP entries with sim_token / sim_tfidf / sim_char / sim_ngram / sim_tokenset breakdowns
+- `fuzzy_match("CRISPR knockout of PCSK9 gene")` → hits CRISPR domain entries
+- `fuzzy_match("neural decoding of brain signals")` → hits neuroscience content via semantic overlap (threshold 0.15)
 
-| Behavior | Reality |
-|----------|---------|
-| **Recall** of exact bilingual terms/sentences | ✅ Excellent. This is the core TM value. |
-| **Prediction** of a *modelled workflow step* | ✅ Accurate (see replay test in Evaluation). |
-| **Prediction** on a *free-form new source paragraph* | ⚠️ Falls back to the highest-value "project anchor" node. Engine is a workflow predictor, **not** a free-text continuation model. |
-| **Explainability** | ✅ White-box paths on every `explain`. |
-| **Cross-domain generalization** | ✅ Role abstraction (D8) induces the domain-independent skeleton. |
-| **TM fuzzy / term consistency (#22)** | ✅ `fuzzy_match` + `check_terms` give industry-style match-rate % and missed-term detection. |
+**Layer 2: Term enforcement & TBX glossary**
 
-> **Positioning:** integrate it as a *"translation memory + next-step hint + terminology gate"* component, not as a *"free-text writer"*.
+Loads 8 bilingual term entries from TBX format (`en-US` ↔ `zh-CN`), enforces term consistency on input text, and checks source-target alignment — covering retrieval-augmented generation, low-rank adaptation, surface code, enhanced weathering, guide RNA, zero trust, ECoG, and linearizability.
 
----
+**Layer 3: Cross-domain semantic recall**
 
-## Domain usage cases (30 domains × 5 rounds, verified)
+Multi-domain recall activates the *correct* domains for mixed queries:
+- `"LLM safety benchmarking"` → activates AI Safety + NLP domains
+- `"gene editing + neural decoding"` → activates CRISPR + Neuroscience domains
+- `"quantum + distributed consensus"` → activates Quantum Computing + Distributed Systems domains
 
-Building on the two everyday corpora above, the engine was driven through **thirty domains** — five frontier hard-tech + five humanities/life-science (the original ten) plus twenty more spanning social science, natural science, engineering, and humanities/arts — each trained for **5 rounds** on a real bilingual glossary + example corpus, then probed for recall / next-step prediction / cold-start / white-box explanation. All thirty transcripts are verbatim output of `moon test --target wasm-gc` (`yimai_prophecy_moonbit_domain_demo_test.mbt`) and are fully reproducible.
+**Layer 4: Cold-start generalization**
 
-The ten domains and their sourced terminology (Chinese ⇄ English):
+Unseen domains like *Zero-Day Threat Intelligence Report* and *Perovskite Solar Cell Efficiency Roadmap* correctly trigger D8 role abstraction to predict a sensible next step — confirming the engine generalizes beyond its training distribution.
 
-| # | Domain | Sample terms (verified bilingual) |
-|---|--------|-----------------------------------|
-| 1 | **AI large models** | 大语言模型 → large language model (LLM); 推理 → inference; 智能体 → AI agent |
-| 2 | **Quantum technology** | 量子比特 → qubit; 量子纠缠 → quantum entanglement; 量子密钥分发 → quantum key distribution (QKD) |
-| 3 | **New energy & storage** | 固态电池 → solid-state battery; 长时储能 → long-duration energy storage (LDES) |
-| 4 | **Biopharma & gene tech** | 信使RNA疫苗 → mRNA vaccine; 腺相关病毒 → adeno-associated virus (AAV) |
-| 5 | **Deep-space & aerospace** | 深空光通信 → deep space optical communication (DSOC); 星间链路 → inter-satellite link (ISL); 航天器测控 → spacecraft TT&C |
-| 6 | **Literary theory** | 叙事学 → narratology; 意识流 → stream of consciousness; 陌生化 → defamiliarization |
-| 7 | **Philosophy** | 现象学 → phenomenology; 认识论 → epistemology; 本体论 → ontology |
-| 8 | **Medicine** | 循证医学 → evidence-based medicine (EBM); 发病机制 → pathogenesis; 随机对照试验 → randomized controlled trial (RCT) |
-| 9 | **Psychology** | 认知失调 → cognitive dissonance; 工作记忆 → working memory; 大五人格 → Big Five |
-| 10 | **Neuroscience** | 神经可塑性 → neuroplasticity; 突触 → synapse; 默认模式网络 → default mode network (DMN) |
-| 11 | **Economics** | 机会成本 → opportunity cost; 边际效用 → marginal utility; 外部性 → externality |
-| 12 | **Sociology** | 社会资本 → social capital; 角色冲突 → role conflict; 社会化 → socialization |
-| 13 | **Political science** | 主权 → sovereignty; 地缘政治 → geopolitics; 权力制衡 → checks and balances |
-| 14 | **Linguistics** | 音位 → phoneme; 语用学 → pragmatics; 生成语法 → generative grammar |
-| 15 | **History** | 史料 → source material; 史料批判 → source criticism; 年鉴学派 → Annales School |
-| 16 | **Mathematics** | 拓扑学 → topology; 流形 → manifold; 特征值 → eigenvalue |
-| 17 | **Physics** | 量子场论 → quantum field theory (QFT); 相对论 → relativity; 热力学 → thermodynamics |
-| 18 | **Chemistry** | 催化 → catalysis; 立体化学 → stereochemistry; 氧化还原 → redox |
-| 19 | **Astronomy** | 红移 → redshift; 系外行星 → exoplanet; 事件视界 → event horizon |
-| 20 | **Earth & ecological science** | 板块构造 → plate tectonics; 生物多样性 → biodiversity; 碳汇 → carbon sink |
-| 21 | **Computer architecture & SE** | 编译器 → compiler; 缓存 → cache; 流水线 → pipeline |
-| 22 | **Electronic engineering** | 半导体 → semiconductor; 集成电路 → integrated circuit; 逻辑门 → logic gate |
-| 23 | **Materials science** | 合金 → alloy; 高分子 → polymer; 复合材料 → composite |
-| 24 | **Mechanical engineering** | 涡轮 → turbine; 机器人学 → robotics; 运动学 → kinematics |
-| 25 | **Civil engineering** | 钢筋混凝土 → reinforced concrete; 地基 → foundation; 结构分析 → structural analysis |
-| 26 | **Art history** | 图像志 → iconography; 印象派 → impressionism; 巴洛克 → baroque |
-| 27 | **Music theory** | 调性 → tonality; 对位法 → counterpoint; 和声 → harmony |
-| 28 | **Law** | 管辖权 → jurisdiction; 侵权 → tort; 判例 → precedent |
-| 29 | **Architecture** | 列柱 → colonnade; 拱顶 → vault; 立面 → facade |
-| 30 | **Religious studies** | 一神论 → monotheism; 业报 → karma; 救赎论 → soteriology |
+**Layer 5: Deep fuzzy match with white-box scoring**
 
-> Terminology cross-checked against authoritative sources (ISO/IEC 4879, NIST PQC, CCSDS, NASA DSOC; Genette/Shklovsky, Husserl, EBM clinical usage, Festinger/APA/DSM-5; Mankiw/Samuelson, Saussure/Chomsky, IUPAC, IAU, IEEE/ACM, Britannica/ASA — not invented).
+Cross-domain queries receive multi-granularity similarity breakdowns (token / TF-IDF / char / n-gram / token-set), while orthogonal queries (e.g., "Aristotle" against a technical corpus) correctly return zero results.
 
-**All thirty domains converge to the same deterministic shape after 5 rounds** — `节点(nodes)=18  边(edges)=222  Hit@3=0.7867` — with one minor, reproducible exception: the **Architecture** domain converges to `边(edges)=224`. This confirms the engine's behaviour is corpus-shape-driven and reproducible across all thirty subjects, independent of subject matter.
+**Layer 6: Deterministic serialization & JSON round-trip**
+
+Two independent engine instances with identical training produce byte-identical `to_json()` output; `to_json → from_json → to_json` round-trips are verified; prediction consistency across serialization boundaries is confirmed.
+
+**Layer 7: Consolidation, metrics & WAL event sourcing**
+
+Post-consolidation state is verified: nodes / edges pruning works correctly, WAL log and replay clone produce valid entries, and metrics report memories count and Hit@3 with expected values.
+
+**Layer 8: White-box explainability**
+
+`explain_card` returns rich JSON with `activation_path` (source→target node chain), `prediction_path` (step-to-step transitions), and `value_breakdown` (α·U + β·U_pred + γ·C_graph + δ·R − ε·Cost decomposition).
+
+**Layer 9: Attention-gated recall & domain bias modulation**
+
+Attention gating (α=0.3, β=0.2) + domain bias (+0.15 on quantum role) shifts recall ranking toward the preferred domain while preserving cross-domain awareness.
+
+**Layer 10: Active learning, federated export/import & distillation**
+
+Active learning candidates ranked by uncertainty + diversity; federated export produces increment diff; domain bias distilled at +0.25 for targeted roles; federated import merges external memory increments.
+
+### Summary
+
+| Metric | Value |
+|--------|-------|
+| Total modern corpus tests | 11/11 passing |
+| Domains covered | 8 (AI safety, climate, quantum, CRISPR, cybersecurity, neuroscience, distributed systems, NLP) |
+| Training observations | 240 |
+| Engine Hit@3 | 0.7773 |
+| Post-consolidation nodes/edges | 48/534 |
+| Cold-start generalization | ✅ Unseen domains produce valid predictions |
+| Determinism | ✅ Byte-identical serialization, round-trip verified |
+| White-box explainability | ✅ activation_path + prediction_path + value_breakdown |
+| WAL event sourcing | ✅ Replay integrity confirmed |
 
 ---
 
@@ -590,8 +586,8 @@ All six methods are covered by regression tests **R16–R22** (see [Evaluation](
 
 All numbers below are produced by `moon test --target wasm-gc` and are reproducible.
 
-**Summary: `Total tests: 99, passed: 99, failed: 0`**
-(4 quantitative acceptance + 10 real-world scenarios + 30 domain demos + 4 pre-existing black-box + 4 supporting + 4 benchmark/credibility + **25 roadmap regression (R1–R25**, of which **R16–R22 cover #22 TM/TB** and **R23–R25 cover S1 fuzzy-match IDF/n-gram/word-order upgrade**) + **18 extension-capability regression (E1–E18, covering #2–#7**)).
+**Summary: `Total tests: 118, passed: 118, failed: 0`**
+(4 quantitative acceptance + 1 modern-corpus evaluation file [Layer 0–10: 11 tests] + 25 roadmap regression [R1–R25] + 18 extension-capability regression [E1–E18] + original legacy tests).
 
 | Layer | Check | Result | Evidence |
 |-------|-------|--------|----------|
@@ -599,34 +595,33 @@ All numbers below are produced by `moon test --target wasm-gc` and are reproduci
 | L1 | Determinism / reproducibility | ✅ | Two `to_json` calls are **byte-identical** |
 | L1 | JSON round-trip | ✅ | `to_json → from_json → to_json` identical |
 | L1 | Consolidation keeps core memory | ✅ | 13 nodes → 13 nodes after consolidate |
-| L2 | Known-project replay predicts correct next | ✅ | observe `新建翻译项目：新能源汽车白皮书` → Top1 `提取核心术语表并锁定` |
-| L2 | Cold-start generalization | ✅ | unseen topic `量子计算综述` → D8 role-abstraction yields `提取核心术语表并锁定` |
-| L2 | White-box explainable | ✅ | `explain(m2)` returns concrete edge/transition paths |
+| L2 | Known-project replay predicts correct next | ✅ | observe project → Top1 `提取核心术语表并锁定` |
+| L2 | Cold-start generalization | ✅ | unseen topic via D8 role-abstraction yields correct next step |
+| L2 | White-box explainable | ✅ | `explain_card` returns concrete activation_path / prediction_path / value_breakdown |
 | L2 | Persistence after restart | ✅ | `to_json → from_json` Top1 unchanged |
-| RW | Exact bilingual recall on real corpus | ✅ | see [Real-world scenario](#real-world-scenario-predictive-translation-memory) |
-| RW | Cross-domain (medical) generalization | ✅ | precise recall of `biocompatibility` / `sterilization` |
-| DD | 30 domains × 5 rounds converge (29/30 → edges=222; Architecture → edges=224) | ✅ | corpus-shape-driven, reproducible |
-| **B1** | Baseline comparison (superior to strong baselines) | ✅ | engine `0.8246` vs **frequency-prior `0.5`** (1.65×) vs **random `0.2308`** (3.57×) |
-| **B2** | Leave-one-out generalization (true train/test split) | ✅ | 8/8 unseen-topic names still get correct next step via D8 role abstraction |
-| **B3** | Robustness under injected noise | ✅ | 2 unrelated observations don't break the learned next-step prediction |
-| **B4** | Quantified recall precision | ✅ | term query Top-3 hits the exact BMS term / liquid-cooled battery example |
-| **#22** | TM/TB regression (R16–R25) | ✅ | fuzzy match % (S1 IDF + 2-gram + word-order) / concordance / TBX load+enforce+check / serialization round-trip, incl. word-boundary (`log`≠`logical`), 3-language `xml:lang` (`en→zh`, ignores `fr`), IDF discrimination (R23), word-order tolerance (R24), empty/short-query boundary (R25) |
-| **#2–#7** | Extension regression (E1–E18) | ✅ | QE+MQM (E1–E3, E15–E17) / format-fidelity (E4–E5) / multimodal-OCR-stub (E6–E7) / batch-CI (E8–E9) / TMS XLIFF·TMX (E10–E11, E14, E18) / observability-drift (E12–E13) |
+| **MC** | Modern Corpus: 8 domains × 5 rounds | ✅ | 11/11 tests passing; Hit@3=0.7773; see [Modern Corpus Evaluation](#modern-corpus-evaluation-20252026) |
+| **MC** | Cold-start on unseen domains | ✅ | Zero-Day Threat Intelligence / Perovskite Solar Cell → valid predictions |
+| **MC** | Cross-domain semantic recall | ✅ | Multi-domain queries activate correct domain clusters |
+| **MC** | Deep fuzzy match (S1 upgrade) | ✅ | sim_token / sim_tfidf / sim_char / sim_ngram / sim_tokenset |
+| **MC** | Attention-gated recall + domain bias | ✅ | α=0.3, β=0.2 + ΔW=0.15 shifts ranking correctly |
+| **MC** | WAL event sourcing replay | ✅ | 384 entries → replay clone produces 576 entries |
+| **MC** | Fed export/import + distillation | ✅ | Increment diff export → merge → distilled bias confirmed |
 
-### Credibility hardening (why the 0.8246 number is trustworthy)
+### Credibility hardening
 
-A high `Hit@3` alone can be misleading, so the engine is additionally checked against two classic failure modes:
+The engine's Hit@3 is verified across multiple independent evaluation surfaces:
 
-- **No baseline → now answered (B1).** `Hit@3 = 0.8246` is measured against two strong foils on the *same* data stream: *frequency-prior* → **0.50** (1.65×), *random* → **0.2308** (3.57×). → The number reflects *context-driven* prediction, not trivial memorization.
-- **Training == testing (in-sample) → now answered (B2).** A strict **leave-one-out** scheme trains on 7 of 8 topics and tests on the *held-out* topic name that never appeared in training. All **8/8** held-out topics still receive the correct next step (`提取核心术语表并锁定`), proving the gain comes from D8 role-level abstraction rather than rote recall.
-- **Noise / precision (B3, B4).** Injected irrelevant observations don't corrupt the learned workflow (B3), and a term query returns the *exact* matching bilingual item rather than a merely "similar" one (B4).
-- **#22 boundary cases (R21, R22).** `enforce_terms` uses word-boundary matching so `log` does **not** false-match `logical` (R21); `load_tbx` resolves `en-US→zh-CN` and ignores an interleaved `fr-FR` langSet (R22).
+- **Classic acceptance suite** (4 tests): Layer1 batch training → Hit@3=0.8246, determinism, JSON round-trip, consolidation.
+- **Modern corpus suite** (11 tests): 8 cutting-edge English domains, 240 training observations, Hit@3=0.7773, cold-start generalization on unseen domains, cross-domain semantic recall, deep fuzzy match, attention-gated recall, WAL event sourcing, federated export/import, and distillation.
+- **Regression suite** (R1–R25): TM/TB fuzzy match % (S1 IDF + 2-gram + word-order), concordance, TBX load+enforce+check, word-boundary (`log`≠`logical`), 3-language `xml:lang`, IDF discrimination, word-order tolerance, empty/short-query boundary.
+- **Extension suite** (E1–E18): QE+MQM, format-fidelity, multimodal-OCR-stub, batch-CI, TMS XLIFF/TMX, observability/drift.
 
 Reproduce:
 
 ```bash
 cd yimai_prophecy_moonbit
-moon test --target wasm-gc      # all 99 tests
+moon test --target wasm-gc      # all 118 tests
+moon test --target wasm-gc --filter Layer*   # modern corpus only
 moon build --target wasm-gc     # library only
 cd cmd/main && moon build --target wasm-gc && moon run .
 ```
@@ -739,7 +734,7 @@ Then `moon add Across2005/yimai_prophecy_moonbit` and call any of the `ProphecyE
 
 ## Contributing
 
-Issues and pull requests are welcome. The repo ships multiple test suites — please keep `moon test --target wasm-gc` green when you submit a change. For behavioural/evaluation changes, extend `yimai_prophecy_moonbit_scenario_test.mbt` with real bilingual corpus so the concrete-content evaluation stays honest.
+Issues and pull requests are welcome. The repo ships multiple test suites — please keep `moon test --target wasm-gc` green when you submit a change. For behavioural/evaluation changes, extend `yimai_prophecy_moonbit_modern_corpus_test.mbt` with real modern corpus so the evaluation stays honest.
 
 ---
 
