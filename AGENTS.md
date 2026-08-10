@@ -38,7 +38,7 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke.ps1   # verify endpoints 
 Engine tests (no MSVC needed):
 
 ```bash
-moon test --target wasm-gc        # 118/118 green
+moon test --target wasm-gc        # 78/78 green
 ```
 
 ## Consuming the service
