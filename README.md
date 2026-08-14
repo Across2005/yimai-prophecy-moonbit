@@ -4,7 +4,7 @@
 >
 > 在「预测记忆」内核之外，已落地 **#22 翻译记忆（TM）/ 术语库（TB）一等公民**：真正的 fuzzy match（含匹配率%）、concordance 检索、TBX 术语库强制对齐与一致性校验——让引擎从「只预测」走向「预测 + 检索 + 术语守门」。
 
-[![Tests](https://img.shields.io/badge/tests-89%2F89%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
+[![Tests](https://img.shields.io/badge/tests-101%2F101%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Hit@3](https://img.shields.io/badge/Hit%403-0.8246-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Modern Corpus](https://img.shields.io/badge/modern_corpus-22%2F22%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Service API](https://img.shields.io/badge/HTTP%20API-24%20endpoints%20%2B%20MCP-9cf)](https://github.com/Across2005/yimai_prophecy_moonbit)
@@ -103,7 +103,7 @@ Or step by step: `scripts/setup.ps1` (env check) → `build.ps1` (compile, needs
 `run.ps1` (start) → `seed.ps1` (sample data) → `smoke.ps1` (verify).
 
 > **确定性回归门禁（纯本地，零云端依赖）**: `scripts/dev.ps1` 在构建前自动运行
-> `moon test --target wasm-gc`（89/89 契约回归），任何一项失败即中止。
+> `moon test --target wasm-gc`（101/101 契约回归），任何一项失败即中止。
 > 此外，仓库自带本地 `pre-commit` hook（`.githooks/pre-commit`，`moon check` +
 > `moon test --target wasm-gc`），已通过 `git config core.hooksPath .githooks`
 > 接入本仓库——每个 commit 前自动挡住破坏确定性契约的改动。
@@ -705,7 +705,7 @@ From the "translation-born skill" brainstorm — what's built vs. pending:
 
 | # | Capability | Status | Notes |
 |---|-----------|--------|-------|
-| 1 | **TM / TermBase first-class** (fuzzy match %, concordance, TBX enforcement) | ✅ Done | `moon test` 89/89; reviewed + hardened (word-boundary, `xml:lang`); S1 fuzzy-match upgrade (IDF + 2-gram + word-order, R23–R25); open-code-review + MoA fixes for `parse_tmx` cross-language/`</tu>` split + `mqm_tags` cross-language false positives + empty-target/language-variant robustness. |
+| 1 | **TM / TermBase first-class** (fuzzy match %, concordance, TBX enforcement) | ✅ Done | `moon test` 101/101; reviewed + hardened (word-boundary, `xml:lang`); S1 fuzzy-match upgrade (IDF + 2-gram + word-order, R23–R25); open-code-review + MoA fixes for `parse_tmx` cross-language/`</tu>` split + `mqm_tags` cross-language false positives + empty-target/language-variant robustness; P0 长文 + 数字守门加固（MAX_TOKENS 截断 / numeric_consistency MQM 维度 / fuzzy_match 长 query 不崩 / L1–L12 长文回归）。 |
 | 2 | **Quality estimation + MQM auto-eval** | ✅ Done | `qe_score` (0.55·match + 0.30·term + 0.15·char) + `mqm_tags` (terminology/accuracy/fluency/omission w/ severity). Tested E1–E3. |
 | 3 | **Format-fidelity round-trip** | ✅ Done | `check_format_fidelity` (missing/extra tag detection) + `protect_tags` (mask tags to `__TAG__`). Tested E4–E5. |
 | 4 | **Multimodal / screenshot translation** | ✅ Done (OCR external stub) | `ocr_image` (external boundary) + `align_regions` (region ↔ TM align). Zero-dep engine speaks JSON at the OCR boundary; real OCR injected by host. Tested E6–E7. |

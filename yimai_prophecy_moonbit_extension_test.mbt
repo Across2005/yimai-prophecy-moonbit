@@ -10,8 +10,10 @@ test "E1 QE 自动评测：高匹配 + 无术语违规 => 高分且 term_ok" {
   let r = e.qe_auto("电池包热管理", "Battery pack thermal management", 0.95)
   match r {
     Json::Object(m) => {
+      // P1：BLEU 校准 + char 缩权后，跨语种高匹配对照（zh↔en，无 token 重合）从 ~0.86 降到 ~0.74
+      // （BLEU 同样因词重合度低而偏低）。分数仍 > 0.7 表明「高匹配 + 术语一致」的可信信号。
       match m.get("qe_score") {
-        Some(Json::Number(s, ..)) => inspect(s > 0.8, content="true")
+        Some(Json::Number(s, ..)) => inspect(s > 0.7, content="true")
         _ => inspect(false, content="true")
       }
       match m.get("term_ok") {

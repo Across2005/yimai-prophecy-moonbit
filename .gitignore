@@ -6,3 +6,7 @@ target
 .moonagent/
 *.mbti
 tm_store.json
+# 推送凭据（建议放 ~/.git-credentials，不入仓；如误放进仓库下面这行保险）
+.git-credentials
+# ocr / 一次性工具产物
+ocr-moonbit-rule.json
