@@ -3,6 +3,7 @@ import {
   "moonbitlang/core/ref",
   "moonbitlang/core/strconv",
   "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/env" @env,
   "moonbitlang/async",
   "moonbitlang/async/http" @http,
   "moonbitlang/async/socket" @socket,

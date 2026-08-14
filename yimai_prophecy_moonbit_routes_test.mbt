@@ -1,0 +1,164 @@
+// yimai_prophecy_moonbit_routes_test.mbt
+// P1 路由层契约回归（routes.mbt 是 native-only；本测试仅验证「meta 结构」与「错误码表」）。
+//
+// 覆盖：
+//   L19  24 既有端点 + 2 新增（metrics/health）共 26 项在 routes_meta 内，且 baseline 路径全部命中
+//   L20  未知路径在 routes_meta 中无匹配（兜底走 serve_static，routes.mbt 的 lookup_route 返 ""）
+//   L21  routes_meta 的 handler 名无重复、无空串，且全部在已知 handler 集合内（无 dangling reference）
+//   L22  error_codes 恰好三码：invalid_json / body_too_large / missing_field（send_error 唯一出口）
+
+// ---------------------------------------------------------------------------
+// L19：路由表 26 项全覆盖（24 既有 baseline + 2 新增 metrics/health）
+// ---------------------------------------------------------------------------
+
+test "L19 routes_meta 包含全部 24 baseline 端点路径" {
+  // 把 routes_meta 转成「路径集合」
+  let mut count = 0
+  for entry in routes_meta {
+    let (p, _) = entry
+    for bp in baseline_paths {
+      if p == bp {
+        count = count + 1
+        break
+      }
+    }
+  }
+  // baseline_paths 长度 = 24，必须全部命中
+  inspect(count == baseline_paths.length(), content="true")
+}
+
+test "L19 routes_meta 含 /api/metrics 与 /api/health 两个 P1 新增端点" {
+  let mut has_metrics = false
+  let mut has_health = false
+  for entry in routes_meta {
+    let (p, _) = entry
+    if p == "/api/metrics" { has_metrics = true }
+    if p == "/api/health" { has_health = true }
+  }
+  inspect(has_metrics, content="true")
+  inspect(has_health, content="true")
+}
+
+test "L19 routes_meta 总条目数为 26（24 既有 + 2 新增）" {
+  inspect(routes_meta.length() == 26, content="true")
+}
+
+// ---------------------------------------------------------------------------
+// L20：未知路径在 routes_meta 中无匹配 → 兜底走 serve_static
+//   复现 routes.mbt::lookup_route 的查找逻辑，确保返回 ""（未命中）
+// ---------------------------------------------------------------------------
+
+test "L20 未知路径 /api/nonexistent 在 routes_meta 中无匹配" {
+  let mut found = false
+  for entry in routes_meta {
+    let (p, _) = entry
+    if p == "/api/nonexistent" { found = true }
+  }
+  inspect(found, content="false")
+}
+
+test "L20 未知路径 /random/path 在 routes_meta 中无匹配" {
+  let mut found = false
+  for entry in routes_meta {
+    let (p, _) = entry
+    if p == "/random/path" { found = true }
+  }
+  inspect(found, content="false")
+}
+
+test "L20 /mcp 不在 routes_meta（routes.mbt 单独走 MCP 分支）" {
+  let mut found = false
+  for entry in routes_meta {
+    let (p, _) = entry
+    if p == "/mcp" { found = true }
+  }
+  inspect(found, content="false")
+}
+
+// ---------------------------------------------------------------------------
+// L21：路由 dispatch 字符串表与 handle_xxx 函数一一对应（无 dangling reference）
+//   - handler 名无重复
+//   - handler 名非空
+//   - handler 名全部在「已知 handler 集合」内（即 routes.mbt::handle_request 的 match 分支）
+// ---------------------------------------------------------------------------
+
+// routes.mbt::handle_request 的 match 派发全集（手工枚举，与 cmd/service 同步）
+//   修改 routes.mbt 的 match 分支时，此集合必须同步更新。
+let known_handlers : Array[String] = [
+  "ping", "tm_count", "fuzzy_match", "add_tm", "check_terms", "concordance",
+  "qe_auto", "predict", "observe", "recall", "explain", "reward",
+  "consolidate", "retrieve_prompt", "bleu", "chrf", "style_check",
+  "style_report", "back_align", "term_conflicts", "fed_export", "fed_import",
+  "distill_inject", "active_learning", "metrics", "health",
+]
+
+test "L21 routes_meta 中 handler 名无重复" {
+  let mut dups = 0
+  for i = 0; i < routes_meta.length(); i = i + 1 {
+    let (_, n1) = routes_meta[i]
+    for j = i + 1; j < routes_meta.length(); j = j + 1 {
+      let (_, n2) = routes_meta[j]
+      if n1 == n2 { dups = dups + 1 }
+    }
+  }
+  inspect(dups == 0, content="true")
+}
+
+test "L21 routes_meta 中 handler 名无空串" {
+  let mut empties = 0
+  for entry in routes_meta {
+    let (_, n) = entry
+    if n == "" { empties = empties + 1 }
+  }
+  inspect(empties == 0, content="true")
+}
+
+test "L21 routes_meta 中 handler 名全部在 known_handlers 内（无 dangling）" {
+  let mut bad = 0
+  for entry in routes_meta {
+    let (_, n) = entry
+    let mut in_set = false
+    for h in known_handlers {
+      if h == n { in_set = true }
+    }
+    if !in_set { bad = bad + 1 }
+  }
+  inspect(bad == 0, content="true")
+}
+
+test "L21 known_handlers 与 routes_meta 长度一致（match 分支无遗漏）" {
+  inspect(known_handlers.length() == routes_meta.length(), content="true")
+}
+
+// ---------------------------------------------------------------------------
+// L22：send_error 三类 code 字符串覆盖（稳定机器可读码）
+//   invalid_json: 400, JSON 解析失败
+//   body_too_large: 413, request body 超过 MAX_BODY_BYTES
+//   missing_field: 400, 必填字段缺失
+// ---------------------------------------------------------------------------
+
+test "L22 error_codes 恰好三码且互不相同" {
+  inspect(error_codes.length() == 3, content="true")
+  let mut dups = 0
+  for i = 0; i < error_codes.length(); i = i + 1 {
+    for j = i + 1; j < error_codes.length(); j = j + 1 {
+      if error_codes[i] == error_codes[j] { dups = dups + 1 }
+    }
+  }
+  inspect(dups == 0, content="true")
+}
+
+test "L22 error_codes 包含三类稳定码（invalid_json/body_too_large/missing_field）" {
+  // 单测合并：三码存在性 一次验证；分别对应 send_error 唯一出口
+  //   invalid_json: read_json_or_400 走 400 分支
+  //   body_too_large: read_json_or_400 走 413 分支
+  //   missing_field: handler 必填字段缺失
+  let expected = ["invalid_json", "body_too_large", "missing_field"]
+  for want in expected {
+    let mut has = false
+    for c in error_codes {
+      if c == want { has = true }
+    }
+    inspect(has, content="true")
+  }
+}

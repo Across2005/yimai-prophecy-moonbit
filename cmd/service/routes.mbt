@@ -7,7 +7,49 @@
 //   POST /api/qe_auto       {"source","target","match_rate"}  QE 评分
 //   POST /api/predict       {"k"}                       下一步预测 + 白盒
 //   GET  /api/tm_count / /api/ping                       存量 / 健康检查
+//   GET  /api/metrics / /api/health                       可观测 / 详细健康（P1）
 // 注：MoonBit async 调用无需 await；Request.path 含完整 query string（路由需剥离）。
+
+// 请求体最大字节数（1 MiB）；超限返回 413，防 read_all OOM（本地 dev 与 agent 宿主都用此上界）
+const MAX_BODY_BYTES : Int = 1048576
+
+// 路由表（path, handler_name）：与根模块 routes_meta 保持 26 项同步。
+// MoonBit 函数非一等公民，故用「字符串名 → match 派发」做表驱动：
+//   1. 单一来源便于枚举/测试（L19-L22）
+//   2. 增删端点只动两处（本表 + handle_request 的 match 分支）
+// /mcp 与 serve_static 不进表：前者是 JSON-RPC 协议分支，后者是文件兜底。
+let routes : Array[(String, String)] = [
+  ("/api/ping", "ping"),
+  ("/api/tm_count", "tm_count"),
+  ("/api/fuzzy_match", "fuzzy_match"),
+  ("/api/add_tm", "add_tm"),
+  ("/api/check_terms", "check_terms"),
+  ("/api/concordance", "concordance"),
+  ("/api/qe_auto", "qe_auto"),
+  ("/api/predict", "predict"),
+  ("/api/observe", "observe"),
+  ("/api/recall", "recall"),
+  ("/api/explain", "explain"),
+  ("/api/reward", "reward"),
+  ("/api/consolidate", "consolidate"),
+  ("/api/retrieve_prompt", "retrieve_prompt"),
+  ("/api/bleu", "bleu"),
+  ("/api/chrf", "chrf"),
+  ("/api/style_check", "style_check"),
+  ("/api/style_report", "style_report"),
+  ("/api/back_align", "back_align"),
+  ("/api/term_conflicts", "term_conflicts"),
+  ("/api/fed_export", "fed_export"),
+  ("/api/fed_import", "fed_import"),
+  ("/api/distill_inject", "distill_inject"),
+  ("/api/active_learning", "active_learning"),
+  ("/api/metrics", "metrics"),
+  ("/api/health", "health"),
+]
+
+// 进程启动时间戳（ms since epoch，初始化在 main.mbt 启动时一次）
+//   /api/health 据此算 uptime_seconds；不直接用 @env.now() 以避免每次 HTTP 重新采样带来的抖动。
+let start_time_ms : @ref.Ref[UInt64] = @ref.new(0)
 
 // 从 path 提取 ? 之前的 base path（async 的 Request.path 含完整 query string）
 fn extract_base_path(path : String) -> String {
@@ -21,63 +63,88 @@ async fn send_json(conn : @http.ServerConnection, code : Int, body : String) -> 
   conn.end_response()
 }
 
-// 主路由
+// 统一错误响应：所有 handler 的错误出口走这一处（替换散落的字符串拼接）。
+//   返回形如 {"error":"...","code":"..."}，code 是稳定机器可读字符串（如 "invalid_json"/"body_too_large"）。
+async fn send_error(conn : @http.ServerConnection, http_code : Int, code : String, message : String) -> Unit {
+  let body = "{\"error\":\"" + message + "\",\"code\":\"" + code + "\"}"
+  send_json(conn, http_code, body)
+}
+
+// 统一 JSON body 入口：read_json_body 的 None 时根据 last_body_oversize 决定 400 / 413 并 send
+//   handler 拿到 None 时直接走 _ 分支（已发过响应），不再回错误
+//   P1 修正：之前版本递归调用自身 + match 用 `,` 分隔（MoonBit 不支持），导致 native 编译失败。
+//   改为调 read_json_body + match 用 `;` 分隔。
+async fn read_json_or_400(conn : @http.ServerConnection, body : &@io.Reader) -> Option[Json] {
+  let r = read_json_body(body)
+  match r {
+    Some(j) => Some(j)
+    None => {
+      if last_body_oversize.val {
+        send_error(conn, 413, "body_too_large", "request body exceeds MAX_BODY_BYTES")
+      } else {
+        send_error(conn, 400, "invalid_json", "invalid JSON body")
+      }
+      None
+    }
+  }
+}
+
+// 主路由（表驱动）：path → routes 查找 handler 名 → match 派发。
+// 保持原契约：/mcp 是 JSON-RPC 分支单独走，serve_static 是未知路径兜底。
 async fn handle_request(req : @http.Request, body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
   let path = extract_base_path(req.path)
-  if path == "/api/ping" {
-    send_json(conn, 200, "{\"status\":\"ok\"}")
-  } else if path == "/api/fuzzy_match" {
-    handle_fuzzy_match(body, conn)
-  } else if path == "/api/add_tm" {
-    handle_add_tm(body, conn)
-  } else if path == "/api/tm_count" {
-    handle_tm_count(conn)
-  } else if path == "/api/check_terms" {
-    handle_check_terms(body, conn)
-  } else if path == "/api/concordance" {
-    handle_concordance(body, conn)
-  } else if path == "/api/qe_auto" {
-    handle_qe_auto(body, conn)
-  } else if path == "/api/predict" {
-    handle_predict(body, conn)
-  } else if path == "/api/observe" {
-    handle_observe(body, conn)
-  } else if path == "/api/recall" {
-    handle_recall(body, conn)
-  } else if path == "/api/explain" {
-    handle_explain(body, conn)
-  } else if path == "/api/reward" {
-    handle_reward(body, conn)
-  } else if path == "/api/consolidate" {
-    handle_consolidate(body, conn)
-  } else if path == "/api/retrieve_prompt" {
-    handle_retrieve_prompt(body, conn)
-  } else if path == "/api/bleu" {
-    handle_bleu(body, conn)
-  } else if path == "/api/chrf" {
-    handle_chrf(body, conn)
-  } else if path == "/api/style_check" {
-    handle_style_check(body, conn)
-  } else if path == "/api/style_report" {
-    handle_style_report(body, conn)
-  } else if path == "/api/back_align" {
-    handle_back_align(body, conn)
-  } else if path == "/api/term_conflicts" {
-    handle_term_conflicts(body, conn)
-  } else if path == "/api/fed_export" {
-    handle_fed_export(body, conn)
-  } else if path == "/api/fed_import" {
-    handle_fed_import(body, conn)
-  } else if path == "/api/distill_inject" {
-    handle_distill_inject(body, conn)
-  } else if path == "/api/active_learning" {
-    handle_active_learning(body, conn)
-  } else if path == "/mcp" {
-    // MCP Server 变体（spec 2025-11-25，Streamable HTTP；实现见 mcp.mbt）
+  // MCP Server 变体（spec 2025-11-25，Streamable HTTP；实现见 mcp.mbt）独立分支
+  if path == "/mcp" {
     handle_mcp(req, body, conn)
-  } else {
-    serve_static(path, conn)
+    return
   }
+  // 在路由表里线性查找（26 项规模，O(n) 即可）
+  let name = lookup_route(path)
+  if name == "" {
+    serve_static(path, conn)
+    return
+  }
+  // 字符串 → handler 派发（MoonBit 函数非一等公民，match 派发是规范做法）
+  match name {
+    "ping" => send_json(conn, 200, "{\"status\":\"ok\"}")
+    "tm_count" => handle_tm_count(conn)
+    "fuzzy_match" => handle_fuzzy_match(body, conn)
+    "add_tm" => handle_add_tm(body, conn)
+    "check_terms" => handle_check_terms(body, conn)
+    "concordance" => handle_concordance(body, conn)
+    "qe_auto" => handle_qe_auto(body, conn)
+    "predict" => handle_predict(body, conn)
+    "observe" => handle_observe(body, conn)
+    "recall" => handle_recall(body, conn)
+    "explain" => handle_explain(body, conn)
+    "reward" => handle_reward(body, conn)
+    "consolidate" => handle_consolidate(body, conn)
+    "retrieve_prompt" => handle_retrieve_prompt(body, conn)
+    "bleu" => handle_bleu(body, conn)
+    "chrf" => handle_chrf(body, conn)
+    "style_check" => handle_style_check(body, conn)
+    "style_report" => handle_style_report(body, conn)
+    "back_align" => handle_back_align(body, conn)
+    "term_conflicts" => handle_term_conflicts(body, conn)
+    "fed_export" => handle_fed_export(body, conn)
+    "fed_import" => handle_fed_import(body, conn)
+    "distill_inject" => handle_distill_inject(body, conn)
+    "active_learning" => handle_active_learning(body, conn)
+    "metrics" => handle_metrics(conn)
+    "health" => handle_health(conn)
+    _ => serve_static(path, conn)  // 表里居然有 unknown 名：兜底防 dangling
+  }
+}
+
+// 路由表查找：path 命中返回 handler 名，未命中返 ""。无副作用。
+fn lookup_route(path : String) -> String {
+  for r in routes {
+    let (p, n) = r
+    if p == path {
+      return n
+    }
+  }
+  ""
 }
 
 // ===== 静态文件服务（前端工作台，async 无 serve_directory，手写）=====
@@ -117,12 +184,26 @@ async fn serve_static(path : String, conn : @http.ServerConnection) -> Unit {
   }
 }
 
+// 最近一次 read_json_body 是否触发 MAX_BODY_BYTES 上限（handler 据此区分 400 vs 413）
+//   为全局 ref 而非函数 out-param：保持 24 端点签名不变，最小侵入。
+let last_body_oversize : @ref.Ref[Bool] = @ref.new(false)
+
 // 从 body 读取 JSON（async；返回 Option[Json]）
+//   超 MAX_BODY_BYTES 即置 last_body_oversize=true 并返回 None；handler 据此回 413。
+//   解析失败返回 None 且 last_body_oversize 不变；handler 据此回 400。
 async fn read_json_body(body : &@io.Reader) -> Option[Json] {
+  last_body_oversize.val = false
   let data = body.read_all()
+  // 防御：reader 无 size 字段，用 data.text() 长度作 char-count 上界（UTF-8 中文 1 char=3 bytes，此处偏严）
   let s = try { data.text() } catch { _ => "" }
+  if s.length() > MAX_BODY_BYTES {
+    last_body_oversize.val = true
+    return None
+  }
   try { Some(@json.parse(s)) } catch { _ => None }
 }
+
+// 统一错误响应已抽到 send_error（见上方），所有 handler 共用
 
 // 从 JSON 对象取字符串字段
 fn json_str(o : Map[String, Json], key : String) -> String {
@@ -132,9 +213,33 @@ fn json_str(o : Map[String, Json], key : String) -> String {
   }
 }
 
+// 从 JSON 抽取 Int 字段（找不到/类型不符返 default）；用于 metrics/stats_view 聚合
+fn json_int(j : Json, key : String, default : Int) -> Int {
+  match j {
+    Json::Object(o) =>
+      match o.get(key) {
+        Some(Json::Number(n, ..)) => n.to_int()
+        _ => default
+      }
+    _ => default
+  }
+}
+
+// 从 JSON 抽取 Double 字段（找不到/类型不符返 default）
+fn json_num(j : Json, key : String, default : Double) -> Double {
+  match j {
+    Json::Object(o) =>
+      match o.get(key) {
+        Some(Json::Number(n, ..)) => n
+        _ => default
+      }
+    _ => default
+  }
+}
+
 // POST /api/fuzzy_match  {"query":"..","k":3,"threshold":0.5}
 async fn handle_fuzzy_match(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_body(body)
+  let parsed = read_json_or_400(conn, body)
   match parsed {
     Some(Json::Object(o)) => {
       let query = json_str(o, "query")
@@ -149,13 +254,13 @@ async fn handle_fuzzy_match(body : &@io.Reader, conn : @http.ServerConnection) -
       let result = engine_ref.val.fuzzy_match(query, k, thr)
       send_json(conn, 200, result.stringify())
     }
-    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+    _ => ()  // read_json_or_400 已发 4xx 响应
   }
 }
 
 // POST /api/add_tm  {"src":"..","tgt":".."}
 async fn handle_add_tm(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_body(body)
+  let parsed = read_json_or_400(conn, body)
   match parsed {
     Some(Json::Object(o)) => {
       let src = match o.get("src") {
@@ -167,14 +272,15 @@ async fn handle_add_tm(body : &@io.Reader, conn : @http.ServerConnection) -> Uni
         _ => ""
       }
       if src == "" {
-        send_json(conn, 400, "{\"error\":\"src required\"}")
+        send_error(conn, 400, "missing_field", "src required")
       } else {
         let id = engine_ref.val.add_tm(src, tgt)
-        try { save_store() } catch { err => println("save_store error: \{err}") }
+        let saved = save_store()
+        if !saved { println("save_store: 落盘失败但内存态已更新") }
         send_json(conn, 200, "{\"id\":\"" + id + "\",\"status\":\"stored\"}")
       }
     }
-    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+    _ => ()  // read_json_or_400 已发 4xx 响应
   }
 }
 
@@ -186,7 +292,7 @@ async fn handle_tm_count(conn : @http.ServerConnection) -> Unit {
 
 // POST /api/check_terms  {"source":"..","target":".."}  术语一致性校验（白盒返回违规）
 async fn handle_check_terms(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_body(body)
+  let parsed = read_json_or_400(conn, body)
   match parsed {
     Some(Json::Object(o)) => {
       let source = json_str(o, "source")
@@ -194,13 +300,13 @@ async fn handle_check_terms(body : &@io.Reader, conn : @http.ServerConnection) -
       let result = engine_ref.val.check_terms(source, target)
       send_json(conn, 200, result.stringify())
     }
-    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+    _ => ()  // read_json_or_400 已发 4xx 响应
   }
 }
 
 // POST /api/concordance  {"term":"..","k":3}  含术语的 TM 段检索
 async fn handle_concordance(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_body(body)
+  let parsed = read_json_or_400(conn, body)
   match parsed {
     Some(Json::Object(o)) => {
       let term = json_str(o, "term")
@@ -211,13 +317,13 @@ async fn handle_concordance(body : &@io.Reader, conn : @http.ServerConnection) -
       let result = engine_ref.val.concordance(term, k)
       send_json(conn, 200, result.stringify())
     }
-    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+    _ => ()  // read_json_or_400 已发 4xx 响应
   }
 }
 
 // POST /api/qe_auto  {"source":"..","target":"..","match_rate":0.7}  自动 QE 评分
 async fn handle_qe_auto(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_body(body)
+  let parsed = read_json_or_400(conn, body)
   match parsed {
     Some(Json::Object(o)) => {
       let source = json_str(o, "source")
@@ -229,13 +335,13 @@ async fn handle_qe_auto(body : &@io.Reader, conn : @http.ServerConnection) -> Un
       let result = engine_ref.val.qe_auto(source, target, mr)
       send_json(conn, 200, result.stringify())
     }
-    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+    _ => ()  // read_json_or_400 已发 4xx 响应
   }
 }
 
 // POST /api/predict  {"k":3}  下一步预测（白盒：activation_path 证据链）
 async fn handle_predict(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_body(body)
+  let parsed = read_json_or_400(conn, body)
   match parsed {
     Some(Json::Object(o)) => {
       let k = match o.get("k") {
@@ -245,32 +351,33 @@ async fn handle_predict(body : &@io.Reader, conn : @http.ServerConnection) -> Un
       let result = engine_ref.val.predict(k)
       send_json(conn, 200, result.stringify())
     }
-    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+    _ => ()  // read_json_or_400 已发 4xx 响应
   }
 }
 
 // POST /api/observe  {"text":"..","mtype":"step"}  记录真实步骤（学习/转移/命中核算）→ 落盘
 async fn handle_observe(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_body(body)
+  let parsed = read_json_or_400(conn, body)
   match parsed {
     Some(Json::Object(o)) => {
       let text = json_str(o, "text")
       let mtype = json_str(o, "mtype")
       if text == "" {
-        send_json(conn, 400, "{\"error\":\"text required\"}")
+        send_error(conn, 400, "missing_field", "text required")
       } else {
         let mid = engine_ref.val.observe(text, mtype)
-        try { save_store() } catch { err => println("save_store error: \{err}") }
+        let saved = save_store()
+        if !saved { println("save_store: 落盘失败但内存态已更新") }
         send_json(conn, 200, "{\"mid\":\"" + mid + "\",\"status\":\"learned\"}")
       }
     }
-    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+    _ => ()  // read_json_or_400 已发 4xx 响应
   }
 }
 
 // POST /api/recall  {"query":"..","k":5}  激活扩散语义召回
 async fn handle_recall(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_body(body)
+  let parsed = read_json_or_400(conn, body)
   match parsed {
     Some(Json::Object(o)) => {
       let query = json_str(o, "query")
@@ -281,26 +388,26 @@ async fn handle_recall(body : &@io.Reader, conn : @http.ServerConnection) -> Uni
       let result = engine_ref.val.recall(query, k)
       send_json(conn, 200, @lib.arr_json(result).stringify())
     }
-    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+    _ => ()  // read_json_or_400 已发 4xx 响应
   }
 }
 
 // POST /api/explain  {"mid":".."}  白盒卡片（value_breakdown / activation_path / predicts_to）
 async fn handle_explain(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_body(body)
+  let parsed = read_json_or_400(conn, body)
   match parsed {
     Some(Json::Object(o)) => {
       let mid = json_str(o, "mid")
       let result = engine_ref.val.explain_card(mid)
       send_json(conn, 200, result.stringify())
     }
-    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+    _ => ()  // read_json_or_400 已发 4xx 响应
   }
 }
 
 // POST /api/reward  {"mid":"..","score":1.0}  采纳/拒绝反馈 → predictive_value（闭环核心）
 async fn handle_reward(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_body(body)
+  let parsed = read_json_or_400(conn, body)
   match parsed {
     Some(Json::Object(o)) => {
       let mid = json_str(o, "mid")
@@ -310,19 +417,20 @@ async fn handle_reward(body : &@io.Reader, conn : @http.ServerConnection) -> Uni
       }
       let ok = engine_ref.val.reward(mid, score)
       if ok {
-        try { save_store() } catch { err => println("save_store error: \{err}") }
+        let saved = save_store()
+        if !saved { println("save_store: 落盘失败但内存态已更新") }
         send_json(conn, 200, "{\"ok\":true}")
       } else {
         send_json(conn, 404, "{\"ok\":false,\"error\":\"unknown mid\"}")
       }
     }
-    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+    _ => ()  // read_json_or_400 已发 4xx 响应
   }
 }
 
 // POST /api/consolidate  {"prune":true}  固化重放（价值重算 + 可选剪枝）
 async fn handle_consolidate(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_body(body)
+  let parsed = read_json_or_400(conn, body)
   match parsed {
     Some(Json::Object(o)) => {
       let prune = match o.get("prune") {
@@ -333,10 +441,11 @@ async fn handle_consolidate(body : &@io.Reader, conn : @http.ServerConnection) -
         None => true
       }
       let result = engine_ref.val.consolidate(prune)
-      try { save_store() } catch { err => println("save_store error: \{err}") }
+      let saved = save_store()
+        if !saved { println("save_store: 落盘失败但内存态已更新") }
       send_json(conn, 200, result.stringify())
     }
-    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+    _ => ()  // read_json_or_400 已发 4xx 响应
   }
 }
 
@@ -344,7 +453,7 @@ async fn handle_consolidate(body : &@io.Reader, conn : @http.ServerConnection) -
 
 // POST /api/retrieve_prompt  {"query","k","threshold"}  TMPlm 三段式 prompt 上下文
 async fn handle_retrieve_prompt(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_body(body)
+  let parsed = read_json_or_400(conn, body)
   match parsed {
     Some(Json::Object(o)) => {
       let query = json_str(o, "query")
@@ -359,13 +468,13 @@ async fn handle_retrieve_prompt(body : &@io.Reader, conn : @http.ServerConnectio
       let result = engine_ref.val.retrieve_for_prompt(query, k, thr)
       send_json(conn, 200, result.stringify())
     }
-    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+    _ => ()  // read_json_or_400 已发 4xx 响应
   }
 }
 
 // POST /api/bleu  {"ref","hyp"}  BLEU-4 评测
 async fn handle_bleu(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_body(body)
+  let parsed = read_json_or_400(conn, body)
   match parsed {
     Some(Json::Object(o)) => {
       let ref = json_str(o, "ref")
@@ -373,13 +482,13 @@ async fn handle_bleu(body : &@io.Reader, conn : @http.ServerConnection) -> Unit 
       let score = @lib.bleu_score(ref, hyp)
       send_json(conn, 200, "{\"bleu\":" + score.to_string() + "}")
     }
-    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+    _ => ()  // read_json_or_400 已发 4xx 响应
   }
 }
 
 // POST /api/chrf  {"ref","hyp"}  chrF++ 评测
 async fn handle_chrf(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_body(body)
+  let parsed = read_json_or_400(conn, body)
   match parsed {
     Some(Json::Object(o)) => {
       let ref = json_str(o, "ref")
@@ -387,39 +496,39 @@ async fn handle_chrf(body : &@io.Reader, conn : @http.ServerConnection) -> Unit 
       let score = @lib.chrf_score(ref, hyp)
       send_json(conn, 200, "{\"chrf\":" + score.to_string() + "}")
     }
-    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+    _ => ()  // read_json_or_400 已发 4xx 响应
   }
 }
 
 // POST /api/style_check  {"text"}  风格一致性检查
 async fn handle_style_check(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_body(body)
+  let parsed = read_json_or_400(conn, body)
   match parsed {
     Some(Json::Object(o)) => {
       let text = json_str(o, "text")
       let result = engine_ref.val.style_check(text)
       send_json(conn, 200, result.stringify())
     }
-    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+    _ => ()  // read_json_or_400 已发 4xx 响应
   }
 }
 
 // POST /api/style_report  {"text"?}  风格一致报告（记忆库分布 + 新译文偏离建议）
 async fn handle_style_report(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_body(body)
+  let parsed = read_json_or_400(conn, body)
   match parsed {
     Some(Json::Object(o)) => {
       let text = json_str(o, "text")
       let result = engine_ref.val.style_report(text)
       send_json(conn, 200, result.stringify())
     }
-    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+    _ => ()  // read_json_or_400 已发 4xx 响应
   }
 }
 
 // POST /api/back_align  {"source","target"}  回译 LCS 对齐（含字符级 ops 供热力图）
 async fn handle_back_align(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_body(body)
+  let parsed = read_json_or_400(conn, body)
   match parsed {
     Some(Json::Object(o)) => {
       let source = json_str(o, "source")
@@ -451,7 +560,7 @@ async fn handle_back_align(body : &@io.Reader, conn : @http.ServerConnection) ->
         _ => send_json(conn, 500, "{\"error\":\"align failed\"}")
       }
     }
-    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+    _ => ()  // read_json_or_400 已发 4xx 响应
   }
 }
 
@@ -469,7 +578,7 @@ async fn handle_fed_export(body : &@io.Reader, conn : @http.ServerConnection) ->
 
 // POST /api/fed_import  {"added","updated"}  联邦增量导入（写操作落盘）
 async fn handle_fed_import(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_body(body)
+  let parsed = read_json_or_400(conn, body)
   match parsed {
     Some(Json::Object(o)) => {
       let added = match o.get("added") {
@@ -481,16 +590,17 @@ async fn handle_fed_import(body : &@io.Reader, conn : @http.ServerConnection) ->
         _ => 0
       }
       engine_ref.val.fed_import(added, updated)
-      try { save_store() } catch { err => println("save_store error: \{err}") }
+      let saved = save_store()
+        if !saved { println("save_store: 落盘失败但内存态已更新") }
       send_json(conn, 200, "{\"status\":\"imported\"}")
     }
-    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+    _ => ()  // read_json_or_400 已发 4xx 响应
   }
 }
 
 // POST /api/distill_inject  {"table":{"role":0.5}}  蒸馏表注入（写操作落盘）
 async fn handle_distill_inject(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_body(body)
+  let parsed = read_json_or_400(conn, body)
   match parsed {
     Some(Json::Object(o)) => {
       let table : Map[String, Double] = Map::new()
@@ -505,16 +615,17 @@ async fn handle_distill_inject(body : &@io.Reader, conn : @http.ServerConnection
         _ => ()
       }
       engine_ref.val.inject_distillation(table)
-      try { save_store() } catch { err => println("save_store error: \{err}") }
+      let saved = save_store()
+        if !saved { println("save_store: 落盘失败但内存态已更新") }
       send_json(conn, 200, "{\"status\":\"injected\",\"keys\":" + table.size().to_string() + "}")
     }
-    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+    _ => ()  // read_json_or_400 已发 4xx 响应
   }
 }
 
 // POST /api/active_learning  {"k":5}  主动学习推荐（uncertainty×0.6 + novelty×0.4，角色多样性）
 async fn handle_active_learning(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_body(body)
+  let parsed = read_json_or_400(conn, body)
   match parsed {
     Some(Json::Object(o)) => {
       let k = match o.get("k") {
@@ -524,6 +635,55 @@ async fn handle_active_learning(body : &@io.Reader, conn : @http.ServerConnectio
       let result = engine_ref.val.active_learning_candidates(k)
       send_json(conn, 200, @lib.arr_json(result).stringify())
     }
-    _ => send_json(conn, 400, "{\"error\":\"invalid JSON body\"}")
+    _ => ()  // read_json_or_400 已发 4xx 响应
   }
+}
+
+// ===== P1：可观测 / 详细健康（GET 即可，无 body）=====
+
+// GET /api/metrics  引擎健康指标（observability）：合并 metrics() + stats_view()
+//   metrics() 给「量」（tm/term/total_memories/term_coverage），stats_view() 给「质」（predict 闭环）
+//   只读聚合，不影响引擎状态
+async fn handle_metrics(conn : @http.ServerConnection) -> Unit {
+  let m = engine_ref.val.metrics()
+  let s = engine_ref.val.stats_view()
+  send_json(
+    conn,
+    200,
+    @lib.obj([
+      ("tm_count", json_int(m, "tm_count", 0).to_json()),
+      ("term_count", json_int(m, "term_count", 0).to_json()),
+      ("total_memories", json_int(m, "total_memories", 0).to_json()),
+      ("term_coverage", json_num(m, "term_coverage", 0.0).to_json()),
+      ("predict_calls", json_int(s, "predict_calls", 0).to_json()),
+      ("avg_predictive_value", json_num(s, "avg_predictive_value", 0.0).to_json()),
+      ("hit_rate", json_num(s, "predict_hit_rate", 0.0).to_json()),
+    ]).stringify(),
+  )
+}
+
+// GET /api/health  比 /api/ping 详细：uptime / tm_count / last_save_status / version
+//   status: "ok" 健康 / "degraded" 最近一次落盘失败
+//   last_save_status: true=成功（含节流跳过）/ false=写盘失败
+//   last_save_age_seconds: 距上次落盘秒数（-1=尚未发生）
+async fn handle_health(conn : @http.ServerConnection) -> Unit {
+  // UInt64 → Int：年份 2038 前时间戳远低于 Int 上界，安全
+  let now = @env.now().to_int()
+  let started = start_time_ms.val.to_int()
+  let uptime_s = if started <= 0 { 0 } else { (now - started) / 1000 }
+  let last_ok = last_save_ok.val
+  let last_ts = last_save_ts.val.to_int()
+  let age_s = if last_ts <= 0 { -1 } else { (now - last_ts) / 1000 }
+  send_json(
+    conn,
+    200,
+    @lib.obj([
+      ("status", @lib.str_json(if last_ok { "ok" } else { "degraded" })),
+      ("tm_count", tm_count().to_json()),
+      ("uptime_seconds", uptime_s.to_json()),
+      ("last_save_status", last_ok.to_json()),
+      ("last_save_age_seconds", age_s.to_json()),
+      ("version", @lib.str_json("0.1.0")),
+    ]).stringify(),
+  )
 }

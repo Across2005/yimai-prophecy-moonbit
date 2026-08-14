@@ -15,6 +15,8 @@ const TM_STORE_PATH : String = "tm_store.json"
 
 async fn main {
   load_store()
+  // P1：/api/health 据此算 uptime_seconds；先采样避免被 load_store 耗时污染
+  start_time_ms.val = @env.now()
   println("译脉引擎服务: http://127.0.0.1:8787")
   println("TM 条目数: " + tm_count().to_string())
   let server = @http.Server(@socket.Addr::parse("127.0.0.1:8787"))

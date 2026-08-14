@@ -220,7 +220,7 @@ async fn invoke_tool(name : String, args : Json) -> Json {
     engine_ref.val.fuzzy_match(arg_str(args, "query"), arg_int(args, "k", 3), arg_num(args, "threshold", 0.70))
   } else if name == "add_tm" {
     let id = engine_ref.val.add_tm(arg_str(args, "src"), arg_str(args, "tgt"))
-    try { save_store() } catch { err => println("save_store error: \{err}") }
+    let _ = save_store()  // save_store 已返回 Bool 不再抛（P0 路由加固一致化）
     @lib.obj([("id", @lib.str_json(id)), ("status", @lib.str_json("stored"))])
   } else if name == "check_terms" {
     engine_ref.val.check_terms(arg_str(args, "source"), arg_str(args, "target"))
@@ -232,7 +232,7 @@ async fn invoke_tool(name : String, args : Json) -> Json {
     engine_ref.val.predict(arg_int(args, "k", 3))
   } else if name == "observe" {
     let mid = engine_ref.val.observe(arg_str(args, "text"), arg_str(args, "mtype"))
-    try { save_store() } catch { err => println("save_store error: \{err}") }
+    let _ = save_store()  // save_store 已返回 Bool 不再抛（P0 路由加固一致化）
     @lib.obj([("mid", @lib.str_json(mid)), ("status", @lib.str_json("learned"))])
   } else if name == "recall" {
     @lib.arr_json(engine_ref.val.recall(arg_str(args, "query"), arg_int(args, "k", 5)))
@@ -241,14 +241,14 @@ async fn invoke_tool(name : String, args : Json) -> Json {
   } else if name == "reward" {
     let ok = engine_ref.val.reward(arg_str(args, "mid"), arg_num(args, "score", 1.0))
     if ok {
-      try { save_store() } catch { err => println("save_store error: \{err}") }
+      let _ = save_store()  // save_store 已返回 Bool 不再抛（P0 路由加固一致化）
       @lib.obj([("ok", true.to_json())])
     } else {
       @lib.obj([("ok", false.to_json()), ("error", @lib.str_json("unknown mid"))])
     }
   } else if name == "consolidate" {
     let result = engine_ref.val.consolidate(arg_bool(args, "prune", true))
-    try { save_store() } catch { err => println("save_store error: \{err}") }
+    let _ = save_store()  // save_store 已返回 Bool 不再抛（P0 路由加固一致化）
     result
   } else if name == "tm_count" {
     @lib.obj([("tm_count", @lib.num_json(tm_count().to_double()))])
@@ -272,7 +272,7 @@ async fn invoke_tool(name : String, args : Json) -> Json {
     engine_ref.val.fed_export()
   } else if name == "fed_import" {
     engine_ref.val.fed_import(arg_int(args, "added", 0), arg_int(args, "updated", 0))
-    try { save_store() } catch { err => println("save_store error: \{err}") }
+    let _ = save_store()  // save_store 已返回 Bool 不再抛（P0 路由加固一致化）
     @lib.obj([("status", @lib.str_json("imported"))])
   } else if name == "distill_inject" {
     let table : Map[String, Double] = Map::new()
@@ -292,7 +292,7 @@ async fn invoke_tool(name : String, args : Json) -> Json {
       _ => ()
     }
     engine_ref.val.inject_distillation(table)
-    try { save_store() } catch { err => println("save_store error: \{err}") }
+    let _ = save_store()  // save_store 已返回 Bool 不再抛（P0 路由加固一致化）
     @lib.obj([("status", @lib.str_json("injected")), ("keys", @lib.num_json(table.size().to_double()))])
   } else if name == "active_learning" {
     @lib.arr_json(engine_ref.val.active_learning_candidates(arg_int(args, "k", 5)))
