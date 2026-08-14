@@ -1,12 +1,14 @@
 // tm_store.mbt —— TM 持久化（async/fs 读写 JSON，原子写：临时文件 + rename）
 // 注：MoonBit async 调用无需 await（编译器自动调度）。
 
-// 落盘节流标志（P3-2）：
-//  - save_busy：某次落盘在途（已序列化快照，正在写临时文件/rename）为 true。
-//  - save_pending：busy 期间又有写发生，标记"需补落盘"。
-// 写端点在 handler 中为 fire-and-forget（async 不 await），高并发写会造成多个原子写
-// 重叠（临时文件同路径 rename 争用）。busy 时新写置 pending 并跳过；busy 释放后由
-// 下一次 save_store 若见 pending 则补落最新状态，保证最终一致且不丢失最后一次更新。
+// 落盘节流标志（防御性代码）：
+//  - save_busy：某次落盘在途为 true（当前 MoonBit async 协作式调度下基本不会被设置到 true，
+//    详见 §"MoonBit async 模型"）但保留以防未来换抢占式 runtime
+//  - save_pending：busy 期间又有写发生，标记"需补落盘"
+// 写端点在 handler 中为 fire-and-forget（async 不 await）。busy 时新写置 pending 并跳过；
+// busy 释放后由下一次 save_store 若见 pending 则补落最新状态，保证最终一致且不丢失
+// 最后一次更新。当前 MoonBit async 协作式调度下此节流实际不会触发（无并发写），
+// 但作为"换 runtime 时"的防御代码保留。
 let save_busy : @ref.Ref[Bool] = @ref.new(false)
 let save_pending : @ref.Ref[Bool] = @ref.new(false)
 

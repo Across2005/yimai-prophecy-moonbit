@@ -105,6 +105,8 @@ fn schema_prop(kind : String, desc : String) -> Json {
 
 fn tool_def(name : String, desc : String, props : Array[(String, Json)], required : Array[String]) -> Json {
   let req_json = Array::map(required, fn(s) { @lib.str_json(s) })
+  // P1: 补 additionalProperties: false（OpenAI Agents SDK 严格模式要求 + mcp-lint 业界基线）
+  //   spec 2025-11-25 + JSON Schema 2020-12（SEP-1613 默认 dialect）下，LLM 误传多余字段会被拒
   @lib.obj([
     ("name", @lib.str_json(name)),
     ("description", @lib.str_json(desc)),
@@ -112,6 +114,7 @@ fn tool_def(name : String, desc : String, props : Array[(String, Json)], require
       ("type", @lib.str_json("object")),
       ("properties", @lib.obj(props)),
       ("required", @lib.arr_json(req_json)),
+      ("additionalProperties", false.to_json()),
     ])),
   ])
 }
@@ -328,7 +331,8 @@ async fn handle_tools_call(id : Json, params : Json) -> Json {
     _ => @lib.obj([])
   }
   if not(is_known_tool(name)) {
-    return rpc_error(id, -32602, "Unknown tool: " + name)
+    // P1: unknown tool 属 method-level 而非 param-level，业界惯例 -32601 (Method not found)
+    return rpc_error(id, -32601, "Unknown tool: " + name)
   }
   let result = try { invoke_tool(name, args) } catch {
     err => @lib.obj([("error", @lib.str_json(err.to_string()))])
@@ -354,6 +358,10 @@ async fn handle_tools_call(id : Json, params : Json) -> Json {
 
 // JSON-RPC 分派（None = 无响应体，如 notifications/initialized）
 async fn dispatch(method : String, id : Json, params : Json) -> Option[Json] {
+  // P1: 框架级校验 — 缺 method 应回 -32600 (Invalid Request) 而非 -32601 (Method not found)
+  if method == "" {
+    return Some(rpc_error(id, -32600, "Invalid Request: missing method"))
+  }
   if method == "initialize" {
     Some(handle_initialize(id))
   } else if method == "tools/list" {
@@ -392,6 +400,8 @@ async fn handle_mcp(req : @http.Request, body : &@io.Reader, conn : @http.Server
         }
       }
     }
-    None => send_json(conn, 400, "{\"error\":\"invalid JSON-RPC body\"}")
+    // P1: 改用 JSON-RPC -32700 (Parse error) 标准错误体替代裸字符串
+    //   spec 2025-11-25 + JSON-RPC 2.0 标准；客户端可正确解析
+    None => send_json(conn, 400, rpc_error(@lib.str_json(""), -32700, "Parse error: invalid JSON").stringify())
   }
 }

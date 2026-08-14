@@ -3,6 +3,11 @@
 This file tells AI agents (Claude, Copilot, Cursor, code agents, …) how to use
 this repository immediately after cloning. Read this first.
 
+> **Multi-harness companion files** (auto-loaded by specific agents):
+> - [`CLAUDE.md`](./CLAUDE.md) — Claude Code (Anthropic CLI)
+> - [`GEMINI.md`](./GEMINI.md) — Gemini CLI (Google)
+> - Both point back to this file for the full multi-harness guide.
+
 ## What this project is
 
 **译脉·先知 2.0** — a deterministic memory-prediction engine written in
@@ -47,11 +52,29 @@ moon test --target wasm-gc        # 89/89 green
   `POST /api/fuzzy_match {"query":"电池包热管理方案","k":3,"threshold":0.5}` → Top-K with
   white-box scores (`sim_token/sim_tfidf/sim_char/sim_ngram/sim_tokenset`)（详见 `README.md` → Service Layer）。
 - **MCP**: `POST /mcp` speaks JSON-RPC 2.0 (spec 2025-11-25). `initialize` → `tools/list` (24 tools)
-  → `tools/call {"name":"fuzzy_match","arguments":{...}}`. Claude Desktop config:
+  → `tools/call {"name":"fuzzy_match","arguments":{...}}`. Standard MCP config:
   `{"mcpServers":{"yimai":{"url":"http://127.0.0.1:8787/mcp"}}}`.
 - **Web workbench**: open `http://127.0.0.1:8787/` (three panels: TM search / term check / evidence chain).
 - **Persistence**: writes `tm_store.json` (atomic tmp+rename) next to the service working directory;
   restart restores state automatically.
+
+## MCP integration per harness
+
+| Harness | Config file | Example |
+|---|---|---|
+| **Claude Desktop** | `~/.config/claude-desktop/mcp.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows) | `{"mcpServers":{"yimai":{"url":"http://127.0.0.1:8787/mcp"}}}` |
+| **Claude Code** | `~/.claude/mcp.json` or via `/mcp` slash command | see [`CLAUDE.md`](./CLAUDE.md) |
+| **Gemini CLI** | `~/.gemini/settings.json` | see [`GEMINI.md`](./GEMINI.md) |
+| **Cursor** | `~/.cursor/mcp.json` | `{"mcpServers":{"yimai":{"url":"http://127.0.0.1:8787/mcp"}}}` |
+| **Cline** | VS Code → Cline → MCP Servers → Add → name=`yimai`, type=`http`, url=`http://127.0.0.1:8787/mcp` |
+| **Continue.dev** | `~/.continue/config.json` under `"mcpServers"` | same shape |
+| **Roo Code** | VS Code → Roo Code → MCP → Add Server (HTTP transport) |
+| **Windsurf** | `~/.windsurf/mcp.json` (Cascade MCP) | same shape |
+| **GitHub Copilot (Coding Agent)** | `.github/copilot-setup-steps.yml` already installs MoonBit (see file) |
+
+All clients use the same MCP shape. The only thing that varies is the config
+file path. After `scripts/run.ps1` is up, all clients should be able to
+`tools/list` and see the 24 tools.
 
 ## Windows prerequisites (native build)
 

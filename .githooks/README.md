@@ -9,7 +9,7 @@ This pre-commit hook performs automatic checks before finalizing your commit.
 每次 `git commit` 前自动运行：
 
 1. `moon check` —— 类型检查
-2. `moon test --target wasm-gc` —— 全量确定性回归（106/106）
+2. `moon test --target wasm-gc` —— 全量确定性回归（128/128）
 
 任一失败即中止提交，保护「确定性硬契约」不被破坏。
 

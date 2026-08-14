@@ -7,7 +7,7 @@
 [![Tests](https://img.shields.io/badge/tests-101%2F101%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Hit@3](https://img.shields.io/badge/Hit%403-0.8246-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Modern Corpus](https://img.shields.io/badge/modern_corpus-22%2F22%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
-[![Service API](https://img.shields.io/badge/HTTP%20API-24%20endpoints%20%2B%20MCP-9cf)](https://github.com/Across2005/yimai_prophecy_moonbit)
+[![Service API](https://img.shields.io/badge/HTTP%20API-26%20endpoints%20%2B%20MCP-9cf)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![MoonBit](https://img.shields.io/badge/MoonBit-0.1.2026-9cf)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
@@ -93,7 +93,7 @@ import {
 
 Clone the repo, then run the one-shot dev workflow (checks env → builds the native
 service → starts it on `127.0.0.1:8787` → seeds sample TM pairs → smoke-tests
-all 13 endpoints + MCP):
+all 26 endpoints + MCP):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/dev.ps1
@@ -689,7 +689,7 @@ The "fast / accurate / beautiful" algorithm kernel is **fully landed** and contr
 | Neural-symbolic distillation (consume side) | `inject_distillation` | ✅ |
 | **#22 TM / TermBase** | `add_tm` / `fuzzy_match` / `concordance` / `load_tbx` / `enforce_terms` / `check_terms` | ✅ (new) |
 | **S1 fuzzy-match upgrade** | `fuzzy_match`（IDF + 2-gram + word-order）/ `fuzzy_match_legacy` | ✅ |
-| **Pure-MoonBit HTTP service** | `cmd/service`：24 端点 + 记忆闭环 + 原子写持久化 + 重启恢复 | ✅ (new) |
+| **Pure-MoonBit HTTP service** | `cmd/service`：26 端点 + 记忆闭环 + 原子写持久化 + 重启恢复 | ✅ (new) |
 | **MCP Server (/mcp)** | `cmd/service/mcp.mbt`：24 引擎能力 → MCP tools（spec 2025-11-25） | ✅ (new) |
 | **TMPlm 桥接 (M5)** | `retrieve_for_prompt` + `/api/retrieve_prompt`（三段式） | ✅ (new) |
 | **SKILL.md 编排壳** | `docs/skill/SKILL.md`（agent_created，安装见 For Agents） | ✅ (new) |
@@ -721,9 +721,13 @@ From the "translation-born skill" brainstorm — what's built vs. pending:
 
 This package delivers a **zero-dependency, deterministic** "Prophecy Memory Network" to other agents. Integration options (2026-08 更新，修正此前「无 I/O / 仅 IIFE」的过时声明):
 
-> **AI agent 拆箱即用**：克隆后先读 [`AGENTS.md`](./AGENTS.md)（项目结构、构建/运行/消费指南、Windows 前置、MoonBit 坑），再跑 `scripts/dev.ps1` 一键起服务——无需人工配置。
+> **AI agent 拆箱即用**：克隆后先读 [`AGENTS.md`](./AGENTS.md)（项目结构、构建/运行/消费指南、Windows 前置、MoonBit 坑、多 harness 接入），再跑 `scripts/dev.ps1` 一键起服务——无需人工配置。
+>
+> - **Claude Code** 用户：直接读 [`CLAUDE.md`](./CLAUDE.md) 即可
+> - **Gemini CLI** 用户：直接读 [`GEMINI.md`](./GEMINI.md) 即可
+> - 其他 harness（Cursor / Cline / Continue.dev / Roo Code / Windsurf / Copilot / Codex / Devin）：用 `AGENTS.md` 多 harness 接入表
 
-> **安装为 WorkBuddy skill（可选）**：仓库内 [`docs/skill/SKILL.md`](./docs/skill/SKILL.md) 是编排手册（frontmatter 含 `agent_created: true`，触发词 + 24 端点 API 手册 + MCP 接入 + 数据契约）。复制到 `~/.workbuddy/skills/yimai-prophecy/` 并重启 WorkBuddy 后即成为可用技能。
+> **安装为 WorkBuddy skill（可选）**：仓库内 [`docs/skill/SKILL.md`](./docs/skill/SKILL.md) 是编排手册（frontmatter 含 `agent_created: true`，触发词 + 26 端点 API 手册 + MCP 接入 + 数据契约）。复制到 `~/.workbuddy/skills/yimai-prophecy/` 并重启 WorkBuddy 后即成为可用技能。
 
 **Path A — build & run (agent has the MoonBit toolchain):**
 

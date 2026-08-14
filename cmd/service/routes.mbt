@@ -10,7 +10,9 @@
 //   GET  /api/metrics / /api/health                       可观测 / 详细健康（P1）
 // 注：MoonBit async 调用无需 await；Request.path 含完整 query string（路由需剥离）。
 
-// 请求体最大字节数（1 MiB）；超限返回 413，防 read_all OOM（本地 dev 与 agent 宿主都用此上界）
+// 请求体最大字符数（按 char-count 校验，UTF-8 1 char ≈ 1-3 bytes；实际字节上限 ~1-3 MiB）
+//   P1 修订：原注释"最大字节数 1 MiB"方向写反 — char-count 实际偏松（CJK 1 char = 3 bytes，1 MiB char ≈ 3 MiB bytes）
+//   现改为"防御上限"，仍可防 read_all OOM；未来如需精确字节级可换 @fs.read_file 路径
 const MAX_BODY_BYTES : Int = 1048576
 
 // 路由表（path, handler_name）：与根模块 routes_meta 保持 26 项同步。
@@ -91,11 +93,13 @@ async fn read_json_or_400(conn : @http.ServerConnection, body : &@io.Reader) -> 
 
 // 主路由（表驱动）：path → routes 查找 handler 名 → match 派发。
 // 保持原契约：/mcp 是 JSON-RPC 分支单独走，serve_static 是未知路径兜底。
+// P1: 顶层 try/catch 兜底 — handler 内任何未捕获异常统一回 500 internal_error，
+//   避免连接悬挂 / 客户端超时。/mcp 与 REST 两条路径都覆盖。
 async fn handle_request(req : @http.Request, body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
   let path = extract_base_path(req.path)
   // MCP Server 变体（spec 2025-11-25，Streamable HTTP；实现见 mcp.mbt）独立分支
   if path == "/mcp" {
-    handle_mcp(req, body, conn)
+    try { handle_mcp(req, body, conn) } catch { err => handle_panic(conn, err) }
     return
   }
   // 在路由表里线性查找（26 项规模，O(n) 即可）
@@ -105,35 +109,48 @@ async fn handle_request(req : @http.Request, body : &@io.Reader, conn : @http.Se
     return
   }
   // 字符串 → handler 派发（MoonBit 函数非一等公民，match 派发是规范做法）
-  match name {
-    "ping" => send_json(conn, 200, "{\"status\":\"ok\"}")
-    "tm_count" => handle_tm_count(conn)
-    "fuzzy_match" => handle_fuzzy_match(body, conn)
-    "add_tm" => handle_add_tm(body, conn)
-    "check_terms" => handle_check_terms(body, conn)
-    "concordance" => handle_concordance(body, conn)
-    "qe_auto" => handle_qe_auto(body, conn)
-    "predict" => handle_predict(body, conn)
-    "observe" => handle_observe(body, conn)
-    "recall" => handle_recall(body, conn)
-    "explain" => handle_explain(body, conn)
-    "reward" => handle_reward(body, conn)
-    "consolidate" => handle_consolidate(body, conn)
-    "retrieve_prompt" => handle_retrieve_prompt(body, conn)
-    "bleu" => handle_bleu(body, conn)
-    "chrf" => handle_chrf(body, conn)
-    "style_check" => handle_style_check(body, conn)
-    "style_report" => handle_style_report(body, conn)
-    "back_align" => handle_back_align(body, conn)
-    "term_conflicts" => handle_term_conflicts(body, conn)
-    "fed_export" => handle_fed_export(body, conn)
-    "fed_import" => handle_fed_import(body, conn)
-    "distill_inject" => handle_distill_inject(body, conn)
-    "active_learning" => handle_active_learning(body, conn)
-    "metrics" => handle_metrics(conn)
-    "health" => handle_health(conn)
-    _ => serve_static(path, conn)  // 表里居然有 unknown 名：兜底防 dangling
+  //   P1: 整个 match 包在 try 内，未捕获异常统一回 500
+  try {
+    match name {
+      // P1: 用 @lib.obj 替代字符串拼接（与全文件风格保持一致；与 handle_health 返回的 status 字段一致）
+      "ping" => send_json(conn, 200, @lib.obj([("status", @lib.str_json("ok"))]).stringify())
+      "tm_count" => handle_tm_count(conn)
+      "fuzzy_match" => handle_fuzzy_match(body, conn)
+      "add_tm" => handle_add_tm(body, conn)
+      "check_terms" => handle_check_terms(body, conn)
+      "concordance" => handle_concordance(body, conn)
+      "qe_auto" => handle_qe_auto(body, conn)
+      "predict" => handle_predict(body, conn)
+      "observe" => handle_observe(body, conn)
+      "recall" => handle_recall(body, conn)
+      "explain" => handle_explain(body, conn)
+      "reward" => handle_reward(body, conn)
+      "consolidate" => handle_consolidate(body, conn)
+      "retrieve_prompt" => handle_retrieve_prompt(body, conn)
+      "bleu" => handle_bleu(body, conn)
+      "chrf" => handle_chrf(body, conn)
+      "style_check" => handle_style_check(body, conn)
+      "style_report" => handle_style_report(body, conn)
+      "back_align" => handle_back_align(body, conn)
+      "term_conflicts" => handle_term_conflicts(body, conn)
+      "fed_export" => handle_fed_export(body, conn)
+      "fed_import" => handle_fed_import(body, conn)
+      "distill_inject" => handle_distill_inject(body, conn)
+      "active_learning" => handle_active_learning(body, conn)
+      "metrics" => handle_metrics(conn)
+      "health" => handle_health(conn)
+      _ => serve_static(path, conn)  // 表里居然有 unknown 名：兜底防 dangling
+    }
+  } catch {
+    err => handle_panic(conn, err)
   }
+}
+
+// P1: 兜底错误处理 — 任何 handler panic 时统一回 500 internal_error
+//   连接可能已发过响应（半发状态），再 send_response 会抛错，需 try/catch 静默
+async fn handle_panic(conn : @http.ServerConnection, err : Error) -> Unit {
+  println("handler panic: \{err}")
+  try { send_error(conn, 500, "internal_error", "internal server error") } catch { _ => () }
 }
 
 // 路由表查找：path 命中返回 handler 名，未命中返 ""。无副作用。
@@ -194,7 +211,8 @@ let last_body_oversize : @ref.Ref[Bool] = @ref.new(false)
 async fn read_json_body(body : &@io.Reader) -> Option[Json] {
   last_body_oversize.val = false
   let data = body.read_all()
-  // 防御：reader 无 size 字段，用 data.text() 长度作 char-count 上界（UTF-8 中文 1 char=3 bytes，此处偏严）
+  // P1 修订：实际 char-count 上界（UTF-8 1 char = 1-3 bytes，CJK 实际偏松），
+  //   保留此 guard 仅为防止恶意 agent 灌超大 payload 触发 OOM；精准字节级需换流式读取。
   let s = try { data.text() } catch { _ => "" }
   if s.length() > MAX_BODY_BYTES {
     last_body_oversize.val = true
@@ -277,7 +295,11 @@ async fn handle_add_tm(body : &@io.Reader, conn : @http.ServerConnection) -> Uni
         let id = engine_ref.val.add_tm(src, tgt)
         let saved = save_store()
         if !saved { println("save_store: 落盘失败但内存态已更新") }
-        send_json(conn, 200, "{\"id\":\"" + id + "\",\"status\":\"stored\"}")
+        // P1: 用 @lib.obj 替代字符串拼接（防 JSON 注入：id 若含 " 会破坏响应）
+        send_json(conn, 200, @lib.obj([
+          ("id", @lib.str_json(id)),
+          ("status", @lib.str_json("stored")),
+        ]).stringify())
       }
     }
     _ => ()  // read_json_or_400 已发 4xx 响应
@@ -287,7 +309,8 @@ async fn handle_add_tm(body : &@io.Reader, conn : @http.ServerConnection) -> Uni
 // GET /api/tm_count
 async fn handle_tm_count(conn : @http.ServerConnection) -> Unit {
   let c = tm_count()
-  send_json(conn, 200, "{\"tm_count\":" + c.to_string() + "}")
+  // P1: 用 @lib.obj 替代字符串拼接（保持响应字段顺序与稳定性）
+  send_json(conn, 200, @lib.obj([("tm_count", c.to_json())]).stringify())
 }
 
 // POST /api/check_terms  {"source":"..","target":".."}  术语一致性校验（白盒返回违规）
@@ -368,7 +391,11 @@ async fn handle_observe(body : &@io.Reader, conn : @http.ServerConnection) -> Un
         let mid = engine_ref.val.observe(text, mtype)
         let saved = save_store()
         if !saved { println("save_store: 落盘失败但内存态已更新") }
-        send_json(conn, 200, "{\"mid\":\"" + mid + "\",\"status\":\"learned\"}")
+        // P1: 用 @lib.obj 替代字符串拼接（防 JSON 注入：mid 若含 " 会破坏响应）
+        send_json(conn, 200, @lib.obj([
+          ("mid", @lib.str_json(mid)),
+          ("status", @lib.str_json("learned")),
+        ]).stringify())
       }
     }
     _ => ()  // read_json_or_400 已发 4xx 响应
@@ -419,9 +446,10 @@ async fn handle_reward(body : &@io.Reader, conn : @http.ServerConnection) -> Uni
       if ok {
         let saved = save_store()
         if !saved { println("save_store: 落盘失败但内存态已更新") }
-        send_json(conn, 200, "{\"ok\":true}")
+        send_json(conn, 200, @lib.obj([("ok", true.to_json())]).stringify())
       } else {
-        send_json(conn, 404, "{\"ok\":false,\"error\":\"unknown mid\"}")
+        // P1: 改用 send_error 统一错误出口（其它 handler 已迁移）
+        send_error(conn, 404, "unknown_mid", "unknown mid")
       }
     }
     _ => ()  // read_json_or_400 已发 4xx 响应
@@ -480,7 +508,8 @@ async fn handle_bleu(body : &@io.Reader, conn : @http.ServerConnection) -> Unit 
       let ref = json_str(o, "ref")
       let hyp = json_str(o, "hyp")
       let score = @lib.bleu_score(ref, hyp)
-      send_json(conn, 200, "{\"bleu\":" + score.to_string() + "}")
+      // P1: 用 @lib.obj 替代字符串拼接（防止 score.to_string() 边界行为差异）
+      send_json(conn, 200, @lib.obj([("bleu", @lib.num_json(score))]).stringify())
     }
     _ => ()  // read_json_or_400 已发 4xx 响应
   }
@@ -494,7 +523,8 @@ async fn handle_chrf(body : &@io.Reader, conn : @http.ServerConnection) -> Unit 
       let ref = json_str(o, "ref")
       let hyp = json_str(o, "hyp")
       let score = @lib.chrf_score(ref, hyp)
-      send_json(conn, 200, "{\"chrf\":" + score.to_string() + "}")
+      // P1: 用 @lib.obj 替代字符串拼接
+      send_json(conn, 200, @lib.obj([("chrf", @lib.num_json(score))]).stringify())
     }
     _ => ()  // read_json_or_400 已发 4xx 响应
   }
@@ -557,7 +587,7 @@ async fn handle_back_align(body : &@io.Reader, conn : @http.ServerConnection) ->
             ]).stringify(),
           )
         }
-        _ => send_json(conn, 500, "{\"error\":\"align failed\"}")
+        _ => send_error(conn, 500, "align_failed", "align failed")
       }
     }
     _ => ()  // read_json_or_400 已发 4xx 响应
@@ -592,7 +622,8 @@ async fn handle_fed_import(body : &@io.Reader, conn : @http.ServerConnection) ->
       engine_ref.val.fed_import(added, updated)
       let saved = save_store()
         if !saved { println("save_store: 落盘失败但内存态已更新") }
-      send_json(conn, 200, "{\"status\":\"imported\"}")
+      // P1: 用 @lib.obj 替代字符串拼接
+      send_json(conn, 200, @lib.obj([("status", @lib.str_json("imported"))]).stringify())
     }
     _ => ()  // read_json_or_400 已发 4xx 响应
   }
@@ -617,7 +648,11 @@ async fn handle_distill_inject(body : &@io.Reader, conn : @http.ServerConnection
       engine_ref.val.inject_distillation(table)
       let saved = save_store()
         if !saved { println("save_store: 落盘失败但内存态已更新") }
-      send_json(conn, 200, "{\"status\":\"injected\",\"keys\":" + table.size().to_string() + "}")
+      // P1: BUG 修复：原版缺右括号 `}` 导致 JSON 非法；改用 @lib.obj
+      send_json(conn, 200, @lib.obj([
+        ("status", @lib.str_json("injected")),
+        ("keys", table.size().to_json()),
+      ]).stringify())
     }
     _ => ()  // read_json_or_400 已发 4xx 响应
   }
