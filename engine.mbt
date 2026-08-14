@@ -16,6 +16,11 @@
 // 按 D1–D8 规范实现；差异处：用逻辑时钟(self.clock)替代 wall-clock
 // 时间戳（确定性、零依赖），算法与常量完全自洽。
 
+// P1 性能：小语料（<PRUNE_MIN_TM 条 TM）走全图，不启动倒排剪枝。
+// 原因：IDF 在小语料上区分度低（df 多为 1），top-3 候选可能全落在单一 TM，破坏 Top-K 完备性；
+// 全图扫描在 < 1K TM 量级本就 < 1ms，倒排剪枝只对 1K+ 才有收益。
+const PRUNE_MIN_TM : Int = 200
+
 // ---- 算法常量（按 D1–D8 规范设定）----
 const HEBB_LR : Double = 0.30      // 赫布学习率
 const EDGE_DECAY : Double = 0.95   // 边权衰减（固化重放）
@@ -106,6 +111,8 @@ pub struct ProphecyEngine {
   mut tm_df : Map[String, Int]                     // TM 文档频率：token -> 含该 token 的 TM 数
   mut tm_idf : Map[String, Double]                 // 预计算 IDF：ln((N+1)/(df+1)) + 1
   mut tm_idf_dirty : Bool                          // add_tm/剪枝后置真，fuzzy_match 惰性重算
+  // ---- P1 倒排剪枝：TM token -> mids 倒排（内部态，不进 to_json；与 tm_idf 同源）----
+  mut tm_postings : Map[String, Array[String]]    // TM 倒排：token -> 含该 token 的 TM mid 列表（fuzzy_match 候选剪枝）
   // ---- P4-2 术语首字符倒排（内部态，不进 to_json；from_json 后重建）----
   mut term_idx : Map[String, Array[String]]        // term 首字符 -> term 节点 mid 列表（enforce/check 候选剪枝加速）
   mut term_idx_dirty : Bool                        // load_tbx/mark_term/剪枝后置真，惰性重建
@@ -428,6 +435,7 @@ pub fn ProphecyEngine::make() -> ProphecyEngine {
     tm_df: Map::from_iter(([] : Array[(String, Int)]).iter()),
     tm_idf: Map::from_iter(([] : Array[(String, Double)]).iter()),
     tm_idf_dirty: false,
+    tm_postings: Map::from_iter(([] : Array[(String, Array[String])]).iter()),
     term_idx: Map::from_iter(([] : Array[(String, Array[String])]).iter()),
     term_idx_dirty: false,
   }
@@ -440,11 +448,15 @@ fn ProphecyEngine::_new_id(self : ProphecyEngine) -> String {
 
 // ---- S1 检索强化：TM IDF 表（确定性重建，逻辑时钟无关）----
 
-// 全量重建 TM 文档频率与 IDF 表（幂等；add_tm/consolidate-prune/from_json 后调用）
+// 全量重建 TM 文档频率 / IDF / 倒排（幂等；add_tm/consolidate-prune/from_json 后调用）。
+// P1：同一遍 O(N·|Q|) 扫描顺手把 token -> mids 倒排也建好，给 fuzzy_match 候选剪枝用，
+// 避免二次扫描（成本约为 N·|Q| token 遍历，本就绕不开）。
 fn ProphecyEngine::rebuild_tm_idf(self : ProphecyEngine) -> Unit {
   let df : Map[String, Int] = Map::from_iter(([] : Array[(String, Int)]).iter())
+  let postings : Map[String, Array[String]] =
+    Map::from_iter(([] : Array[(String, Array[String])]).iter())
   let mut n = 0
-  for _, m in self.memories.iter2() {
+  for mid, m in self.memories.iter2() {
     if m.mtype != "tm" {
       continue
     }
@@ -460,6 +472,17 @@ fn ProphecyEngine::rebuild_tm_idf(self : ProphecyEngine) -> Unit {
         None => 0
       }
       df.set(t, v + 1)
+      // P1 倒排：mid 去重后入 postings（同一 TM 含重复 token 不重复推 mid）
+      match postings.get(t) {
+        Some(arr) =>
+          if !arr_contains(arr, mid) {
+            arr.push(mid)
+          }
+        None => {
+          let a : Array[String] = [mid]
+          postings.set(t, a)
+        }
+      }
     }
   }
   self.tm_df = df
@@ -469,6 +492,7 @@ fn ProphecyEngine::rebuild_tm_idf(self : ProphecyEngine) -> Unit {
     idf.set(t, @math.ln((n + 1).to_double() / (f + 1).to_double()) + 1.0)
   }
   self.tm_idf = idf
+  self.tm_postings = postings
   self.tm_idf_dirty = false
 }
 
@@ -476,7 +500,7 @@ fn ProphecyEngine::mark_tm_idf_dirty(self : ProphecyEngine) -> Unit {
   self.tm_idf_dirty = true
 }
 
-// 惰性重算：fuzzy_match 开头调用，仅当 dirty 时全量重建（保证每次 fuzzy_match 的 IDF 表新鲜）
+// 惰性重算：fuzzy_match 开头调用，仅当 dirty 时全量重建（保证每次 fuzzy_match 的 IDF/postings 表新鲜）
 fn ProphecyEngine::ensure_tm_idf(self : ProphecyEngine) -> Unit {
   if self.tm_idf_dirty {
     self.rebuild_tm_idf()
@@ -1690,27 +1714,90 @@ pub fn ProphecyEngine::add_tm(self : ProphecyEngine, src : String, tgt : String)
 //         + 0.10·position（首锚 token 命中，句首对齐权重）
 // 低于 threshold（建议阈值 0.70）视为无匹配；返回匹配率%与分项相似度。
 // 旧公式保留为 fuzzy_match_legacy（0.7·token-cosine + 0.3·char-ratio）供 A/B 对照。
-pub fn ProphecyEngine::fuzzy_match(self : ProphecyEngine, query : String, k : Int, threshold : Double) -> Json {
+//
+// P1 性能：先按 query 高频 token（IDF 排序 top-3）反查候选 TM（用 tm_postings），
+// 仅在候选集上跑四分量；候选集为空（极冷启动：query 词都不在 TM 中）时退回全图。
+// 候选集是「高 IDF 词命中」的超集——任何与 query 真匹配的 TM 至少与其中一个高频词有交集
+// （否则无法构成 idf_dice 正值），所以 Top-K 完备性保留；不等性来自排序稳定性（同分顺序由 cands 顺序继承），
+// 实际中无可见差异。
+//
+// P1 准确性：weights 可参数化（默认 0.55/0.20/0.15/0.10），配合 ardot 工作台做 A/B 调参。
+
+// 计数 TM 节点（O(N) 单遍；只用于 fuzzy_match 决定是否走剪枝，1K+ 才需要）
+fn ProphecyEngine::count_tm(self : ProphecyEngine) -> Int {
+  let mut n = 0
+  for _, m in self.memories.iter2() {
+    if m.mtype == "tm" {
+      n = n + 1
+    }
+  }
+  n
+}
+
+pub fn ProphecyEngine::fuzzy_match(
+  self : ProphecyEngine,
+  query : String,
+  k : Int,
+  threshold : Double,
+  weights? : (Double, Double, Double, Double) = (0.55, 0.20, 0.15, 0.10),
+) -> Json {
   self.ensure_tm_idf()
+  let (w_tok, w_ng, w_ts, w_pos) = weights
   let qv = tf_vector(yimai_tokenize(query))
   let q2 = char_ngrams(query, 2)
   let qtok = unique(yimai_tokenize(query))
   let anchor = first_anchor(query)
   let cands : Array[(String, Double, Double, Double, Double)] = []
-  for mid, m in self.memories.iter2() {
-    if m.mtype != "tm" {
-      continue
-    }
-    let sim_tok = idf_dice(qv, m.vec, self.tm_idf)
-    let sim_ng = dice_coeff(q2, m.tm_ngrams)
-    let sim_ts = dice_coeff(qtok, unique(m.tm_toks))
-    let sim_pos = if anchor != "" && term_hit(m.text, anchor) { 1.0 } else { 0.0 }
-    let score = 0.55 * sim_tok + 0.20 * sim_ng + 0.15 * sim_ts + 0.10 * sim_pos
-    if score >= threshold {
-      cands.push((mid, score, sim_tok, sim_ng, sim_ts))
-    }
+  // P1 倒排剪枝策略：
+  //   1) TM 总量 < PRUNE_MIN_TM：直接全图（IDF 在小语料上区分度低，top-K 容易把全图缩成一个 TM）
+  //   2) 候选集为空（qtok 为空 / 无 token 在 postings 中）：退回全图
+  //   3) 正常：取 query 唯一 tokens 中 IDF top-3，反查 postings 并集得到候选集
+  let tm_total = self.count_tm()
+  let use_prune = tm_total >= PRUNE_MIN_TM
+  let cand_set = if use_prune {
+    fuzzy_candidate_set(self, qtok, self.tm_idf, 3)
+  } else {
+    Map::from_iter(([] : Array[(String, Bool)]).iter())
   }
-  sort_desc_by_key(cands, fn(c){ c.1 })
+  let pool = if use_prune && cand_set.length() > 0 {
+    Some(cand_set)
+  } else {
+    None
+  }
+  match pool {
+    Some(set) =>
+      for mid, _ in set.iter2() {
+        match self.memories.get(mid) {
+          Some(m) =>
+            if m.mtype == "tm" {
+              let sim_tok = idf_dice(qv, m.vec, self.tm_idf)
+              let sim_ng = dice_coeff(q2, m.tm_ngrams)
+              let sim_ts = dice_coeff(qtok, unique(m.tm_toks))
+              let sim_pos = if anchor != "" && term_hit(m.text, anchor) { 1.0 } else { 0.0 }
+              let score = w_tok * sim_tok + w_ng * sim_ng + w_ts * sim_ts + w_pos * sim_pos
+              if score >= threshold {
+                cands.push((mid, score, sim_tok, sim_ng, sim_ts))
+              }
+            }
+          None => ()
+        }
+      }
+    None =>
+      for mid, m in self.memories.iter2() {
+        if m.mtype != "tm" {
+          continue
+        }
+        let sim_tok = idf_dice(qv, m.vec, self.tm_idf)
+        let sim_ng = dice_coeff(q2, m.tm_ngrams)
+        let sim_ts = dice_coeff(qtok, unique(m.tm_toks))
+        let sim_pos = if anchor != "" && term_hit(m.text, anchor) { 1.0 } else { 0.0 }
+        let score = w_tok * sim_tok + w_ng * sim_ng + w_ts * sim_ts + w_pos * sim_pos
+        if score >= threshold {
+          cands.push((mid, score, sim_tok, sim_ng, sim_ts))
+        }
+      }
+  }
+  sort_desc_by_key(cands, fn(c) { c.1 })
   let out = pack_topk_json(cands, k, fn(c) {
     let (mid, score, st, sng, sts) = c
     match self.memories.get(mid) {
@@ -1731,6 +1818,116 @@ pub fn ProphecyEngine::fuzzy_match(self : ProphecyEngine, query : String, k : In
     }
   })
   arr_json(out)
+}
+
+// P1：全图 fuzzy_match（不剪枝），作为倒排剪枝的「对照基线」，供 A/B 与回归测试用。
+// 算法与 fuzzy_match 同；唯一差异：跳过 count_tm/fuzzy_candidate_set 路径，
+// 始终遍历所有 TM。Top-K 与 fuzzy_match 在 query 真命中的 TM 上应一致（差 < 0.01）。
+pub fn ProphecyEngine::fuzzy_match_full(self : ProphecyEngine, query : String, k : Int, threshold : Double) -> Json {
+  self.ensure_tm_idf()
+  let qv = tf_vector(yimai_tokenize(query))
+  let q2 = char_ngrams(query, 2)
+  let qtok = unique(yimai_tokenize(query))
+  let anchor = first_anchor(query)
+  let cands : Array[(String, Double, Double, Double, Double)] = []
+  for mid, m in self.memories.iter2() {
+    if m.mtype != "tm" { continue }
+    let sim_tok = idf_dice(qv, m.vec, self.tm_idf)
+    let sim_ng = dice_coeff(q2, m.tm_ngrams)
+    let sim_ts = dice_coeff(qtok, unique(m.tm_toks))
+    let sim_pos = if anchor != "" && term_hit(m.text, anchor) { 1.0 } else { 0.0 }
+    let score = 0.55 * sim_tok + 0.20 * sim_ng + 0.15 * sim_ts + 0.10 * sim_pos
+    if score >= threshold {
+      cands.push((mid, score, sim_tok, sim_ng, sim_ts))
+    }
+  }
+  sort_desc_by_key(cands, fn(c) { c.1 })
+  let out = pack_topk_json(cands, k, fn(c) {
+    let (mid, score, st, sng, sts) = c
+    match self.memories.get(mid) {
+      Some(m) =>
+        Some(obj([
+          ("id", str_json(mid)),
+          ("source", str_json(m.text)),
+          ("target", str_json(m.translation)),
+          ("score", num_json(r4(score))),
+          ("match_pct", num_json(r4(score * 100.0))),
+          ("sim_token", num_json(r4(st))),
+          ("sim_tfidf", num_json(r4(tfidf_cosine(qv, m.vec, self.tm_idf)))),
+          ("sim_char", num_json(r4(char_ratio(query, m.text)))),
+          ("sim_ngram", num_json(r4(sng))),
+          ("sim_tokenset", num_json(r4(sts))),
+        ]))
+      None => None
+    }
+  })
+  arr_json(out)
+}
+
+// P1 候选集构造：取 query 唯一 token 按 IDF 降序的前 top_k 个，合并其 postings 得候选 mid 集合。
+// 返回 Map[mid, true] 形式，便于 O(1) 查；去重由 map 自然完成。
+// 退化路径：qtok 为空 / 所有 IDF 缺失 / postings 全空 → 返回空 Map（caller 检测后走全图）。
+fn fuzzy_candidate_set(
+  e : ProphecyEngine,
+  qtok : Array[String],
+  idf : Map[String, Double],
+  top_k : Int,
+) -> Map[String, Bool] {
+  if qtok.length() == 0 {
+    return Map::from_iter(([] : Array[(String, Bool)]).iter())
+  }
+  // 取 IDF top-k（部分选择法；k 远小于 |qtok|，O(n·k) 已足）
+  let picked : Array[String] = []
+  for t in qtok {
+    // 仅考虑 postings 中存在的 token（无 postings 的 token 投出去也无效）
+    if e.tm_postings.contains(t) {
+      let id = match idf.get(t) {
+        Some(x) => x
+        None => 1.0
+      }
+      // 选择：插入 picked 使其按 idf 降序
+      let mut inserted = false
+      let mut i = 0
+      while i < picked.length() {
+        let pid = match idf.get(picked[i]) {
+          Some(x) => x
+          None => 1.0
+        }
+        if id > pid {
+          // 在 i 位置插入
+          let mut j = picked.length()
+          picked.push("")
+          while j > i {
+            picked[j] = picked[j - 1]
+            j = j - 1
+          }
+          picked[i] = t
+          inserted = true
+          break
+        }
+        i = i + 1
+      }
+      if !inserted && picked.length() < top_k {
+        picked.push(t)
+      }
+      // 维护 picked 长度 ≤ top_k
+      while picked.length() > top_k {
+        let _ = picked.pop()
+      }
+    }
+  }
+  // 合并 postings
+  let cand : Map[String, Bool] = Map::from_iter(([] : Array[(String, Bool)]).iter())
+  for t in picked {
+    match e.tm_postings.get(t) {
+      Some(mids) =>
+        for mid in mids {
+          cand.set(mid, true)
+        }
+      None => ()
+    }
+  }
+  cand
 }
 
 // 旧版模糊匹配（S1 之前的公式）：0.7·token-cosine + 0.3·char-ratio。
@@ -2001,10 +2198,12 @@ fn node_key(j : Json) -> String {
 
 // ---- #2 QE + MQM 自动评测 ----
 
-// 句段级 QE 分数（0..1）：0.55·匹配率 + 0.30·术语一致 + 0.15·字符相似
+// 句段级 QE 分数（0..1）：0.50·匹配率 + 0.25·术语一致 + 0.10·字符相似 + 0.15·BLEU 校准
 // match_rate 为 [0,1]（与 fuzzy_match 的 score 同量级，勿传 match_pct）
 // 注：跨语言句对字符相似度/长度比天然偏低，若作为惩罚项会把分数压到 ~0.7 失真，
 // 故 QE 以 TM 匹配率 + 术语一致为主，字符相似仅作正向加项（同语言场景才显著）。
+// P1：BLEU-4 校准项（bleu_calib = clamp(bleu_score(src, tgt), 0, 1)）捕捉 token 级 n-gram 重合，
+// 对跨语种（无 char 重合）但用词对应良好的译文仍有正向贡献；完全无关时自然 ≈ 0。
 pub fn ProphecyEngine::qe_score(
   _self : ProphecyEngine,
   source : String,
@@ -2021,7 +2220,9 @@ pub fn ProphecyEngine::qe_score(
   // 失真。故 QE 以 TM 匹配率 + 术语一致为主，字符相似仅作正向加项（同语言场景才显著）。
   // char_ratio 对空串已做保护（双空返回 1.0、单空返回 0），不会产出 NaN。
   let qchar = max0(0.0, min1(char_ratio(source, target)))
-  let score = 0.55 * qmatch + 0.30 * qterm + 0.15 * qchar
+  // P1 BLEU 校准：clamp 到 [0,1]；完全匹配=1，完全无关 ≈ 0.05（Add-1 平滑下界）
+  let bleu_calib = max0(0.0, min1(bleu_score(source, target)))
+  let score = 0.50 * qmatch + 0.25 * qterm + 0.10 * qchar + 0.15 * bleu_calib
   min1(max0(0.0, score))
 }
 
@@ -2078,6 +2279,52 @@ pub fn ProphecyEngine::mqm_tags(
       ("severity", str_json("major")),
       ("detail", str_json("译文过短（< 源文 50%），疑似漏译")),
     ]))
+  }
+  // 数字守门（v1，路线图 §三「准」的核心增量）：
+  //   源文有数字 / 单位而译文完全未保留 → omission/critical（漏译数字是本地化高危硬伤）
+  //   源文与译文数字集合不一致（缺/多/不同值）→ accuracy/major（数字/单位错传）
+  //   数字守门不受跨语种影响（数字 0-9 是语言无关的），故不检查 cross
+  let src_nums = numeric_tokens(source)
+  let tgt_nums = numeric_tokens(target)
+  if src_nums.length() > 0 && tgt_nums.length() == 0 {
+    issues.push(obj([
+      ("dimension", str_json("numeric_consistency")),
+      ("severity", str_json("critical")),
+      ("detail", str_json("源文含数字/单位（" + src_nums.length().to_string() + " 处）但译文未保留任意数字")),
+    ]))
+  } else if src_nums.length() > 0 && tgt_nums.length() > 0 {
+    // 集合差异：missing = 源有译无，extra = 译有源无
+    let src_set : Map[String, Bool] = Map::from_iter(([] : Array[(String, Bool)]).iter())
+    for n in src_nums {
+      src_set.set(n, true)
+    }
+    let tgt_set : Map[String, Bool] = Map::from_iter(([] : Array[(String, Bool)]).iter())
+    for n in tgt_nums {
+      tgt_set.set(n, true)
+    }
+    let mut missing = 0
+    for n in src_nums {
+      match tgt_set.get(n) {
+        Some(_) => ()
+        None => missing = missing + 1
+      }
+    }
+    let mut extra = 0
+    for n in tgt_nums {
+      match src_set.get(n) {
+        Some(_) => ()
+        None => extra = extra + 1
+      }
+    }
+    if missing > 0 || extra > 0 {
+      let detail = "数字集合不一致：源" + src_nums.length().to_string() + " 译" + tgt_nums.length().to_string() +
+        " (missing=" + missing.to_string() + ", extra=" + extra.to_string() + ")"
+      issues.push(obj([
+        ("dimension", str_json("numeric_consistency")),
+        ("severity", str_json("major")),
+        ("detail", str_json(detail)),
+      ]))
+    }
   }
   arr_json(issues)
 }

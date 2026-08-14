@@ -4,6 +4,11 @@
 
 // ---- 算法常量（HEBB_LR 等权重参数在 engine.mbt 定义，按 D1–D8 规范设定）----
 
+// 长文兜底：分词 / 字符 N-gram 输出的最大 token 数。
+// 防恶意/错误输入（如 5MB 文档）撑爆内存；CJK 因 bigram 折算会接近 2× char 数。
+// 经验值：1 万汉字 ≈ 2 万 token，远低于工业 NLU（512 token 上限），留 4× 余量。
+const MAX_TOKENS : Int = 20000
+
 // 停用词：中文功能词 + 英文停用词（按 D1–D8 分词规范设定）
 let stop_words : Array[String] = [
   "的", "了", "和", "是", "在", "我", "你", "他", "她", "它", "们", "这", "那", "有",
@@ -71,13 +76,21 @@ pub fn roles_of(text : String) -> Array[String] {
 
 // 分词：ASCII [a-z0-9_]+ 段 + CJK 单字与相邻二元组；小写并去停用词。
 // 对应 D1–D8 规范的正则分词 + 中文 unigram/bigram 展开。
-fn yimai_tokenize(text : String) -> Array[String] {
+pub fn yimai_tokenize(text : String) -> Array[String] {
   let lower = to_lower_ascii(text)
   let toks : Array[String] = []
   let mut lat = StringBuilder()
   let mut lat_len = 0
   let mut prev_cjk = ""
+  // 长文兜底：超 MAX_TOKENS 即截断（CJK 算单/双字均计入）；截断后剩余字符不再展开，
+  // 残留 lat 段也丢弃（语义已不完整，多一字少一字不影响 fuzzy/Hit 评估）。
+  let mut tok_count = 0
+  let mut truncated = false
   for c in lower.iter() {
+    if tok_count >= MAX_TOKENS {
+      truncated = true
+      break
+    }
     let code = c.to_int()
     let is_lat = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'
     if is_lat {
@@ -86,14 +99,17 @@ fn yimai_tokenize(text : String) -> Array[String] {
     } else {
       if lat_len > 0 {
         toks.push(lat.to_string())
+        tok_count = tok_count + 1
         lat = StringBuilder()
         lat_len = 0
       }
       if code >= 0x4E00 && code <= 0x9FFF {
         let s = c.to_string()
         toks.push(s)
-        if prev_cjk != "" {
+        tok_count = tok_count + 1
+        if tok_count < MAX_TOKENS && prev_cjk != "" {
           toks.push(prev_cjk + s)
+          tok_count = tok_count + 1
         }
         prev_cjk = s
       } else {
@@ -101,15 +117,131 @@ fn yimai_tokenize(text : String) -> Array[String] {
       }
     }
   }
-  if lat_len > 0 {
+  if lat_len > 0 && tok_count < MAX_TOKENS {
     toks.push(lat.to_string())
+    tok_count = tok_count + 1
   }
+  // 截断标记：调用方可经外部状态检测（fuzzy_match 内部不计；本函数只管分词语义闭合）
+  let _ = truncated
   let out : Array[String] = []
   for t in toks {
     if !is_stop(t) {
       out.push(t)
     }
   }
+  out
+}
+
+// 数字/单位抽取（数字守门依赖）：
+//   匹配模式：十进制 / 浮点（不接单位字母，数字守门只关心「数字是否被保留」）。
+//   用途：qe_score 数字一致性维度 + mqm_tags numeric_consistency 标签。
+//   设计取舍：纯字符扫描，零正则依赖；千分位逗号不在 v1 范围（避免 "1,000" 误吞），下版按需扩展。
+//   顺序：先按出现位置输出（确定性）；同数字多次出现计多次（计数交给调用方按 Map 累加）。
+//   v1 不接单位：避免 "3.7V" / "100℃" 因带单位而不等于 "3.7" / "100"，让数字一致性集合运算简单可靠；
+//                单位一致性作为下个 MQM 标签（unit_consistency）单独跑。
+pub fn numeric_tokens(text : String) -> Array[String] {
+  let out : Array[String] = []
+  let mut buf = StringBuilder()
+  let mut buf_has_digit = false
+  let mut buf_has_dot = false
+  let flush = () => {
+    if buf_has_digit {
+      out.push(buf.to_string())
+    }
+    buf = StringBuilder()
+    buf_has_digit = false
+    buf_has_dot = false
+  }
+  for c in text.iter() {
+    let is_digit = c >= '0' && c <= '9'
+    let is_dot = c == '.'
+    if is_digit {
+      buf.write_char(c)
+      buf_has_digit = true
+    } else if is_dot && !buf_has_dot && buf_has_digit {
+      // 浮点：仅当之前已有数字时认作小数点（避免 "abc." 被吞）
+      buf.write_char(c)
+      buf_has_dot = true
+    } else {
+      // 任何非数字/非小数点都立即 flush（单位不带走，简化集合对比）
+      flush()
+    }
+  }
+  flush()
+  out
+}
+
+// 长文分句（observe / fuzzy_match 长 query 拆分的底层工具）：
+//   切分依据（优先级高→低）：换行 / 中文句号「。!?；」/ 英文 . ! ? ;
+//   额外规则：每段超过 max_chars 时再按最近空格二次切；空段丢弃；顺序稳定。
+//   用途：调用方拿到 segments 数组后逐段 observe / fuzzy_match，避免长文单点稀释信号。
+//   不破坏任何现有 API；P0 范围内的「长文能力」落地方式。
+pub fn split_into_segments(text : String, max_chars : Int) -> Array[String] {
+  let out : Array[String] = []
+  if text.length() == 0 {
+    return out
+  }
+  let mut buf = StringBuilder()
+  let flush_buf = () => {
+    let s = buf.to_string()
+    if s.length() > 0 {
+      out.push(s)
+    }
+    buf = StringBuilder()
+  }
+  for c in text.iter() {
+    let is_break =
+      c == '\n' ||
+      c == '。' ||
+      c == '！' ||
+      c == '？' ||
+      c == ';' ||
+      c == '；' ||
+      c == '!' ||
+      c == '?' ||
+      c == '：'
+    if is_break {
+      flush_buf()
+    } else if c == '.' {
+      // 英文句号：v1 简化直接当 break；二级 max_chars 兜底（避免 "3.7" "U.S." 误切伤到下个 break 字符）
+      flush_buf()
+    } else {
+      buf.write_char(c)
+      // 超 max_chars 触发二级切（按空格或全角空格切）
+      if buf.to_string().length() >= max_chars {
+        let s = buf.to_string()
+        // 收集 chars，找最近空格位置
+        let chars : Array[Char] = []
+        for cc in s.iter() {
+          chars.push(cc)
+        }
+        let mut cut_idx = -1
+        let mut i = chars.length() - 1
+        while i >= 0 {
+          if chars[i] == ' ' || chars[i] == '　' {
+            cut_idx = i
+            break
+          }
+          i = i - 1
+        }
+        if cut_idx > 0 {
+          let head = StringBuilder()
+          for j = 0; j < cut_idx; j = j + 1 {
+            head.write_char(chars[j])
+          }
+          let tail = StringBuilder()
+          for j = cut_idx + 1; j < chars.length(); j = j + 1 {
+            tail.write_char(chars[j])
+          }
+          out.push(head.to_string())
+          buf = StringBuilder()
+          buf.write_string(tail.to_string())
+        }
+        // 找不到空格就不切（避免单词被腰斩），下个 break 字符再 flush
+      }
+    }
+  }
+  flush_buf()
   out
 }
 
