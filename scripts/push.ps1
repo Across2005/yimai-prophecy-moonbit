@@ -33,8 +33,12 @@ $gitRoot = (git rev-parse --show-toplevel 2>&1).Trim()
 Write-Host "[push] cwd: $gitRoot  branch: $Branch"
 
 # 远端配置
+# P2：github 默认走 ghproxy.net 代理（用户全局 gitconfig 的 insteadOf 会把
+#     https://github.com/ 重写为 https://ghproxy.net/https://github.com/），
+#     首次 clone 时已写入凭据；脚本沿用代理 URL，避免触发全局重写时再次
+#     误将直连 URL 改回代理 URL 导致 push 失败。
 $remotes = @{
-    'github'  = 'https://github.com/Across2005/yimai-prophecy-moonbit.git'
+    'github'  = 'https://ghproxy.net/https://github.com/Across2005/yimai-prophecy-moonbit.git'
     'gitlink' = 'https://gitlink.org.cn/Across2005/yimai_prophecy_moonbit.git'
 }
 
