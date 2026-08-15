@@ -1,0 +1,12 @@
+# Aider — yimai MCP server (Streamable HTTP)
+# Copy to: ~/.aider.conf.yml  (per-machine)
+#      or: <repo>/.aider.conf.yml  (per-project)
+#
+# Aider ≥ 0.86 supports `--mcp` / `--mcp-serve` and reads MCP from
+# `mcp_servers` (TOML-ish; this file is the YAML bridge Aider consumes).
+# Pass it via:  aider --config .aider.conf.yml
+
+mcp_servers:
+  - name: yimai
+    url: http://127.0.0.1:8787/mcp
+    transport: http

@@ -1,0 +1,13 @@
+{
+  "cody.contextFilters": {},
+  "cody.experimental.noodle": false,
+  "cody.dev.models": [],
+  "cody.chat.context.user": [],
+  "cody.chat.context.repository": [],
+  "cody.chat.context.code": true,
+  "cody.mcp.servers": {
+    "yimai": {
+      "url": "http://127.0.0.1:8787/mcp"
+    }
+  }
+}

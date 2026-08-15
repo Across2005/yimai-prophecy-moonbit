@@ -12,3 +12,5 @@ tm_store.json
 ocr-moonbit-rule.json
 # 临时清理暂存（mavis-trash 整理用，安全：mavis-trash 是可恢复的回收站）
 .cleanup-staging/
+# 占位文件：旧版 Codex MCP 样例，已迁移到 docs/harness-configs/codex.toml
+AGENTS.md.mcp.json

@@ -60,21 +60,28 @@ moon test --target wasm-gc        # 89/89 green
 
 ## MCP integration per harness
 
-| Harness | Config file | Example |
+| Harness | Config file | Drop-in sample |
 |---|---|---|
-| **Claude Desktop** | `~/.config/claude-desktop/mcp.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows) | `{"mcpServers":{"yimai":{"url":"http://127.0.0.1:8787/mcp"}}}` |
-| **Claude Code** | `~/.claude/mcp.json` or via `/mcp` slash command | see [`CLAUDE.md`](./CLAUDE.md) |
-| **Gemini CLI** | `~/.gemini/settings.json` | see [`GEMINI.md`](./GEMINI.md) |
-| **Cursor** | `~/.cursor/mcp.json` | `{"mcpServers":{"yimai":{"url":"http://127.0.0.1:8787/mcp"}}}` |
-| **Cline** | VS Code → Cline → MCP Servers → Add → name=`yimai`, type=`http`, url=`http://127.0.0.1:8787/mcp` |
-| **Continue.dev** | `~/.continue/config.json` under `"mcpServers"` | same shape |
-| **Roo Code** | VS Code → Roo Code → MCP → Add Server (HTTP transport) |
-| **Windsurf** | `~/.windsurf/mcp.json` (Cascade MCP) | same shape |
-| **GitHub Copilot (Coding Agent)** | `.github/copilot-setup-steps.yml` already installs MoonBit (see file) |
+| **Claude Desktop** | `~/.config/claude-desktop/mcp.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows) | `docs/harness-configs/claude-desktop.json` |
+| **Claude Code** | `~/.claude/mcp.json` or via `/mcp` slash command | `docs/harness-configs/claude-code.json` ([`CLAUDE.md`](./CLAUDE.md)) |
+| **Gemini CLI** | `~/.gemini/settings.json` | `docs/harness-configs/gemini-cli.json` ([`GEMINI.md`](./GEMINI.md)) |
+| **Cursor** | `~/.cursor/mcp.json` | `docs/harness-configs/cursor.json` |
+| **Cline** | VS Code → Cline → MCP Servers → Add → name=`yimai`, type=`http`, url=`http://127.0.0.1:8787/mcp` | `docs/harness-configs/cline.json` |
+| **Continue.dev** | `~/.continue/config.json` under `"mcpServers"` | `docs/harness-configs/continue.json` |
+| **Roo Code** | VS Code → Roo Code → MCP → Add Server (HTTP transport) | `docs/harness-configs/roo-code.json` |
+| **Windsurf / Cascade** | `~/.windsurf/mcp.json` | `docs/harness-configs/windsurf.json` |
+| **OpenAI Codex CLI** (≥ 0.21) | `~/.codex/config.toml` or `<repo>/.codex/config.toml` | `docs/harness-configs/codex.toml` |
+| **Aider** (≥ 0.86) | `~/.aider.conf.yml` or `<repo>/.aider.conf.yml` | `docs/harness-configs/aider.conf.yml` |
+| **Sourcegraph Cody** | Cody → Settings → MCP Servers | `docs/harness-configs/cody.json` |
+| **Zed** | `~/.config/zed/settings.json` under `context_servers` | `docs/harness-configs/zed.json` |
+| **GitHub Copilot (Coding Agent)** | `.github/copilot-setup-steps.yml` already installs MoonBit (see file) | `docs/harness-configs/github-copilot.yml` |
 
 All clients use the same MCP shape. The only thing that varies is the config
 file path. After `scripts/run.ps1` is up, all clients should be able to
 `tools/list` and see the 24 tools.
+
+> 📁 **Full sample set** (one file per harness + per-harness install path
+> table) lives under [`docs/harness-configs/`](./docs/harness-configs/README.md).
 
 ## Windows prerequisites (native build)
 
@@ -100,6 +107,31 @@ file path. After `scripts/run.ps1` is up, all clients should be able to
     `create_mode=@fs.CreateMode::CreateOrTruncate` for first writes.
 - `moon fmt` reformats the whole repo (2585-line diffs historically) — avoid unless asked.
 - Keep `moon test --target wasm-gc` green on every change.
+
+## International translation standards (alignment, not certification)
+
+This engine is a **technical building block**, not a translation service, so it
+isn't itself certifiable — but the features map cleanly to the workflows the
+following international standards describe, so adopters can wire yimai into
+ISO-conformant pipelines:
+
+| Standard | What it covers | How yimai fits |
+|---|---|---|
+| **ISO 17100:2015** (Translation services — Requirements) | Translator competence, project management, technical resources, post-delivery feedback | `observe`/`predict` + `reward` give the post-delivery feedback loop; `retrieve_prompt` injects bilingual context into the LLM step; `consolidate` is the meta-cognitive review that ISO 17100 §5.5 expects for "technical revision" |
+| **ISO 18587:2017** (Post-editing of machine translation output) | MTPE workflow, post-editor competence, output quality | `qe_auto` (QE + MQM tagging) and `bleu`/`chrf` measure MT output before/after post-edit; `retrieve_prompt` injects TM hits into the post-edit LLM step |
+| **ISO 30042:2019** (TBX — TermBase eXchange) | TermBase XML schema for terminology exchange | `load_tbx` parses ISO 30042-compliant `<martif>/<termEntry>` XML; `add_tm` + `check_terms` enforce term consistency (the "TB" half of TM/TB) |
+| **ISO 11669:2024** (Translation projects — General guidance) | Project lifecycle, deliverables, sign-off | `predict` is the per-step next-action recommender; `consolidate` is the project-completion review |
+| **MQM / MQM Core** (Lommel et al., 2014–present) | Multidimensional Quality Metrics for translation evaluation | `qe_auto` returns an MQM-shaped tag set; `back_align` produces the alignment script MQM fluency/accuracy annotations are anchored to |
+| **W3C ITS 2.0** (Internationalization Tag Set) | Markup-level metadata for translation, terminology, language identification | Out of scope for the engine itself; consume from the host CMS/app, push translated strings through `add_tm` |
+| **Model Context Protocol 2025-11-25** (Anthropic / OpenAI / community) | Streamable HTTP + JSON-RPC 2.0 standard for tool-calling | `POST /mcp` is the spec-compliant MCP server; see [`docs/harness-configs/`](./docs/harness-configs/README.md) for client config |
+
+> **Caveat.** None of the above is a claim of certification. yimai is a
+> library + local service. To actually run an ISO 17100 / 18587 pipeline you
+> still need certified linguists, project management, and the surrounding
+> process — yimai gives you the *memory + consistency* primitives those
+> processes rely on.
+
+## Useful entry points
 
 ## Useful entry points
 

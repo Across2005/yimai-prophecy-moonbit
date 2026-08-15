@@ -1,0 +1,17 @@
+# GitHub Copilot Coding Agent — yimai MCP server
+# This file is already in the repo at .github/copilot-setup-steps.yml.
+# Copilot Coding Agent reads it during setup; the yimai service runs on the
+# agent machine, so the harness can reach http://127.0.0.1:8787/mcp directly.
+#
+# Snippet to ADD under .github/copilot-setup-steps.yml → steps:
+#
+#   - name: Start yimai MCP service
+#     run: |
+#       moon build cmd/service --target native
+#       nohup ./_build/native/debug/build/cmd/service/service.exe &
+#       sleep 2
+#       curl -fsS http://127.0.0.1:8787/api/ping
+#
+# Copilot picks up the MCP server through its own mcpServers config (per-repo
+# or per-org); the snippet above just makes sure the service is up before
+# Copilot spawns its coding agent.
