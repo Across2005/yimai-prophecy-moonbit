@@ -339,8 +339,8 @@ test "Layer6: extended deterministic serialization with identical training" {
   train_extended_corpus(eng2, corpus_robotics, 5)
   let json2 = eng2.to_json()
 
-  let str1 = json1.to_string()
-  let str2 = json2.to_string()
+  let str1 = json1.stringify()
+  let str2 = json2.stringify()
   let det = str1 == str2
   println(">>> [E-Layer6] Deterministic: " + det.to_string())
   inspect(det, content="true")
@@ -348,7 +348,7 @@ test "Layer6: extended deterministic serialization with identical training" {
   // Round-trip
   let eng3 = ProphecyEngine::from_json(json1)
   let json3 = eng3.to_json()
-  let rt = json1.to_string() == json3.to_string()
+  let rt = json1.stringify() == json3.stringify()
   inspect(rt, content="true")
   println(">>> [E-Layer6] PASS: deterministic engine and JSON round-trip integrity")
 }

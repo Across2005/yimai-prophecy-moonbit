@@ -305,13 +305,16 @@ async fn invoke_tool(name : String, args : Json) -> Json {
 }
 
 // ===== 各 method 处理 =====
+//   P3 修正：serverInfo.version 从 "2.0.0" 改为与 moon.mod / @lib.api_version / /api/health 一致的 "0.1.0"。
+//   "2.0" 是产品家族名（译脉·先知 2.0），不是 MCP server 的 semver；spec 2025-11-25 期望 serverInfo.version
+//   反映实现版本，与 api_version 同步便于 MCP client 端做 capability 匹配与日志去重。
 fn handle_initialize(id : Json) -> Json {
   rpc_result(id, @lib.obj([
     ("protocolVersion", @lib.str_json("2025-11-25")),
     ("capabilities", @lib.obj([("tools", @lib.obj([("listChanged", false.to_json())]))])),
     ("serverInfo", @lib.obj([
       ("name", @lib.str_json("yimai-prophecy")),
-      ("version", @lib.str_json("2.0.0")),
+      ("version", @lib.str_json(@lib.api_version)),
     ])),
   ]))
 }

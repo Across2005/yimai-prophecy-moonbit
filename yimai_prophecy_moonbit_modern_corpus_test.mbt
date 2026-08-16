@@ -470,8 +470,8 @@ test "Layer6: deterministic reproducibility and JSON round-trip integrity" {
   let json2 = eng2.to_json()
 
   // Compare serialized states
-  let str1 = json1.to_string()
-  let str2 = json2.to_string()
+  let str1 = json1.stringify()
+  let str2 = json2.stringify()
   let deterministic = str1 == str2
   println(">>> [Layer6] Deterministic serialization: " + deterministic.to_string())
   inspect(deterministic, content="true")
@@ -479,7 +479,7 @@ test "Layer6: deterministic reproducibility and JSON round-trip integrity" {
   // JSON round-trip: serialize → deserialize → serialize
   let eng3 = ProphecyEngine::from_json(json1)
   let json3 = eng3.to_json()
-  let str3 = json3.to_string()
+  let str3 = json3.stringify()
   let roundtrip = str1 == str3
   println(">>> [Layer6] JSON round-trip (to_json → from_json → to_json): " + roundtrip.to_string())
   inspect(roundtrip, content="true")

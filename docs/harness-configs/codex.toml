@@ -3,7 +3,9 @@
 #      or: <repo>/.codex/config.toml  (per-project)
 # Reference: https://developers.openai.com/codex/config
 # Codex (>= 0.21) natively supports [mcp_servers.*] with url/transport=http.
+# P3: Codex >= 0.46 强制显式 transport = "http"，否则按 stdio 解析 url。
 
 [mcp_servers.yimai]
 url = "http://127.0.0.1:8787/mcp"
+transport = "http"
 # tool_timeout_sec = 30

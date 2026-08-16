@@ -66,9 +66,16 @@ async fn send_json(conn : @http.ServerConnection, code : Int, body : String) -> 
 }
 
 // 统一错误响应：所有 handler 的错误出口走这一处（替换散落的字符串拼接）。
-//   返回形如 {"error":"...","code":"..."}，code 是稳定机器可读字符串（如 "invalid_json"/"body_too_large"）。
+//   返回形如 {"error":"...","code":"..."}，code 是稳定机器可读字符串
+//   （如 "invalid_json"/"body_too_large"/"missing_field"/"unknown_mid"/"internal_error"/"align_failed"）。
+//   P3: 改用 @lib.obj 构造而非字符串拼接（CHANGELOG 0.1.0 已声明；本函数为统一出口
+//   之前漏改）。当前 7 个调用点 message/code 均为静态字面量、实际无注入窗口；改用
+//   @lib.obj 是把"未来加动态 message 也不会重开注入"作为防御措施固化下来。
 async fn send_error(conn : @http.ServerConnection, http_code : Int, code : String, message : String) -> Unit {
-  let body = "{\"error\":\"" + message + "\",\"code\":\"" + code + "\"}"
+  let body = @lib.obj([
+    ("error", @lib.str_json(message)),
+    ("code", @lib.str_json(code)),
+  ]).stringify()
   send_json(conn, http_code, body)
 }
 
@@ -470,7 +477,7 @@ async fn handle_consolidate(body : &@io.Reader, conn : @http.ServerConnection) -
       }
       let result = engine_ref.val.consolidate(prune)
       let saved = save_store()
-        if !saved { println("save_store: 落盘失败但内存态已更新") }
+      if !saved { println("save_store: 落盘失败但内存态已更新") }
       send_json(conn, 200, result.stringify())
     }
     _ => ()  // read_json_or_400 已发 4xx 响应
@@ -505,9 +512,9 @@ async fn handle_bleu(body : &@io.Reader, conn : @http.ServerConnection) -> Unit 
   let parsed = read_json_or_400(conn, body)
   match parsed {
     Some(Json::Object(o)) => {
-      let ref = json_str(o, "ref")
-      let hyp = json_str(o, "hyp")
-      let score = @lib.bleu_score(ref, hyp)
+      let ref_str = json_str(o, "ref")
+      let hyp_str = json_str(o, "hyp")
+      let score = @lib.bleu_score(ref_str, hyp_str)
       // P1: 用 @lib.obj 替代字符串拼接（防止 score.to_string() 边界行为差异）
       send_json(conn, 200, @lib.obj([("bleu", @lib.num_json(score))]).stringify())
     }
@@ -520,9 +527,9 @@ async fn handle_chrf(body : &@io.Reader, conn : @http.ServerConnection) -> Unit 
   let parsed = read_json_or_400(conn, body)
   match parsed {
     Some(Json::Object(o)) => {
-      let ref = json_str(o, "ref")
-      let hyp = json_str(o, "hyp")
-      let score = @lib.chrf_score(ref, hyp)
+      let ref_str = json_str(o, "ref")
+      let hyp_str = json_str(o, "hyp")
+      let score = @lib.chrf_score(ref_str, hyp_str)
       // P1: 用 @lib.obj 替代字符串拼接
       send_json(conn, 200, @lib.obj([("chrf", @lib.num_json(score))]).stringify())
     }
@@ -621,7 +628,7 @@ async fn handle_fed_import(body : &@io.Reader, conn : @http.ServerConnection) ->
       }
       engine_ref.val.fed_import(added, updated)
       let saved = save_store()
-        if !saved { println("save_store: 落盘失败但内存态已更新") }
+      if !saved { println("save_store: 落盘失败但内存态已更新") }
       // P1: 用 @lib.obj 替代字符串拼接
       send_json(conn, 200, @lib.obj([("status", @lib.str_json("imported"))]).stringify())
     }
@@ -647,7 +654,7 @@ async fn handle_distill_inject(body : &@io.Reader, conn : @http.ServerConnection
       }
       engine_ref.val.inject_distillation(table)
       let saved = save_store()
-        if !saved { println("save_store: 落盘失败但内存态已更新") }
+      if !saved { println("save_store: 落盘失败但内存态已更新") }
       // P1: BUG 修复：原版缺右括号 `}` 导致 JSON 非法；改用 @lib.obj
       send_json(conn, 200, @lib.obj([
         ("status", @lib.str_json("injected")),

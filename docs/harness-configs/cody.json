@@ -1,10 +1,6 @@
 {
-  "cody.contextFilters": {},
-  "cody.experimental.noodle": false,
-  "cody.dev.models": [],
-  "cody.chat.context.user": [],
-  "cody.chat.context.repository": [],
-  "cody.chat.context.code": true,
+  "_note": "Sourcegraph Cody 已在 2025-08 进入维护模式，AI 主线转入 Amp；本文件仅作历史参考。生产环境请改用其他 harness。",
+  "_merge_instruction": "仅把 cody.mcp.servers 段合并进 Cody 的 settings.json；其余 cody.* 字段属示例，请勿照抄。",
   "cody.mcp.servers": {
     "yimai": {
       "url": "http://127.0.0.1:8787/mcp"

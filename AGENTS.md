@@ -62,19 +62,19 @@ moon test --target wasm-gc        # 89/89 green
 
 | Harness | Config file | Drop-in sample |
 |---|---|---|
-| **Claude Desktop** | `~/.config/claude-desktop/mcp.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows) | `docs/harness-configs/claude-desktop.json` |
+| **Claude Desktop** | `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows) | `docs/harness-configs/claude-desktop.json` |
 | **Claude Code** | `~/.claude/mcp.json` or via `/mcp` slash command | `docs/harness-configs/claude-code.json` ([`CLAUDE.md`](./CLAUDE.md)) |
 | **Gemini CLI** | `~/.gemini/settings.json` | `docs/harness-configs/gemini-cli.json` ([`GEMINI.md`](./GEMINI.md)) |
 | **Cursor** | `~/.cursor/mcp.json` | `docs/harness-configs/cursor.json` |
 | **Cline** | VS Code → Cline → MCP Servers → Add → name=`yimai`, type=`http`, url=`http://127.0.0.1:8787/mcp` | `docs/harness-configs/cline.json` |
-| **Continue.dev** | `~/.continue/config.json` under `"mcpServers"` | `docs/harness-configs/continue.json` |
+| **Continue.dev** | `~/.continue/config.json` under `"mcpServers"` (use `type: "streamable-http"`) | `docs/harness-configs/continue.json` |
 | **Roo Code** | VS Code → Roo Code → MCP → Add Server (HTTP transport) | `docs/harness-configs/roo-code.json` |
-| **Windsurf / Cascade** | `~/.windsurf/mcp.json` | `docs/harness-configs/windsurf.json` |
-| **OpenAI Codex CLI** (≥ 0.21) | `~/.codex/config.toml` or `<repo>/.codex/config.toml` | `docs/harness-configs/codex.toml` |
+| **Windsurf / Cascade** | `~/.windsurf/mcp.json` (use `serverUrl` + `type: "http"`) | `docs/harness-configs/windsurf.json` |
+| **OpenAI Codex CLI** (≥ 0.21) | `~/.codex/config.toml` or `<repo>/.codex/config.toml` (≥ 0.46 needs `transport = "http"`) | `docs/harness-configs/codex.toml` |
 | **Aider** (≥ 0.86) | `~/.aider.conf.yml` or `<repo>/.aider.conf.yml` | `docs/harness-configs/aider.conf.yml` |
-| **Sourcegraph Cody** | Cody → Settings → MCP Servers | `docs/harness-configs/cody.json` |
-| **Zed** | `~/.config/zed/settings.json` under `context_servers` | `docs/harness-configs/zed.json` |
-| **GitHub Copilot (Coding Agent)** | `.github/copilot-setup-steps.yml` already installs MoonBit (see file) | `docs/harness-configs/github-copilot.yml` |
+| **Sourcegraph Cody** | Cody → Settings → MCP Servers — *deprecated 2025-08, use other harness* | `docs/harness-configs/cody.json` |
+| **Zed** | `~/.config/zed/settings.json` under `context_servers` (≥ 0.150 uses `url` field) | `docs/harness-configs/zed.json` |
+| **GitHub Copilot (Coding Agent)** | `.github/workflows/copilot-setup-steps.yml` (snippet, runner caveat) | `docs/harness-configs/github-copilot.yml` |
 
 All clients use the same MCP shape. The only thing that varies is the config
 file path. After `scripts/run.ps1` is up, all clients should be able to
@@ -106,6 +106,10 @@ file path. After `scripts/run.ps1` is up, all clients should be able to
   - `@fs.write_file` default `create_mode=TruncateExisting` fails when the file is absent — pass
     `create_mode=@fs.CreateMode::CreateOrTruncate` for first writes.
 - `moon fmt` reformats the whole repo (2585-line diffs historically) — avoid unless asked.
+- **Map ≠ HashMap** — `Map[String, T]` (MoonBit) is **ordered by insertion** and is
+  load-bearing for the determinism contract (R15): `predict` scores, `fuzzy_match` ranking,
+  `metrics` JSON field order all depend on iteration order. Do **not** swap in `@hashmap`
+  or any `HashSet/HashMap` from a hypothetical future stdlib — that would break R15 silently.
 - Keep `moon test --target wasm-gc` green on every change.
 
 ## International translation standards (alignment, not certification)
@@ -119,11 +123,20 @@ ISO-conformant pipelines:
 |---|---|---|
 | **ISO 17100:2015** (Translation services — Requirements) | Translator competence, project management, technical resources, post-delivery feedback | `observe`/`predict` + `reward` give the post-delivery feedback loop; `retrieve_prompt` injects bilingual context into the LLM step; `consolidate` is the meta-cognitive review that ISO 17100 §5.5 expects for "technical revision" |
 | **ISO 18587:2017** (Post-editing of machine translation output) | MTPE workflow, post-editor competence, output quality | `qe_auto` (QE + MQM tagging) and `bleu`/`chrf` measure MT output before/after post-edit; `retrieve_prompt` injects TM hits into the post-edit LLM step |
-| **ISO 30042:2019** (TBX — TermBase eXchange) | TermBase XML schema for terminology exchange | `load_tbx` parses ISO 30042-compliant `<martif>/<termEntry>` XML; `add_tm` + `check_terms` enforce term consistency (the "TB" half of TM/TB) |
-| **ISO 11669:2024** (Translation projects — General guidance) | Project lifecycle, deliverables, sign-off | `predict` is the per-step next-action recommender; `consolidate` is the project-completion review |
-| **MQM / MQM Core** (Lommel et al., 2014–present) | Multidimensional Quality Metrics for translation evaluation | `qe_auto` returns an MQM-shaped tag set; `back_align` produces the alignment script MQM fluency/accuracy annotations are anchored to |
+| **ISO 30042:2019 / TBX3** (TermBase eXchange, v3 dialect) | TermBase XML schema for terminology exchange (TBX3 v3.0, not TBX2 v2.0 — namespace and structure changed) | `load_tbx` parses ISO 30042-compliant `<martif>/<termEntry>` XML; `add_tm` + `check_terms` enforce term consistency (the "TB" half of TM/TB) |
+| **ISO 11669:2024 (TS)** (Translation projects — General guidance) | Project lifecycle, deliverables, sign-off — **TS** (technical specification) | `predict` is the per-step next-action recommender; `consolidate` is the project-completion review |
+| **MQM / MQM Core** (Lommel et al., 2014–present) | Multidimensional Quality Metrics for translation evaluation. Standard 7 dimensions (terminology / accuracy / linguistic / style / locale / audience / design); standard severity scale **None=0 / Minor=1 / Major=5 / Critical=10** | `qe_auto` returns an MQM-shaped tag set; `back_align` produces the alignment script MQM fluency/accuracy annotations are anchored to. If you add a custom MQM scorer, prefer the standard severity scale for cross-tool comparability. |
 | **W3C ITS 2.0** (Internationalization Tag Set) | Markup-level metadata for translation, terminology, language identification | Out of scope for the engine itself; consume from the host CMS/app, push translated strings through `add_tm` |
-| **Model Context Protocol 2025-11-25** (Anthropic / OpenAI / community) | Streamable HTTP + JSON-RPC 2.0 standard for tool-calling | `POST /mcp` is the spec-compliant MCP server; see [`docs/harness-configs/`](./docs/harness-configs/README.md) for client config |
+| **Model Context Protocol `2025-11-25`** (Anthropic / OpenAI / community) | Streamable HTTP + JSON-RPC 2.0 standard for tool-calling. **Note**: 2026-07-28 RC introduced breaking changes (initialize handshake removal, `Mcp-Method`/`Mcp-Name` headers, JSON Schema 2020-12, error code `-32602`); we are on `2025-11-25` and will migrate in 0.2.0. | `POST /mcp` is the spec-compliant MCP server; see [`docs/harness-configs/`](./docs/harness-configs/README.md) for client config |
+
+### Roadmap (not implemented in 0.1.0; declared for adopters)
+
+| Standard | Why it matters | Status |
+|---|---|---|
+| **TMX 1.4b** (Translation Memory eXchange, GALA Global) | The CAT-tool lingua franca for TM export/import. A 24-tool MCP service without `parse_tmx` / `export_tmx` can't be dropped into a Trados / memoQ / OmegaT pipeline. | `parse_tmx` / `export_tmx` declared in `engine.mbt` as `pub fn` but **not yet exposed** via `/api/*` or `/mcp`. Add `/api/import_tmx` + `/api/export_tmx` for v0.2. |
+| **XLIFF 2.1** (OASIS) / **ISO 21720:2024** (XLIFF 2.0) | The CAT-tool lingua franca for segment-level exchange. ISO 21720:2024 = XLIFF 2.0; OASIS 2.1 is the newer revision. | `parse_xliff` declared in `engine.mbt` as `pub fn` but **not yet exposed**. Add `/api/import_xliff` + `/api/export_xliff` for v0.2. |
+| **SRX 2.0** (Segmentation Rules eXchange) | Sentence-segmentation rules that make `concordance` and TM hit windows reproducible across CAT tools. | Not yet declared; would need a `/api/import_srx` endpoint. |
+| **MQM severity scale** (None/Minor/Major/Critical + 0/1/5/10) | If/when adding a strict MQM scorer, use this scale so yimai scores are comparable to the broader MQM ecosystem. | Default scale recommendation documented here; engine `qe_auto` currently emits dimension tags only (not severity). |
 
 > **Caveat.** None of the above is a claim of certification. yimai is a
 > library + local service. To actually run an ISO 17100 / 18587 pipeline you

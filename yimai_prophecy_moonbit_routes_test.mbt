@@ -131,14 +131,19 @@ test "L21 known_handlers 与 routes_meta 长度一致（match 分支无遗漏）
 }
 
 // ---------------------------------------------------------------------------
-// L22：send_error 三类 code 字符串覆盖（稳定机器可读码）
-//   invalid_json: 400, JSON 解析失败
-//   body_too_large: 413, request body 超过 MAX_BODY_BYTES
-//   missing_field: 400, 必填字段缺失
+// L22：send_error 六类 code 字符串覆盖（稳定机器可读码）
+//   400 invalid_json     JSON 解析失败
+//   413 body_too_large   request body 超过 MAX_BODY_BYTES
+//   400 missing_field    必填字段缺失
+//   404 unknown_mid      reward 收到不存在的 mid
+//   500 internal_error   handler 顶层 panic 兜底
+//   500 align_failed     back_align 引擎返回非 Object（异常路径）
+//   P3 增量：原表只列 3 码（CHANGELOG 0.1.0 漏算 3 个：unknown_mid/internal_error/align_failed），
+//   现对齐 6 码，与 routes.mbt send_error 7 个调用点一致。新增调用点须同步此表。
 // ---------------------------------------------------------------------------
 
-test "L22 error_codes 恰好三码且互不相同" {
-  inspect(error_codes.length() == 3, content="true")
+test "L22 error_codes 恰好六码且互不相同" {
+  inspect(error_codes.length() == 6, content="true")
   let mut dups = 0
   for i = 0; i < error_codes.length(); i = i + 1 {
     for j = i + 1; j < error_codes.length(); j = j + 1 {
@@ -148,12 +153,17 @@ test "L22 error_codes 恰好三码且互不相同" {
   inspect(dups == 0, content="true")
 }
 
-test "L22 error_codes 包含三类稳定码（invalid_json/body_too_large/missing_field）" {
-  // 单测合并：三码存在性 一次验证；分别对应 send_error 唯一出口
-  //   invalid_json: read_json_or_400 走 400 分支
-  //   body_too_large: read_json_or_400 走 413 分支
-  //   missing_field: handler 必填字段缺失
-  let expected = ["invalid_json", "body_too_large", "missing_field"]
+test "L22 error_codes 包含全部六类稳定码（与 send_error 7 调用点对齐）" {
+  // 6 码存在性一次验证；分别对应 send_error 唯一出口
+  //   invalid_json / body_too_large : read_json_or_400 走 400/413 分支
+  //   missing_field                  : handler 必填字段缺失（add_tm.src / observe.text）
+  //   unknown_mid                    : reward 收到不存在的 mid
+  //   internal_error                 : handler panic 兜底
+  //   align_failed                   : back_align 引擎返回非 Object（异常路径）
+  let expected = [
+    "invalid_json", "body_too_large", "missing_field",
+    "unknown_mid", "internal_error", "align_failed",
+  ]
   for want in expected {
     let mut has = false
     for c in error_codes {

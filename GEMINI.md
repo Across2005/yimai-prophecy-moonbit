@@ -79,6 +79,10 @@ git config core.hooksPath .githooks
 - Engine must stay **zero-dependency** (`core/json` + `core/math` only). All I/O lives in `cmd/service`.
 - Determinism is a hard contract: same input ⇒ byte-identical `to_json` output (R15).
 - `moon fmt` reformats the whole repo (2585-line diffs historically) — avoid unless asked.
+- **Map ≠ HashMap** — `Map[String, T]` (MoonBit) is **ordered by insertion** and is
+  load-bearing for the determinism contract (R15): `predict` scores, `fuzzy_match` ranking,
+  `metrics` JSON field order all depend on iteration order. Do **not** swap in `@hashmap`
+  or any `HashSet/HashMap` from a hypothetical future stdlib — that would break R15 silently.
 - Keep `moon test --target wasm-gc` green on every change.
 
 ## Useful entry points

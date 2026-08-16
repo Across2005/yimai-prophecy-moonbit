@@ -93,6 +93,10 @@ git config core.hooksPath .githooks
 - `@fs.write_file` default `create_mode=TruncateExisting` fails when the file is absent — pass
   `create_mode=@fs.CreateMode::CreateOrTruncate` for first writes.
 - `moon fmt` reformats the whole repo (2585-line diffs historically) — avoid unless asked.
+- **Map ≠ HashMap** — `Map[String, T]` (MoonBit) is **ordered by insertion** and is
+  load-bearing for the determinism contract (R15): `predict` scores, `fuzzy_match` ranking,
+  `metrics` JSON field order all depend on iteration order. Do **not** swap in `@hashmap`
+  or any `HashSet/HashMap` from a hypothetical future stdlib — that would break R15 silently.
 
 ## Useful entry points
 

@@ -1,17 +1,16 @@
 # GitHub Copilot Coding Agent — yimai MCP server
-# This file is already in the repo at .github/copilot-setup-steps.yml.
-# Copilot Coding Agent reads it during setup; the yimai service runs on the
-# agent machine, so the harness can reach http://127.0.0.1:8787/mcp directly.
 #
-# Snippet to ADD under .github/copilot-setup-steps.yml → steps:
+# ⚠️ 注意：Copilot Coding Agent 跑在 GitHub 托管 runner (ubuntu-latest)，
+#    yimai 服务是纯本地 127.0.0.1:8787，runner 网络隔离无法直连。
+#    本文件不是 drop-in 配置；只是说明 Copilot 集成 yimai 的两种可行路径。
 #
-#   - name: Start yimai MCP service
-#     run: |
-#       moon build cmd/service --target native
-#       nohup ./_build/native/debug/build/cmd/service/service.exe &
-#       sleep 2
-#       curl -fsS http://127.0.0.1:8787/api/ping
+# 路径 A：在 PR 工作流（.github/workflows/）里启 yimai + 同 runner 跑 Copilot
+#   - 不是 Copilot Coding Agent，是 Copilot within Actions / pull_request 触发的工作流
+#   - 服务跑在 workflow runner 的 127.0.0.1，可被同 runner 上的 Copilot 步访问
+#   - 示例片段：见 .github/workflows/copilot-setup-steps.yml（已在仓库里）
 #
-# Copilot picks up the MCP server through its own mcpServers config (per-repo
-# or per-org); the snippet above just makes sure the service is up before
-# Copilot spawns its coding agent.
+# 路径 B：用户在本地装 yimai（scripts/dev.ps1），通过 GitHub MCP Bridge 走公网
+#   - yimai 服务暴露到公网需要反向代理或 SSH 隧道，违反"纯本地"定位；不推荐
+#
+# 仓库内真正的集成点：.github/workflows/copilot-setup-steps.yml
+#   （不是 .github/copilot-setup-steps.yml，注意 workflows/ 子目录）

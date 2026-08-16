@@ -49,14 +49,22 @@ pub let routes_meta : Array[(String, String)] = [
   ("/api/health", "health"),
 ]
 
-// 错误码稳定表：send_error 全部用此三码（机器可读）；L22 测试断言覆盖。
-//   invalid_json: 400, JSON 解析失败（read_json_or_400 走 400 分支）
-//   body_too_large: 413, request body 超过 MAX_BODY_BYTES
-//   missing_field: 400, 必填字段缺失
+// 错误码稳定表：send_error 全部用此六码（机器可读）；L22 测试断言覆盖。
+//   400 invalid_json     JSON 解析失败（read_json_or_400 走 400 分支）
+//   413 body_too_large   request body 超过 MAX_BODY_BYTES
+//   400 missing_field    必填字段缺失（add_tm.src / observe.text）
+//   404 unknown_mid      reward 收到不存在的 mid
+//   500 internal_error   handler 顶层 panic 兜底
+//   500 align_failed     back_align 引擎返回非 Object（异常路径）
+//   P3 增量：原表只列 3 码，实际 7 个 send_error 调用点用到 6 码（routes.mbt L85/87/153/293/389/452/590）。
+//   补全后与 send_error 实际出口严格一一对应；新增 send_error 调用点必须同步此表 + L22 测试。
 pub let error_codes : Array[String] = [
   "invalid_json",
   "body_too_large",
   "missing_field",
+  "unknown_mid",
+  "internal_error",
+  "align_failed",
 ]
 
 // API 版本（moon.mod 同步）：/api/health 透出
