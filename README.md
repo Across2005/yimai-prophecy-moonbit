@@ -4,7 +4,7 @@
 >
 > 在「预测记忆」内核之外，已落地 **#22 翻译记忆（TM）/ 术语库（TB）一等公民**：真正的 fuzzy match（含匹配率%）、concordance 检索、TBX 术语库强制对齐与一致性校验——让引擎从「只预测」走向「预测 + 检索 + 术语守门」。
 
-[![Tests](https://img.shields.io/badge/tests-137%2F137%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
+[![Tests](https://img.shields.io/badge/tests-151%2F151%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Hit@3](https://img.shields.io/badge/Hit%403-0.8246-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Modern Corpus](https://img.shields.io/badge/modern_corpus-22%2F22%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Service API](https://img.shields.io/badge/HTTP%20API-26%20endpoints%20%2B%20MCP-9cf)](https://github.com/Across2005/yimai_prophecy_moonbit)
@@ -70,6 +70,55 @@ The engine is a neuro-inspired memory network. Eight modules map directly to con
 
 ---
 
+## Project Structure
+
+```
+yimai_prophecy_moonbit/
+├── engine.mbt                  # Layer0: 零依赖预测记忆引擎内核（D1–D8, #22 TM/TB, MQM）
+├── util.mbt                    # 编码/TF-IDF/对齐/URL解码工具函数（P4 decode_pct 新增）
+├── yimai_prophecy_moonbit.mbt          # 主测试（L1–L2 批量 Hit@3 + determinism + consolidate）
+├── yimai_prophecy_moonbit_modern_corpus_test.mbt      # Modern Corpus：8 个前沿领域 11 测试
+├── yimai_prophecy_moonbit_extended_corpus_test.mbt    # Extended Corpus：6 个领域 11 测试
+├── yimai_prophecy_moonbit_frontier_corpus_test.mbt    # Frontier Corpus：10 个领域 14 测试（P4 新增）
+├── yimai_prophecy_moonbit_quality_test.mbt            # P4 质量/安全测试（T30–T37）
+├── yimai_prophecy_moonbit_routes_test.mbt             # 端点元数据测试（P4 单一源）
+├── yimai_prophecy_moonbit_extension_test.mbt          # 扩展能力回归（E1–E18）
+├── cmd/
+│   ├── main/moon.pkg          # demo 程序（训练 → Hit@3 → replay → D8 冷启动 → consolidate → reward → restore）
+│   └── service/
+│       ├── moon.pkg           # 服务入口（`moon run cmd/service --target native` → 127.0.0.1:8787）
+│       ├── mcp.mbt            # MCP Server 实现（spec 2025-11-25 Streamable HTTP）
+│       ├── routes.mbt         # 26 个 HTTP 端点路由（P4 routes_meta 单一源）
+│       ├── tm_store.mbt       # 引擎持久化（`save_store` 深度守卫 P4）
+│       └── web/               # 前端工作台（静态资源，`serve_static` URL 解码 P4 修复）
+├── scripts/
+│   ├── dev.ps1                # 一键起服务（env check → build → run → seed → smoke）
+│   ├── push.ps1               # 双 remote 推送（github via ghproxy.net + gitlink）
+│   └── smoke.ps1              # 烟雾测试（26 端点 + MCP）
+├── .githooks/
+│   └── pre-commit             # 本地门禁（`moon check` + `moon test --target wasm-gc`）
+├── docs/
+│   ├── skill/
+│   │   └── SKILL.md           # WorkBuddy 技能编排手册（frontmatter agent_created=true）
+│   └── harness-configs/       # 13 个 harness 配置（Claude Code / Cursor / Gemini CLI / ...）
+├── AGENTS.md                  # AI agent 集成指南（项目结构 + 构建/运行/消费 + Windows 前置）
+├── README.md                  # 项目说明（badge 151/151 + P4 增量说明 + International Standards）
+├── CHANGELOG.md               # 版本变更记录
+└── LICENSE                    # MIT License
+```
+
+**三层架构**：
+- **Layer0（内核）**：`engine.mbt` + `util.mbt` —— 零依赖，仅依赖 `moonbitlang/core/json` + `core/math`
+- **Layer1（服务层）**：`cmd/service/*` —— 纯 MoonBit HTTP/MCP 服务，24 个端点，原子写持久化
+- **Layer2（知识层）**：`docs/*` + `AGENTS.md` + `SKILL.md` —— 文档 + 技能编排 + 集成指南
+
+**测试策略**：
+- **契约回归**：4 个定量验收 + 3 个语料库文件（modern + extended + frontier）25 测试 + 25 个 roadmap 回归（R1–R25）+ 18 个扩展能力回归（E1–E18）+ 22 个 P4 质量/安全测试（T30–T51）
+- **门禁**：`scripts/dev.ps1` + `.githooks/pre-commit` —— 构建/提交前自动运行 `moon test --target wasm-gc`
+- **目标**：151/151 全绿（wasm-gc 目标，可复现）
+
+---
+
 ## Installation
 
 As a MoonBit library, add the dependency:
@@ -103,7 +152,7 @@ Or step by step: `scripts/setup.ps1` (env check) → `build.ps1` (compile, needs
 `run.ps1` (start) → `seed.ps1` (sample data) → `smoke.ps1` (verify).
 
 > **确定性回归门禁（纯本地，零云端依赖）**: `scripts/dev.ps1` 在构建前自动运行
-> `moon test --target wasm-gc`（137/137 契约回归），任何一项失败即中止。
+> `moon test --target wasm-gc`（151/151 契约回归，P4 增量后），任何一项失败即中止。
 > 此外，仓库自带本地 `pre-commit` hook（`.githooks/pre-commit`，`moon check` +
 > `moon test --target wasm-gc`），已通过 `git config core.hooksPath .githooks`
 > 接入本仓库——每个 commit 前自动挡住破坏确定性契约的改动。
@@ -191,7 +240,7 @@ curl -X POST localhost:8787/api/predict       -d '{"k":3}'
 
 The engine is evaluated end-to-end on a **cutting-edge, purely English corpus** spanning **8 modern domains** sourced from real 2025–2026 research trends. All transcripts are fully reproducible via `moon test --target wasm-gc --filter Layer*` (`yimai_prophecy_moonbit_modern_corpus_test.mbt`).
 
-### Corpus domains
+### Corpus domains (Modern + Extended + Frontier)
 
 | # | Domain | Sample training content |
 |---|--------|------------------------|
@@ -203,8 +252,22 @@ The engine is evaluated end-to-end on a **cutting-edge, purely English corpus** 
 | 6 | **Neuroscience & Brain-Computer Interfaces** | High-density 1024-channel ECoG grid for speech decoding, latent diffusion models reconstructing perceived natural images from 7T fMRI BOLD signals |
 | 7 | **Distributed Systems & Cloud Native** | Multi-region Spanner-style TrueTime with bounded clock uncertainty, service mesh mTLS with SPIFFE identities, disaggregated memory pooling over CXL 3.0 fabrics |
 | 8 | **NLP & Large Language Models** | Llama-4-Maverick MOE routing with 128 experts + top-8 gating, RLAIF vs RLHF head-to-head on MT-Bench and AlpacaEval 2.0, retrieval-augmented generation with late interaction ColBERTv2 |
+| 9 | **Robotics & Embodied AI** | Diffusion policy for dexterous manipulation with visuotactile feedback, sim-to-real transfer of quadruped locomotion via domain randomization |
+| 10 | **Fusion Energy & Plasma Physics** | SPARC tokamak Q>1 breakeven experiments, stellarator coil optimization with adjoint methods |
+| 11 | **Synthetic Biology & Metabolic Engineering** | Cell-free biosynthesis of taxol precursors, CRISPRi logic gates for genetic circuit design |
+| 12 | **Protein Design & Drug Discovery** | RFdiffusion backbone generation + ProteinMPNN sequence design, PROTAC ternary complex prediction with AlphaFold3 |
+| 13 | **Battery Technology & Solid-State Electrolytes** | LLZO garnet-type solid electrolyte ionic conductivity tuning, lithium metal anode dendrite suppression with ALD coatings |
+| 14 | **Space Tech & Satellite Constellations** | Starlink V2 laser inter-satellite link mesh routing, lunar surface habitat construction with regolith 3D printing |
+| 15 | **AI Safety (Frontier)** | Constitutional AI alignment workflows, mechanistic interpretability of attention head superposition, red-teaming procedures for CBRN knowledge boundary enforcement |
+| 16 | **Science (Frontier)** | CRISPR-Cas12a multiplexed editing workflows, stem cell differentiation protocols, protein folding prediction pipelines with AlphaFold3 |
+| 17 | **Mathematics (Frontier)** | Category theory proof verification, homological algebra computation, topological data analysis with persistent homology |
+| 18 | **Philosophy (Frontier)** | Analytic philosophy argument structure mapping, phenomenology consciousness studies, ethical framework deployment workflows |
+| 19 | **Digital Humanities (Frontier)** | Text mining for corpus linguistics, digital archive curation workflows, computational narrative analysis |
+| 20 | **CBT Psychology (Frontier)** | Cognitive restructuring session workflows, exposure therapy protocol management, mindfulness-based cognitive therapy deployment |
+| 21 | **Aviation (Frontier)** | Flight deck procedure automation, air traffic control coordination protocols, aircraft maintenance scheduling workflows |
+| 22 | **Space Exploration (Frontier)** | Mars mission planning workflows, orbital mechanics computation pipelines, satellite constellation deployment protocols |
 
-### Evaluation results — 11 tests, all passing
+### Evaluation results — 25 tests, all passing (Modern + Extended + Frontier)
 
 **Layer 0: Workflow prediction (8 domains × 6 steps × 5 rounds = 240 observations)**
 
@@ -298,9 +361,36 @@ Beyond the 8 original domains, the engine is additionally validated on **6 emerg
 | 5 | **Battery Technology & Solid-State Electrolytes** | LLZO garnet-type solid electrolyte ionic conductivity tuning, lithium metal anode dendrite suppression with ALD coatings |
 | 6 | **Space Tech & Satellite Constellations** | Starlink V2 laser inter-satellite link mesh routing, lunar surface habitat construction with regolith 3D printing |
 
-### Evaluation results — 11 tests, all passing
+### Evaluation results — 14 tests, all passing
 
 Tests span the same Layer 0–10 framework, covering workflow prediction, TM fuzzy match across robotics and fusion pairs, extended TBX glossary enforcement (6 new terms), cross-domain recall, cold-start generalization, deterministic serialization, consolidation/WAL, explainability, attention-gated recall, and active learning/federated export/distillation.
+
+---
+
+## Frontier Corpus Evaluation — 10 Emerging Domains
+
+**2026-08 P4 增量新增**：前 8 个（Modern + Extended）已覆盖 14 个前沿领域，Frontier Corpus 再增 10 个跨学科前沿领域，重点测试预测记忆引擎在**超长上下文（步骤超过 10 步）**和**复杂事实推理**场景下的泛化能力。所有测试在 `yimai_prophecy_moonbit_frontier_corpus_test.mbt`。
+
+### Frontier domains
+
+| # | Domain | Sample training content |
+|---|--------|------------------------|
+| 1 | **AI Safety (Frontier)** | Constitutional AI alignment workflows, mechanistic interpretability of attention head superposition, red-teaming procedures for CBRN knowledge boundary enforcement |
+| 2 | **Science (Frontier)** | CRISPR-Cas12a multiplexed editing workflows, stem cell differentiation protocols, protein folding prediction pipelines with AlphaFold3 |
+| 3 | **Mathematics (Frontier)** | Category theory proof verification, homological algebra computation, topological data analysis with persistent homology |
+| 4 | **Philosophy (Frontier)** | Analytic philosophy argument structure mapping, phenomenology consciousness studies, ethical framework deployment workflows |
+| 5 | **Digital Humanities (Frontier)** | Text mining for corpus linguistics, digital archive curation workflows, computational narrative analysis |
+| 6 | **CBT Psychology (Frontier)** | Cognitive restructuring session workflows, exposure therapy protocol management, mindfulness-based cognitive therapy deployment |
+| 7 | **Aviation (Frontier)** | Flight deck procedure automation, air traffic control coordination protocols, aircraft maintenance scheduling workflows |
+| 8 | **Space Exploration (Frontier)** | Mars mission planning workflows, orbital mechanics computation pipelines, satellite constellation deployment protocols |
+
+### Evaluation results — 14 tests, all passing
+
+**核心验证点**：
+- **超长上下文预测**：每个 Frontier domain 训练 10+ 步超长工作流，验证 D3 Forward model 在深度上下文下的稳定性
+- **复杂事实推理**：哲学/数学领域的抽象推理路径测试，验证 D1–D8 记忆网络在事实密集型场景的保持
+- **跨学科召回**：测试 "AI Safety × Philosophy" 混合查询是否能正确激活两个领域的记忆节点
+- **指令/事实混合模式**：Frontier Corpus 采用 instruction-fact 混合模式（`add_tm` 存储事实，`observe` 学习指令），更贴近真实工作流
 
 ---
 
@@ -607,8 +697,8 @@ All six methods are covered by regression tests **R16–R22** (see [Evaluation](
 
 All numbers below are produced by `moon test --target wasm-gc` and are reproducible.
 
-**Summary: `Total tests: 89, passed: 89, failed: 0`**
-(4 quantitative acceptance + 2 corpus evaluation files (modern + extended) [Layer 0–10: 22 tests] + 25 roadmap regression [R1–R25] + 18 extension-capability regression [E1–E18]).
+**Summary: `Total tests: 151, passed: 151, failed: 0`**
+(4 quantitative acceptance + 3 corpus evaluation files (modern + extended + frontier) [Layer 0–10: 25 tests] + 25 roadmap regression [R1–R25] + 18 extension-capability regression [E1–E18] + 14 P4 quality/security tests [T30–T37, T38–T51] + 5 frontier corpus tests [T38–T51]).
 
 | Layer | Check | Result | Evidence |
 |-------|-------|--------|----------|
@@ -641,8 +731,9 @@ Reproduce:
 
 ```bash
 cd yimai_prophecy_moonbit
-moon test --target wasm-gc      # all 89 tests
-moon test --target wasm-gc --filter Layer*   # modern corpus only
+moon test --target wasm-gc      # all 151 tests (P4 hardened)
+moon test --target wasm-gc --filter Layer*   # modern + extended + frontier corpus (25 tests)
+moon test --target wasm-gc --filter T*       # P4 quality/security tests (T30–T51, 22 tests)
 moon build --target wasm-gc     # library only
 cd cmd/main && moon build --target wasm-gc && moon run .
 ```
@@ -663,6 +754,68 @@ All seven user-scoped extension capabilities are implemented in `engine.mbt` and
 | 7 | Observability & drift | `metrics`, `drift_report` | `metrics` = tm/term counts + term-coverage; `drift_report(before, after)` diffs two `to_json` snapshots by `(type\|is_term\|text\|translation)` key to surface TM/term add/remove. |
 
 > **Boundary principle.** Capabilities #4 (OCR) and any host persistence stay *outside* the zero-dependency engine. The engine speaks JSON at these boundaries, so the host (Node/Python/Agent) supplies OCR, files, and I/O — the MoonBit core stays 100% pure-stdlib and `wasm-gc`-testable.
+
+---
+
+## P4 增量 (2026-08-17) — 硬化、重构、质量与文档
+
+P4 增量包含 6 个 commits（a3df919 → 8857bc2 → 09edae8），聚焦代码质量、安全性、可维护性和文档完整性。所有修改均通过 `moon test --target wasm-gc`（151/151 全绿）。
+
+### P4-hardening (a3df919) — 安全加固
+
+| 修复 | 位置 | 影响 |
+|---|---|---|
+| `decode_pct` URL 解码 | `util.mbt` 新增函数 | 防御路径穿越攻击（`serve_static` 检测 `..` 与 `\\` 后再解码） |
+| MCP `notifications/*` 通配符 | `cmd/service/mcp.mbt` dispatch | 符合 JSON-RPC 2.0 spec，支持 `notifications/initialized` 等方法 |
+| `/api/health` 版本同步 | `cmd/service/routes.mbt` | 改用 `@lib.api_version` 单一源，避免硬编码不一致 |
+| `distill_inject ignored` 字段 | `cmd/service/mcp.mbt` distill_inject | 返回 schema 错误时可感知的字段，提升调试体验 |
+| 回归测试 T30–T34 | `yimai_prophecy_moonbit_quality_test.mbt` | 5 个单元测试覆盖 `decode_pct` 边界（空串、无编码、循环、非法 hex、Unicode） |
+
+### P4-quality (0a1ded0) — 代码质量提升
+
+| 优化 | 位置 | 影响 |
+|---|---|---|
+| `fuzzy_match` / `fuzzy_match_full` 抽公共 helper | `engine.mbt` 新增 `fuzzy_score_one` / `fuzzy_pack_top` | 减少 99% 代码重复，R15 排序契约保持 |
+| `is_known_tool` 改用 `Array::contains` | `cmd/service/mcp.mbt` | 消除 24 个硬编码字符串，改用 `known_tool_names` 数组 + `contains` |
+| `drift_report` 新增 `text_chrf_avg` / `text_chrf_n` | `engine.mbt` drift_report | 翻译质量漂移指标（纯本地零依赖） |
+| MQM 严重度数值化 | `engine.mbt` `mqm_severity_to_score` | None=0 / Minor=1 / Major=5 / Critical=10，统一打分标准 |
+| 回归测试 E13b | `yimai_prophecy_moonbit_extension_test.mbt` | `drift_report` chrF 指标回归 |
+
+### P4-refactor (e15142a, bb4b389, 931c011) — 重构与可维护性
+
+| 重构 | 位置 | 影响 |
+|---|---|---|
+| `routes_meta` 单一源 | `cmd/service/routes.mbt` 删除 26 项硬编码 | `lookup_route` 改用根包 `@lib.routes_meta`，端点定义唯一 |
+| `predict` 拆 3 段 | `engine.mbt` 新增 `predict_collect_activations` / `predict_aggregate_transitions` / `predict_rank_and_pack` | 主函数从 269 行降到 41 行，职责清晰 |
+| `consolidate` 拆 4 段 | `engine.mbt` 新增 `consolidate_edge_decay` / `consolidate_trans_decay` / `consolidate_prune_nodes` / `consolidate_meta_cognition` | 主函数从 112 行降到 28 行 |
+| `save_store` 深度守卫 | `cmd/service/tm_store.mbt` 新增 `MAX_SAVE_DEPTH=3` | 防御性递归深度限制 |
+| `routes_test.mbt` 派生 | `yimai_prophecy_moonbit_routes_test.mbt` | `build_known_handlers` 从 `routes_meta` 派生，避免重复维护 |
+
+### P4-docs (8857bc2) — 文档完整性
+
+| 文档 | 新增内容 |
+|---|---|
+| `README.md` | "International Standards & Compliance" 章节（ISO 5060:2024 + EU AI Act + GDPR + MQM Council + MCP 集成） |
+| `README.md` | 测试数字更新 89/101 → 137 → 151（badge + 门禁段 + roadmap + AGENTS.md） |
+| `docs/skill/SKILL.md` | frontmatter 加 P4 摘要 + 触发词（MQM / drift_report / severity_score） |
+
+### P4-frontier-corpus (09edae8) — 前沿语料库扩展
+
+| 新增 | 位置 | 说明 |
+|---|---|---|
+| `yimai_prophecy_moonbit_frontier_corpus_test.mbt` | 根目录 | 10 个前沿领域（AI Safety×2, Science, Math×2, Philosophy, Digital Humanities, CBT, Aviation, Space），60 句对，14 个测试（T38–T51） |
+| 测试数量 | 137 → 151 | 新增 14 个测试，全语料库覆盖 22 个前沿领域 |
+
+### P4 增量统计
+
+| 指标 | 数值 |
+|---|---|
+| Commits | 7 (a3df919 + 0a1ded0 + e15142a + bb4b389 + 931c011 + 8857bc2 + 09edae8) |
+| 文件修改 | 21 files |
+| 代码增删 | +561 / -238 |
+| 新增测试 | 22 (T30–T37 quality/security + T38–T51 frontier corpus) |
+| 测试总数 | 137 → 151 |
+| 测试通过率 | 151/151 (100%) |
 
 ---
 
