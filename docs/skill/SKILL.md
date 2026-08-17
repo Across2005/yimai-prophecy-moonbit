@@ -9,6 +9,7 @@ description: >-
   P4 增量（2026-08）：decode_pct 路径安全加固 + MCP notifications/* 通配 + fuzzy_match 抽公共 helper
   + drift_report.text_chrf_avg 翻译质量漂移指标 + MQM 严重度数值化（None=0/Minor=1/Major=5/Critical=10）
   + predict/consolidate 拆 5/4 段 fn + routes_meta 单一源化。
+  P4 frontier corpus (2026-08 后续)：新增 10 个跨域双语专业语料（前沿科技 × 2 / 科学 / 数学 × 2 / 哲学 / 文学 / 心理学 / 民航 / 航天），共 60 句 (text, mtype) 对；测试从 137/137 → 151/151。
 tips: >-
   触发词：翻译记忆、TM 检索、术语校验、check_terms、下一步预测、predict、记忆闭环、reward、consolidate、
   BLEU 评测、chrF 评测、风格检查、回译验证、术语冲突、TMPlm、retrieve_prompt、MQM、drift_report、
