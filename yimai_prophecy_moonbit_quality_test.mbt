@@ -172,3 +172,53 @@ test "T34 decode_pct: %2e%2e%2fcmd 显式返回 \"..cmd\" 前缀触发 '..' 检�
   inspect(str_contains(decoded, ".."), content="true")
   inspect(str_contains(decoded, "\\"), content="false")
 }
+
+// ---------------------------------------------------------------------------
+// T35..T37: MQM 严重度数值化（P4：与 AGENTS.md 声明的标准尺度 None=0/Minor=1/Major=5/Critical=10 对齐）
+//   mqm_issue helper 内部用 mqm_severity_to_score 自动计算 severity_score 字段
+// ---------------------------------------------------------------------------
+
+test "T35 mqm_severity_to_score: 标准 4 档全部正确" {
+  inspect(mqm_severity_to_score("none") == 0.0, content="true")
+  inspect(mqm_severity_to_score("minor") == 1.0, content="true")
+  inspect(mqm_severity_to_score("major") == 5.0, content="true")
+  inspect(mqm_severity_to_score("critical") == 10.0, content="true")
+}
+
+test "T36 mqm_issue: 输出 4 字段 (dimension/severity/severity_score/detail)" {
+  let issue = mqm_issue("terminology", "major", "术语违规")
+  match issue {
+    Json::Object(o) => {
+      let has_dim = match o.get("dimension") { Some(Json::String("terminology")) => true; _ => false }
+      let has_sev = match o.get("severity") { Some(Json::String("major")) => true; _ => false }
+      let has_score = match o.get("severity_score") { Some(Json::Number(5.0, ..)) => true; _ => false }
+      let has_detail = match o.get("detail") { Some(Json::String(_)) => true; _ => false }
+      inspect(has_dim && has_sev && has_score && has_detail, content="true")
+    }
+    _ => inspect(false, content="true")
+  }
+}
+
+test "T37 mqm_tags: critical 空译文 issue 带 severity_score=10.0" {
+  let e = ProphecyEngine::make()
+  let r = e.mqm_tags("测试源文", "", 0.0, true)
+  match r {
+    Json::Array(issues) => {
+      let mut found = false
+      for it in issues {
+        match it {
+          Json::Object(o) =>
+            match (o.get("severity"), o.get("severity_score")) {
+              (Some(Json::String("critical")), Some(Json::Number(s, ..))) => {
+                if s == 10.0 { found = true }
+              }
+              _ => ()
+            }
+          _ => ()
+        }
+      }
+      inspect(found, content="true")
+    }
+    _ => inspect(false, content="true")
+  }
+}

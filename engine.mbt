@@ -1409,13 +1409,15 @@ fn ProphecyEngine::_recompute_values(self : ProphecyEngine) -> Unit {
 // D6 固化重放
 // ---------------------------------------------------------------------------
 
-pub fn ProphecyEngine::consolidate(self : ProphecyEngine, prune : Bool) -> Json {
-  // 0. 约束契约：固化前对记忆/转移/角色转移做快照，支持回滚
-  //    （F1：三者须一致回滚，否则记忆与转移表错位导致预测失真）
-  self.snapshot = Some(copy_memories(self.memories))
-  self.snap_trans = Some(copy_trans(self.transitions))
-  self.snap_role = Some(copy_trans(self.role_trans))
-  // 1. 边衰减 + 剪枝
+// P4 重构：consolidate 112 行拆为 4 段私有 fn
+//   - consolidate_edge_decay: 边权按 recency 弹性衰减，< MIN_EDGE 或目标不存在则丢弃
+//   - consolidate_trans_decay: 转移计数乘 TRANS_DECAY，< 0.5 丢弃
+//   - consolidate_prune_nodes: (可选) 压 predictive_value<0.08 & use_count<=1 & 不在 context 的节点
+//   - consolidate_meta_cognition: 近期 50 步命中率 → explore 参数自适应
+//   快照/重算价值仍留在主 fn（属于编排不变量，F1 约束）
+
+// 段 1：边权弹性衰减 + 边剪枝（始终执行；不依赖 prune flag）
+fn consolidate_edge_decay(self : ProphecyEngine) -> Unit {
   for mid, m in self.memories.iter2() {
     let new_edges : Map[String, Double] =
       Map::from_iter(([] : Array[(String, Double)]).iter())
@@ -1434,7 +1436,10 @@ pub fn ProphecyEngine::consolidate(self : ProphecyEngine, prune : Bool) -> Json 
     m2.edges = new_edges
     self.memories.set(mid, m2)
   }
-  // 2. 转移计数衰减（对齐 D1–D8 规范：缓慢衰减，权重 < 0.5 的转移被丢弃）
+}
+
+// 段 2：转移计数衰减（对齐 D1–D8 规范：缓慢衰减，权重 < 0.5 的转移被丢弃）
+fn consolidate_trans_decay(self : ProphecyEngine) -> Unit {
   for a, d in self.transitions.iter2() {
     let newd : Map[String, Double] = Map::from_iter(([] : Array[(String, Double)]).iter())
     for dst, c in d.iter2() {
@@ -1445,36 +1450,39 @@ pub fn ProphecyEngine::consolidate(self : ProphecyEngine, prune : Bool) -> Json 
     }
     self.transitions.set(a, newd)
   }
-  // 3. 重算预测价值
-  self._recompute_values()
-  // 4. (可选) 压缩零预测价值噪声节点
+}
+
+// 段 3：(可选) 压缩零预测价值噪声节点；返回剪枝数
+fn consolidate_prune_nodes(self : ProphecyEngine) -> Int {
   let mut removed = 0
-  if prune {
-    let ids : Array[String] = []
-    for mid, _ in self.memories.iter2() {
-      ids.push(mid)
-    }
-    for mid in ids {
-      match self.memories.get(mid) {
-        Some(m) => {
-          if m.predictive_value < 0.08 && m.use_count <= 1 &&
-             !arr_contains(self.context, mid) {
-            for _, other in self.memories.iter2() {
-              other.edges.remove(mid)
-            }
-            self.transitions.remove(mid)
-            for _, d in self.transitions.iter2() {
-              d.remove(mid)
-            }
-            self.memories.remove(mid)
-            removed = removed + 1
+  let ids : Array[String] = []
+  for mid, _ in self.memories.iter2() {
+    ids.push(mid)
+  }
+  for mid in ids {
+    match self.memories.get(mid) {
+      Some(m) => {
+        if m.predictive_value < 0.08 && m.use_count <= 1 &&
+           !arr_contains(self.context, mid) {
+          for _, other in self.memories.iter2() {
+            other.edges.remove(mid)
           }
+          self.transitions.remove(mid)
+          for _, d in self.transitions.iter2() {
+            d.remove(mid)
+          }
+          self.memories.remove(mid)
+          removed = removed + 1
         }
-        None => ()
       }
+      None => ()
     }
   }
-  // 5. 元认知调控：用近期命中率自适应探索/利用
+  removed
+}
+
+// 段 4：元认知调控 — 近期 50 步命中率 → explore 参数自适应；返回 hr 给主 fn 算 target_lr
+fn consolidate_meta_cognition(self : ProphecyEngine) -> Double {
   let recent : Array[Int] = []
   let start = if self.meta_hits.length() > 50 {
     self.meta_hits.length() - 50
@@ -1493,6 +1501,24 @@ pub fn ProphecyEngine::consolidate(self : ProphecyEngine, prune : Bool) -> Json 
     hr = s.to_double() / recent.length().to_double()
   }
   self.explore = clamp01(max0(0.0, (0.6 - hr) * 2.0))
+  hr
+}
+
+pub fn ProphecyEngine::consolidate(self : ProphecyEngine, prune : Bool) -> Json {
+  // 0. 约束契约：固化前对记忆/转移/角色转移做快照，支持回滚
+  //    （F1：三者须一致回滚，否则记忆与转移表错位导致预测失真）
+  self.snapshot = Some(copy_memories(self.memories))
+  self.snap_trans = Some(copy_trans(self.transitions))
+  self.snap_role = Some(copy_trans(self.role_trans))
+  // 1-2. 衰减（始终执行）
+  self.consolidate_edge_decay()
+  self.consolidate_trans_decay()
+  // 3. 重算预测价值
+  self._recompute_values()
+  // 4. (可选) 剪枝
+  let removed = if prune { self.consolidate_prune_nodes() } else { 0 }
+  // 5. 元认知（同时返回 hr 给 target_lr 用）
+  let hr = self.consolidate_meta_cognition()
   // 自适应学习率：近期命中率驱动（高→更快适应，低→更稳）
   let target_lr = if hr > 0.8 {
     HEBB_LR * 1.2
@@ -2267,6 +2293,27 @@ pub fn ProphecyEngine::qe_score(
 }
 
 // MQM 维度标注：terminology / accuracy / fluency / omission（含严重度）
+// MQM 严重度数值化：与 AGENTS.md 声明的标准尺度对齐（None=0/Minor=1/Major=5/Critical=10）
+//   P4 增量：与 mqm_tags 的 severity 字符串并列输出 severity_score 数值，
+//   便于跨工具可比性（标准 MQM 评分器可直接消费）。
+pub fn mqm_severity_to_score(sev : String) -> Double {
+  if sev == "none" { 0.0 }
+  else if sev == "minor" { 1.0 }
+  else if sev == "major" { 5.0 }
+  else if sev == "critical" { 10.0 }
+  else { 0.0 }  // 未知/未设置按 0 算（保守）
+}
+
+// 构造单个 MQM issue Json（含 dimension / severity / severity_score / detail 四字段）
+pub fn mqm_issue(dimension : String, severity : String, detail : String) -> Json {
+  obj([
+    ("dimension", str_json(dimension)),
+    ("severity", str_json(severity)),
+    ("severity_score", num_json(mqm_severity_to_score(severity))),
+    ("detail", str_json(detail)),
+  ])
+}
+
 pub fn ProphecyEngine::mqm_tags(
   _self : ProphecyEngine,
   source : String,
@@ -2276,49 +2323,29 @@ pub fn ProphecyEngine::mqm_tags(
 ) -> Json {
   let issues : Array[Json] = []
   if !term_ok {
-    issues.push(obj([
-      ("dimension", str_json("terminology")),
-      ("severity", str_json("major")),
-      ("detail", str_json("术语未通过一致性校验（check_terms 检出违规）")),
-    ]))
+    issues.push(mqm_issue("terminology", "major", "术语未通过一致性校验（check_terms 检出违规）"))
   }
   // 跨语种（如 英→中）字符级相似度天然偏低，char_ratio 不可作为 accuracy 判据；
   // 译文为空时 char_ratio 恒为 0，亦无意义（空译文由 fluency/critical 覆盖），跳过
   let cross = cross_script(source, target)
   let cr = char_ratio(source, target)
   if !cross && target.length() > 0 && cr < 0.5 {
-    issues.push(obj([
-      ("dimension", str_json("accuracy")),
-      ("severity", str_json("major")),
-      ("detail", str_json("源-译文 字符级相似度过低 (<0.5)")),
-    ]))
+    issues.push(mqm_issue("accuracy", "major", "源-译文 字符级相似度过低 (<0.5)"))
   }
   if target.length() == 0 {
-    issues.push(obj([
-      ("dimension", str_json("fluency")),
-      ("severity", str_json("critical")),
-      ("detail", str_json("译文为空")),
-    ]))
+    issues.push(mqm_issue("fluency", "critical", "译文为空"))
   } else {
     let lr = target.length().to_double() / max0(1.0, source.length().to_double())
     // 跨语种长度比天然偏离（英→中译文更短），不可作为流畅性判据；
     // 源文为空时长度比无意义，亦跳过（避免空源文误报流畅性）
     if !cross && source.length() > 0 && (lr > 2.5 || lr < 0.4) {
-      issues.push(obj([
-        ("dimension", str_json("fluency")),
-        ("severity", str_json("minor")),
-        ("detail", str_json("译文长度比异常（" + r4(lr).to_string() + "），疑似流畅性问题")),
-      ]))
+      issues.push(mqm_issue("fluency", "minor", "译文长度比异常（" + r4(lr).to_string() + "），疑似流畅性问题"))
     }
   }
   // 跨语种时译文长度通常远短于源文（英→中），长度比不可作为 omission 判据；
   // target 为空已由 fluency/critical 覆盖，此处再加 target.length()>0 防止同一问题重复标注
   if !cross && target.length() > 0 && target.length().to_double() < 0.5 * source.length().to_double() && source.length() > 0 {
-    issues.push(obj([
-      ("dimension", str_json("omission")),
-      ("severity", str_json("major")),
-      ("detail", str_json("译文过短（< 源文 50%），疑似漏译")),
-    ]))
+    issues.push(mqm_issue("omission", "major", "译文过短（< 源文 50%），疑似漏译"))
   }
   // 数字守门（v1，路线图 §三「准」的核心增量）：
   //   源文有数字 / 单位而译文完全未保留 → omission/critical（漏译数字是本地化高危硬伤）
@@ -2327,11 +2354,8 @@ pub fn ProphecyEngine::mqm_tags(
   let src_nums = numeric_tokens(source)
   let tgt_nums = numeric_tokens(target)
   if src_nums.length() > 0 && tgt_nums.length() == 0 {
-    issues.push(obj([
-      ("dimension", str_json("numeric_consistency")),
-      ("severity", str_json("critical")),
-      ("detail", str_json("源文含数字/单位（" + src_nums.length().to_string() + " 处）但译文未保留任意数字")),
-    ]))
+    issues.push(mqm_issue("numeric_consistency", "critical",
+      "源文含数字/单位（" + src_nums.length().to_string() + " 处）但译文未保留任意数字"))
   } else if src_nums.length() > 0 && tgt_nums.length() > 0 {
     // 集合差异：missing = 源有译无，extra = 译有源无
     let src_set : Map[String, Bool] = Map::from_iter(([] : Array[(String, Bool)]).iter())
@@ -2359,11 +2383,7 @@ pub fn ProphecyEngine::mqm_tags(
     if missing > 0 || extra > 0 {
       let detail = "数字集合不一致：源" + src_nums.length().to_string() + " 译" + tgt_nums.length().to_string() +
         " (missing=" + missing.to_string() + ", extra=" + extra.to_string() + ")"
-      issues.push(obj([
-        ("dimension", str_json("numeric_consistency")),
-        ("severity", str_json("major")),
-        ("detail", str_json(detail)),
-      ]))
+      issues.push(mqm_issue("numeric_consistency", "major", detail))
     }
   }
   arr_json(issues)

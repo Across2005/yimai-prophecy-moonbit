@@ -56,10 +56,24 @@ async fn load_store() -> Unit {
 //   返回 Bool：true=落盘成功（含 P3-2 节流跳过场景），false=写盘/rename 真正失败
 //   handler 据此决定 200 / 5xx；之前只 println 丢信号
 //   P1 增量：每次退出都更新 last_save_ok / last_save_ts；/api/health 据此判定 degraded
+//   P4 防御：save_busy / save_pending 全局 ref 触发的「补落递归」是状态机自循环；
+//   当前 MoonBit 协作式调度下不会进入深栈（仅一次补落），但保留显式深度守卫
+//   以防未来换抢占式 runtime 出现「pending 反复置位」导致栈深；MAX_SAVE_DEPTH=3
+//   已远超实际需求，纯防御性。
+const MAX_SAVE_DEPTH : Int = 3
+let save_depth : @ref.Ref[Int] = @ref.new(0)
+
 async fn save_store() -> Bool {
   if save_busy.val {
     save_pending.val = true   // 在途落盘未完成，标需补落最新状态
     return true                // 节流跳过视为"成功"（最终一致性由后续补落保证）
+  }
+  // 深度守卫：未来换 runtime 时若 pending 在补落中被反复置位，截断在 MAX_SAVE_DEPTH
+  save_depth.val = save_depth.val + 1
+  if save_depth.val > MAX_SAVE_DEPTH {
+    println("save_store: 递归深度超 MAX_SAVE_DEPTH，截断（防御性）")
+    save_depth.val = 0
+    return true
   }
   save_busy.val = true
   let ok : Bool = try {
@@ -79,7 +93,8 @@ async fn save_store() -> Bool {
   // P1：每次 save_store 退出都更新结果（健康端点查询路径最短）
   last_save_ok.val = ok
   last_save_ts.val = @env.now()
-  if save_pending.val {
+  save_depth.val = save_depth.val - 1
+  if save_pending.val && save_depth.val == 0 {
     save_pending.val = false
     // 补落成功与否不冲销当前 ok（已是最新的"曾经成功"语义；真正落盘失败会在递归里继续报）
     let _ = save_store()
