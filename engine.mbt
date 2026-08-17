@@ -951,41 +951,17 @@ pub fn ProphecyEngine::recall(
 // D3 预测前向模型 + D7 不确定性
 // ---------------------------------------------------------------------------
 
-pub fn ProphecyEngine::predict(self : ProphecyEngine, k : Int) -> Json {
-  // 快：预测缓存（相同上下文签名且引擎未变更时直接返回，跳过转移聚合；引擎变更时全量失效，非 LRU）
-  let ckeyb = StringBuilder()
-  for i = 0; i < self.context.length(); i = i + 1 {
-    if i > 0 {
-      ckeyb.write_char('|')
-    }
-    ckeyb.write_string(self.context[i])
-  }
-  let ckey = ckeyb.to_string() + "|k" + k.to_string()
-  match self.pred_cache.get(ckey) {
-    Some(cached) => {
-      let out = get_obj(cached, "out")
-      let topk = get_str_arr(cached, "topk")
-      if topk.length() > 0 {
-        self.stats_preds = self.stats_preds + 1
-        self.last_pred = topk
-      } else {
-        self.last_pred = []
-      }
-      for d in topk {
-        match self.memories.get(d) {
-          Some(m) => {
-            m.predict_count = m.predict_count + 1
-            self.memories.set(d, m)
-          }
-          None => ()
-        }
-      }
-      return out
-    }
-    None => ()
-  }
+// P4 重构：把 predict 269 行拆为 3 段私有 fn
+//   - collect_activations: 上下文→激活权重（最近项权重最高）
+//   - aggregate_transitions: 一阶转移 + D8 角色回退聚合到 score+path
+//   - rank_and_pack: 归一化 + 排名 + 熵 + pack Json（含 predict_count 积累）
+//   predict 主体只做缓存、orchestrator 与缓存写；保留 R15 排序依赖（Map 插入序）
+
+// 收集上下文激活：context 中每个 mid 获得 (1+1/n)^exp 形式的近期权重（取最大，重复 mid 不重复加权）
+fn predict_collect_activations(self : ProphecyEngine) -> Map[String, Double] {
   let act : Map[String, Double] = Map::from_iter(([] : Array[(String, Double)]).iter())
   let n = self.context.length()
+  if n == 0 { return act }
   let exp = 2.0 - self.explore               // 元认知：探索度高时降低幂次->更广利用
   for i = 0; i < n; i = i + 1 {
     let mid = self.context[i]
@@ -999,10 +975,18 @@ pub fn ProphecyEngine::predict(self : ProphecyEngine, k : Int) -> Json {
       None => ()
     }
   }
-  // 汇总：每个上下文节点的转移概率按激活权重累加
-  let score : Map[String, Double] = Map::from_iter(([] : Array[(String, Double)]).iter())
-  let path : Map[String, Array[Json]] =
-    Map::from_iter(([] : Array[(String, Array[Json])]).iter())
+  act
+}
+
+// 一阶转移 + D8 角色回退聚合到 score + path（in-place 修改）
+//   转移动作（含 Top-8 剪枝快路径）后，紧接 D8 概念抽象回退：具体转移稀疏时用
+//   角色级 (role_trans × role_index) 规律补位，权重 0.5。
+fn predict_aggregate_transitions(
+  self : ProphecyEngine,
+  act : Map[String, Double],
+  score : Map[String, Double],
+  path : Map[String, Array[Json]],
+) -> Unit {
   for a, aw in act.iter2() {
     let tt : Double = match self.transitions.get(a) {
       Some(trans) => {
@@ -1145,7 +1129,7 @@ pub fn ProphecyEngine::predict(self : ProphecyEngine, k : Int) -> Json {
       None => ()
     }
   }
-  // 归一化
+  // 归一化（in-place 修改 score）
   let mut z = 0.0
   for _, v in score.iter2() {
     z = z + v
@@ -1159,6 +1143,15 @@ pub fn ProphecyEngine::predict(self : ProphecyEngine, k : Int) -> Json {
     let v = match score.get(d) { Some(x) => x; None => 0.0 }
     score.set(d, v / znorm)
   }
+}
+
+// 排名 + 熵 + pack Json；副作用：更新 self.stats_preds/last_pred、topk mid 的 predict_count
+fn predict_rank_and_pack(
+  self : ProphecyEngine,
+  score : Map[String, Double],
+  path : Map[String, Array[Json]],
+  k : Int,
+) -> (Json, Array[String]) {
   // 排名
   let ranked : Array[(String, Double)] = []
   for d, v in score.iter2() {
@@ -1214,6 +1207,49 @@ pub fn ProphecyEngine::predict(self : ProphecyEngine, k : Int) -> Json {
     ("confidence", num_json(if preds.length() > 0 { r4(ranked[0].1) } else { 0.0 })),
     ("uncertainty", num_json(r4(entropy))),
   ])
+  (out, topk)
+}
+
+pub fn ProphecyEngine::predict(self : ProphecyEngine, k : Int) -> Json {
+  // 快：预测缓存（相同上下文签名且引擎未变更时直接返回，跳过转移聚合；引擎变更时全量失效，非 LRU）
+  let ckeyb = StringBuilder()
+  for i = 0; i < self.context.length(); i = i + 1 {
+    if i > 0 {
+      ckeyb.write_char('|')
+    }
+    ckeyb.write_string(self.context[i])
+  }
+  let ckey = ckeyb.to_string() + "|k" + k.to_string()
+  match self.pred_cache.get(ckey) {
+    Some(cached) => {
+      let out = get_obj(cached, "out")
+      let topk = get_str_arr(cached, "topk")
+      if topk.length() > 0 {
+        self.stats_preds = self.stats_preds + 1
+        self.last_pred = topk
+      } else {
+        self.last_pred = []
+      }
+      for d in topk {
+        match self.memories.get(d) {
+          Some(m) => {
+            m.predict_count = m.predict_count + 1
+            self.memories.set(d, m)
+          }
+          None => ()
+        }
+      }
+      return out
+    }
+    None => ()
+  }
+  // 3 段编排（参见对应 fn 注释）：collect → aggregate (含 2nd-order + 偏置 + 归一化) → rank+pack
+  let act = self.predict_collect_activations()
+  let score : Map[String, Double] = Map::from_iter(([] : Array[(String, Double)]).iter())
+  let path : Map[String, Array[Json]] =
+    Map::from_iter(([] : Array[(String, Array[Json])]).iter())
+  self.predict_aggregate_transitions(act, score, path)
+  let (out, topk) = self.predict_rank_and_pack(score, path, k)
   // 容量守卫：pred_cache 超上限时清空（内部态，零确定性影响；防长跑无界增长）
   if self.pred_cache.length() >= PRED_CACHE_MAX {
     self.pred_cache = Map::from_iter(([] : Array[(String, Json)]).iter())
