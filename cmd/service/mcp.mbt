@@ -205,16 +205,19 @@ fn all_tools() -> Json {
   @lib.arr_json(tools)
 }
 
+// 工具名清单（24 项；与 all_tools 内的 tool_def name 必须同步）。
+// P4 抽出来为顶层 let，便于 is_known_tool 用 Array::contains 替代手写循环，
+// 减少一处 24 字符串表（all_tools 仍硬编码，因 tool_def 的 name/desc/props 三元组不便拆分）。
+pub let known_tool_names : Array[String] = [
+  "fuzzy_match", "add_tm", "check_terms", "concordance", "qe_auto", "predict", "observe",
+  "recall", "explain", "reward", "consolidate", "tm_count", "ping", "retrieve_prompt", "bleu", "chrf",
+  "style_check", "style_report", "back_align", "term_conflicts", "fed_export", "fed_import", "distill_inject",
+  "active_learning",
+]
+
 fn is_known_tool(name : String) -> Bool {
-  let known = ["fuzzy_match", "add_tm", "check_terms", "concordance", "qe_auto", "predict", "observe",
-    "recall", "explain", "reward", "consolidate", "tm_count", "ping", "retrieve_prompt", "bleu", "chrf",
-    "style_check", "style_report", "back_align", "term_conflicts", "fed_export", "fed_import", "distill_inject",
-    "active_learning"]
-  let mut found = false
-  for k in known {
-    if k == name { found = true }
-  }
-  found
+  // P4：用 Array::contains 替代手写 found 循环；性能 O(n) 同，但更声明式。
+  Array::contains(known_tool_names, name)
 }
 
 // 分派工具调用（写操作后落盘；async 因调用 save_store）

@@ -1734,6 +1734,67 @@ fn ProphecyEngine::count_tm(self : ProphecyEngine) -> Int {
   n
 }
 
+// P4 重构：抽出 fuzzy_match / fuzzy_match_full 公共打分+pack 逻辑到私有 helper
+//   - score_one_tm: 算单个 TM 的 sim_tok/sim_ng/sim_ts/sim_pos 加权和; 低于 threshold 返 None
+//   - pack_fuzzy_top: 对已排序 cands 抽 Top-K 并 pack JSON（带 sim_tfidf/sim_char 重算）
+//   两个 public fn (fuzzy_match / fuzzy_match_full) 只差「是否走 IDF 倒排剪枝」
+//   核心打分+pack 共享，确保 R15 排序与 score 分量一致。
+
+// 单 TM 打分：低于 threshold 返 None，否则返 (mid, score, sim_tok, sim_ng, sim_ts)
+fn fuzzy_score_one(
+  self : ProphecyEngine,
+  mid : String,
+  m : MemoryNode,
+  qv : Map[String, Double],
+  q2 : Array[String],
+  qtok : Array[String],
+  anchor : String,
+  weights : (Double, Double, Double, Double),
+  threshold : Double,
+) -> Option[(String, Double, Double, Double, Double)] {
+  if m.mtype != "tm" { return None }
+  let (w_tok, w_ng, w_ts, w_pos) = weights
+  let sim_tok = idf_dice(qv, m.vec, self.tm_idf)
+  let sim_ng = dice_coeff(q2, m.tm_ngrams)
+  let sim_ts = dice_coeff(qtok, unique(m.tm_toks))
+  let sim_pos = if anchor != "" && term_hit(m.text, anchor) { 1.0 } else { 0.0 }
+  let score = w_tok * sim_tok + w_ng * sim_ng + w_ts * sim_ts + w_pos * sim_pos
+  if score >= threshold {
+    Some((mid, score, sim_tok, sim_ng, sim_ts))
+  } else {
+    None
+  }
+}
+
+// 对排序后的 cands 抽 Top-K 并 pack JSON（白盒四分量）
+fn fuzzy_pack_top(
+  self : ProphecyEngine,
+  cands : Array[(String, Double, Double, Double, Double)],
+  k : Int,
+  query : String,
+  qv : Map[String, Double],
+) -> Array[Json] {
+  pack_topk_json(cands, k, fn(c) {
+    let (mid, score, st, sng, sts) = c
+    match self.memories.get(mid) {
+      Some(m) =>
+        Some(obj([
+          ("id", str_json(mid)),
+          ("source", str_json(m.text)),
+          ("target", str_json(m.translation)),
+          ("score", num_json(r4(score))),
+          ("match_pct", num_json(r4(score * 100.0))),
+          ("sim_token", num_json(r4(st))),
+          ("sim_tfidf", num_json(r4(tfidf_cosine(qv, m.vec, self.tm_idf)))),
+          ("sim_char", num_json(r4(char_ratio(query, m.text)))),
+          ("sim_ngram", num_json(r4(sng))),
+          ("sim_tokenset", num_json(r4(sts))),
+        ]))
+      None => None
+    }
+  })
+}
+
 pub fn ProphecyEngine::fuzzy_match(
   self : ProphecyEngine,
   query : String,
@@ -1742,7 +1803,6 @@ pub fn ProphecyEngine::fuzzy_match(
   weights? : (Double, Double, Double, Double) = (0.55, 0.20, 0.15, 0.10),
 ) -> Json {
   self.ensure_tm_idf()
-  let (w_tok, w_ng, w_ts, w_pos) = weights
   let qv = tf_vector(yimai_tokenize(query))
   let q2 = char_ngrams(query, 2)
   let qtok = unique(yimai_tokenize(query))
@@ -1769,60 +1829,28 @@ pub fn ProphecyEngine::fuzzy_match(
       for mid, _ in set.iter2() {
         match self.memories.get(mid) {
           Some(m) =>
-            if m.mtype == "tm" {
-              let sim_tok = idf_dice(qv, m.vec, self.tm_idf)
-              let sim_ng = dice_coeff(q2, m.tm_ngrams)
-              let sim_ts = dice_coeff(qtok, unique(m.tm_toks))
-              let sim_pos = if anchor != "" && term_hit(m.text, anchor) { 1.0 } else { 0.0 }
-              let score = w_tok * sim_tok + w_ng * sim_ng + w_ts * sim_ts + w_pos * sim_pos
-              if score >= threshold {
-                cands.push((mid, score, sim_tok, sim_ng, sim_ts))
-              }
+            match self.fuzzy_score_one(mid, m, qv, q2, qtok, anchor, weights, threshold) {
+              Some(c) => cands.push(c)
+              None => ()
             }
           None => ()
         }
       }
     None =>
       for mid, m in self.memories.iter2() {
-        if m.mtype != "tm" {
-          continue
-        }
-        let sim_tok = idf_dice(qv, m.vec, self.tm_idf)
-        let sim_ng = dice_coeff(q2, m.tm_ngrams)
-        let sim_ts = dice_coeff(qtok, unique(m.tm_toks))
-        let sim_pos = if anchor != "" && term_hit(m.text, anchor) { 1.0 } else { 0.0 }
-        let score = w_tok * sim_tok + w_ng * sim_ng + w_ts * sim_ts + w_pos * sim_pos
-        if score >= threshold {
-          cands.push((mid, score, sim_tok, sim_ng, sim_ts))
+        match self.fuzzy_score_one(mid, m, qv, q2, qtok, anchor, weights, threshold) {
+          Some(c) => cands.push(c)
+          None => ()
         }
       }
   }
   sort_desc_by_key(cands, fn(c) { c.1 })
-  let out = pack_topk_json(cands, k, fn(c) {
-    let (mid, score, st, sng, sts) = c
-    match self.memories.get(mid) {
-      Some(m) =>
-        Some(obj([
-          ("id", str_json(mid)),
-          ("source", str_json(m.text)),
-          ("target", str_json(m.translation)),
-          ("score", num_json(r4(score))),
-          ("match_pct", num_json(r4(score * 100.0))),
-          ("sim_token", num_json(r4(st))),
-          ("sim_tfidf", num_json(r4(tfidf_cosine(qv, m.vec, self.tm_idf)))),
-          ("sim_char", num_json(r4(char_ratio(query, m.text)))),
-          ("sim_ngram", num_json(r4(sng))),
-          ("sim_tokenset", num_json(r4(sts))),
-        ]))
-      None => None
-    }
-  })
-  arr_json(out)
+  arr_json(self.fuzzy_pack_top(cands, k, query, qv))
 }
 
 // P1：全图 fuzzy_match（不剪枝），作为倒排剪枝的「对照基线」，供 A/B 与回归测试用。
-// 算法与 fuzzy_match 同；唯一差异：跳过 count_tm/fuzzy_candidate_set 路径，
-// 始终遍历所有 TM。Top-K 与 fuzzy_match 在 query 真命中的 TM 上应一致（差 < 0.01）。
+// P4 重构：改调公共 helper fuzzy_score_one + fuzzy_pack_top；与 fuzzy_match 共享打分+pack 逻辑，
+// 唯一差异是不走 IDF 倒排剪枝路径。
 pub fn ProphecyEngine::fuzzy_match_full(self : ProphecyEngine, query : String, k : Int, threshold : Double) -> Json {
   self.ensure_tm_idf()
   let qv = tf_vector(yimai_tokenize(query))
@@ -1831,37 +1859,13 @@ pub fn ProphecyEngine::fuzzy_match_full(self : ProphecyEngine, query : String, k
   let anchor = first_anchor(query)
   let cands : Array[(String, Double, Double, Double, Double)] = []
   for mid, m in self.memories.iter2() {
-    if m.mtype != "tm" { continue }
-    let sim_tok = idf_dice(qv, m.vec, self.tm_idf)
-    let sim_ng = dice_coeff(q2, m.tm_ngrams)
-    let sim_ts = dice_coeff(qtok, unique(m.tm_toks))
-    let sim_pos = if anchor != "" && term_hit(m.text, anchor) { 1.0 } else { 0.0 }
-    let score = 0.55 * sim_tok + 0.20 * sim_ng + 0.15 * sim_ts + 0.10 * sim_pos
-    if score >= threshold {
-      cands.push((mid, score, sim_tok, sim_ng, sim_ts))
+    match self.fuzzy_score_one(mid, m, qv, q2, qtok, anchor, (0.55, 0.20, 0.15, 0.10), threshold) {
+      Some(c) => cands.push(c)
+      None => ()
     }
   }
   sort_desc_by_key(cands, fn(c) { c.1 })
-  let out = pack_topk_json(cands, k, fn(c) {
-    let (mid, score, st, sng, sts) = c
-    match self.memories.get(mid) {
-      Some(m) =>
-        Some(obj([
-          ("id", str_json(mid)),
-          ("source", str_json(m.text)),
-          ("target", str_json(m.translation)),
-          ("score", num_json(r4(score))),
-          ("match_pct", num_json(r4(score * 100.0))),
-          ("sim_token", num_json(r4(st))),
-          ("sim_tfidf", num_json(r4(tfidf_cosine(qv, m.vec, self.tm_idf)))),
-          ("sim_char", num_json(r4(char_ratio(query, m.text)))),
-          ("sim_ngram", num_json(r4(sng))),
-          ("sim_tokenset", num_json(r4(sts))),
-        ]))
-      None => None
-    }
-  })
-  arr_json(out)
+  arr_json(self.fuzzy_pack_top(cands, k, query, qv))
 }
 
 // P1 候选集构造：取 query 唯一 token 按 IDF 降序的前 top_k 个，合并其 postings 得候选 mid 集合。
@@ -2621,6 +2625,8 @@ pub fn ProphecyEngine::metrics(self : ProphecyEngine) -> Json {
 }
 
 // 两快照（to_json 输出）对比的漂移报告：按 (type|is_term|text|translation) 键算 TM/术语 增删
+// P4 增强：在 after snapshot 上加 text_chrf_avg 字段，算所有 TM (text, translation) 的 chrF 平均
+//   作为「记忆库整体翻译质量」指标；纯本地 (chrf_score 零依赖)，无云端。
 pub fn ProphecyEngine::drift_report(
   _self : ProphecyEngine,
   before : Json,
@@ -2662,6 +2668,34 @@ pub fn ProphecyEngine::drift_report(
   for k in a_keys {
     if str_contains(k, "tm|") { a_tm = a_tm + 1 } else { a_term = a_term + 1 }
   }
+  // P4：after snapshot 所有 TM (text, translation) chrF 平均 — 翻译质量漂移指标
+  //   注：to_json 字段名是 "type" 不是 "mtype"（见 node_key L2195）
+  let mut chrf_sum = 0.0
+  let mut chrf_n = 0
+  match a_mem {
+    Json::Object(m) =>
+      for _, mn in m.iter2() {
+        match mn {
+          Json::Object(nobj) => {
+            let is_tm = match nobj.get("type") {
+              Some(Json::String(s)) => s == "tm"
+              _ => false
+            }
+            if is_tm {
+              let text = get_str(mn, "text")
+              let trans = get_str(mn, "translation")
+              if text != "" && trans != "" {
+                chrf_sum = chrf_sum + chrf_score(text, trans)
+                chrf_n = chrf_n + 1
+              }
+            }
+          }
+          _ => ()
+        }
+      }
+    _ => ()
+  }
+  let chrf_avg = if chrf_n > 0 { r4(chrf_sum / chrf_n.to_double()) } else { 0.0 }
   obj([
     ("before_tm", num_json(b_tm.to_double())),
     ("after_tm", num_json(a_tm.to_double())),
@@ -2671,6 +2705,9 @@ pub fn ProphecyEngine::drift_report(
     ("tm_removed", num_json(tm_removed.to_double())),
     ("term_added", num_json(term_added.to_double())),
     ("term_removed", num_json(term_removed.to_double())),
+    // P4 新增：after snapshot 翻译质量漂移指标（chrF 平均，0..1）
+    ("text_chrf_avg", num_json(chrf_avg)),
+    ("text_chrf_n", num_json(chrf_n.to_double())),
   ])
 }
 

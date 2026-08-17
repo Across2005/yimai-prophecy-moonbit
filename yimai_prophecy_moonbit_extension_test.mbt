@@ -232,6 +232,30 @@ test "E13 漂移：新增 TM 后被检出" {
   }
 }
 
+// E13b：P4 增量 — drift_report 新增 text_chrf_avg + text_chrf_n 字段
+//   验证：1 个 TM 翻译 chrF 在 (0, 1)（"新条目源" vs "新条目译" 字符 1-gram 重合 3/4，
+//   字符 2-gram 不重合，词 1-gram 不重合；综合 avg 在 (0, 1)）；n=1
+test "E13b 漂移报告：text_chrf_avg 字段正确返回 chrF 平均" {
+  let e0 = ProphecyEngine::make()
+  let before = e0.to_json()
+  let e1 = ProphecyEngine::make()
+  let _ = e1.add_tm("新条目源", "新条目译")
+  let after = e1.to_json()
+  let d = e1.drift_report(before, after)
+  match d {
+    Json::Object(o) =>
+      match (o.get("text_chrf_avg"), o.get("text_chrf_n")) {
+        (Some(Json::Number(avg, ..)), Some(Json::Number(n, ..))) => {
+          // avg 严格在 (0, 1) — 字符 1-gram 重合 3/4 (0.75) 但 2-gram/词都不重合
+          inspect(avg > 0.0 && avg < 1.0, content="true")
+          inspect(n == 1.0, content="true")
+        }
+        _ => inspect(false, content="true")
+      }
+    _ => inspect(false, content="true")
+  }
+}
+
 // ---- 审查回归（open-code-review 发现并修复） ----
 
 test "E14 parse_tmx 跨语种：en-US/zh-CN 双 <tuv> 正确建 TM（回归：<tu>/<tuv> 切分碰撞）" {
