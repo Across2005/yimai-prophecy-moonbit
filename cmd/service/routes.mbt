@@ -183,13 +183,16 @@ fn content_type(path : String) -> String {
   else { "text/plain" }
 }
 
-// 服务 web/ 目录下静态文件（防路径穿越：拒绝 .. 与反斜杠）
+// 服务 web/ 目录下静态文件（防路径穿越：拒绝 .. 与反斜杠；先 percent-decode 防 %2e%2e 绕过）
 async fn serve_static(path : String, conn : @http.ServerConnection) -> Unit {
-  let rel = if path == "/" || path == "/index.html" {
+  let rel_raw = if path == "/" || path == "/index.html" {
     "index.html"
   } else {
     path.substring(start=1, end=path.length())
   }
+  // P4 安全加固：先 URL 解码再做".." / "\" 检查，阻止 %2e%2e%2f 等编码形式绕过。
+  // decode_pct 仅做 %XX 单字节解码，不解析 '+' 也不做路径规范化，保守可控。
+  let rel = @lib.decode_pct(rel_raw)
   if @lib.str_contains(rel, "..") || @lib.str_contains(rel, "\\") {
     conn.send_response(403, "Forbidden")
     conn.end_response()
@@ -725,7 +728,7 @@ async fn handle_health(conn : @http.ServerConnection) -> Unit {
       ("uptime_seconds", uptime_s.to_json()),
       ("last_save_status", last_ok.to_json()),
       ("last_save_age_seconds", age_s.to_json()),
-      ("version", @lib.str_json("0.1.0")),
+      ("version", @lib.str_json(@lib.api_version)),
     ]).stringify(),
   )
 }

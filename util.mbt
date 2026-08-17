@@ -44,6 +44,54 @@ fn to_lower_ascii(s : String) -> String {
   b.to_string()
 }
 
+// URL 百分号解码（仅解码 %XX 形式；保留 '+' 为字面，不做 form-encoding 转换）。
+//   用途：serve_static 在路径安全检查前先解码，让 %2e%2e%2f 不能绕过 ".." 字符串检查。
+//   非 ASCII 字符按 UTF-8 多字节原样透传；不识别的 % 序列保留原样（保守策略）。
+//   零依赖；不调 @fs / @io，纯字符串处理。
+pub fn decode_pct(s : String) -> String {
+  let b = StringBuilder()
+  let chars = s.to_array()
+  let n = chars.length()
+  let mut i = 0
+  while i < n {
+    let cur = chars[i]
+    if cur == '%' && i + 2 < n {
+      // 尝试解码 %XX
+      let d1 = hex_nibble_char(chars[i + 1])
+      let d2 = hex_nibble_char(chars[i + 2])
+      match (d1, d2) {
+        (Some(n1), Some(n2)) => {
+          b.write_char((n1 * 16 + n2).unsafe_to_char())
+          i = i + 3
+          continue
+        }
+        _ => ()
+      }
+    }
+    b.write_char(cur)
+    i = i + 1
+  }
+  b.to_string()
+}
+
+// 单个十六进制字符 → 0..15；非 hex 返回 None
+fn hex_nibble_char(c : Char) -> Option[Int] {
+  let v = c.to_int()
+  if v >= 0x30 && v <= 0x39 { Some(v - 0x30) }                    // 0-9
+  else if v >= 0x41 && v <= 0x46 { Some(v - 0x41 + 10) }          // A-F
+  else if v >= 0x61 && v <= 0x66 { Some(v - 0x61 + 10) }          // a-f
+  else { None }
+}
+
+// 单个十六进制字符 → 0..15；非 hex 返回 None
+fn hex_nibble(b : Byte) -> Option[Int] {
+  let v = b.to_int()
+  if v >= 0x30 && v <= 0x39 { Some(v - 0x30) }                    // 0-9
+  else if v >= 0x41 && v <= 0x46 { Some(v - 0x41 + 10) }          // A-F
+  else if v >= 0x61 && v <= 0x66 { Some(v - 0x61 + 10) }          // a-f
+  else { None }
+}
+
 // 概念抽象·角色抽取：取文本前 4 字作为粗略类别键（跨主题稳定）
 // 注意：须对短文本做长度钳制，否则 text[:4] 在 length<4 时抛异常
 pub fn role_of(text : String) -> String {

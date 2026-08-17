@@ -279,6 +279,7 @@ async fn invoke_tool(name : String, args : Json) -> Json {
     @lib.obj([("status", @lib.str_json("imported"))])
   } else if name == "distill_inject" {
     let table : Map[String, Double] = Map::new()
+    let mut ignored = 0
     let tbl = args
     match tbl {
       Json::Object(o) =>
@@ -287,7 +288,8 @@ async fn invoke_tool(name : String, args : Json) -> Json {
             for k, v in t.iter2() {
               match v {
                 Json::Number(n, ..) => table.set(k, n)
-                _ => ()
+                // P4：累计被跳过的非数值字段（client 传 {"role":"foo"} 等 schema 错误时可感知）
+                _ => ignored = ignored + 1
               }
             }
           _ => ()
@@ -296,7 +298,11 @@ async fn invoke_tool(name : String, args : Json) -> Json {
     }
     engine_ref.val.inject_distillation(table)
     let _ = save_store()  // save_store 已返回 Bool 不再抛（P0 路由加固一致化）
-    @lib.obj([("status", @lib.str_json("injected")), ("keys", @lib.num_json(table.size().to_double()))])
+    @lib.obj([
+      ("status", @lib.str_json("injected")),
+      ("keys", @lib.num_json(table.size().to_double())),
+      ("ignored", @lib.num_json(ignored.to_double())),
+    ])
   } else if name == "active_learning" {
     @lib.arr_json(engine_ref.val.active_learning_candidates(arg_int(args, "k", 5)))
   } else {
@@ -374,6 +380,11 @@ async fn dispatch(method : String, id : Json, params : Json) -> Option[Json] {
   } else if method == "ping" {
     Some(rpc_result(id, @lib.obj([])))
   } else if method == "notifications/initialized" {
+    None
+  } else if method.has_prefix("notifications/") {
+    // P4：JSON-RPC 2.0 规范 — notification 类（无 id）一律不回包。任意外发 notifications/cancelled、
+    //   notifications/progress 等不应触发 -32601。原代码只显式豁免 notifications/initialized，
+    //   其余走 -32601 违反 spec。客户端可能据此重连或退避，造成不稳。
     None
   } else {
     Some(rpc_error(id, -32601, "Method not found: " + method))

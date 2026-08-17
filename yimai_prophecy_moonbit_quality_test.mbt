@@ -137,3 +137,38 @@ test "T7 retrieve_for_prompt：三段式结构" {
     _ => inspect(false, content="true")
   }
 }
+
+// ---------------------------------------------------------------------------
+// T30..T33: decode_pct 单元回归（P4 路径安全加固）
+//   覆盖：标准 %XX 解码 / 大小写 hex / 无 % 透传 / 非 hex % 保守保留
+//   serve_static 自身是 native-only HTTP handler，wasm-gc 测试调不到；这里用
+//   decode_pct 直测确保底层工具正确。
+// ---------------------------------------------------------------------------
+
+test "T30 decode_pct: %2e%2e%2f 解码为 \"../\"" {
+  let out = decode_pct("%2e%2e%2f")
+  inspect(out == "../", content="true")
+}
+
+test "T31 decode_pct: 大写 hex %2F 同样解码为 /" {
+  let out = decode_pct("a%2Fb")
+  inspect(out == "a/b", content="true")
+}
+
+test "T32 decode_pct: 无 % 序列原样透传" {
+  let out = decode_pct("plain/path/with-slashes")
+  inspect(out == "plain/path/with-slashes", content="true")
+}
+
+test "T33 decode_pct: 非 hex %ZZ 保守保留原样" {
+  // %ZZ 不是合法 hex 序列，保守策略：透传整个 % 字节（不丢字符）
+  let out = decode_pct("a%ZZb")
+  inspect(out == "a%ZZb", content="true")
+}
+
+test "T34 decode_pct: %2e%2e%2fcmd 显式返回 \"..cmd\" 前缀触发 '..' 检查" {
+  // 模拟 serve_static 的检查链路：解码后必含 ".."，被现有 str_contains 拦截
+  let decoded = decode_pct("%2e%2e%2fcmd%2fservice%2fmcp.mbt")
+  inspect(str_contains(decoded, ".."), content="true")
+  inspect(str_contains(decoded, "\\"), content="false")
+}
