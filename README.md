@@ -4,7 +4,7 @@
 >
 > 在「预测记忆」内核之外，已落地 **#22 翻译记忆（TM）/ 术语库（TB）一等公民**：真正的 fuzzy match（含匹配率%）、concordance 检索、TBX 术语库强制对齐与一致性校验——让引擎从「只预测」走向「预测 + 检索 + 术语守门」。
 
-[![Tests](https://img.shields.io/badge/tests-101%2F101%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
+[![Tests](https://img.shields.io/badge/tests-137%2F137%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Hit@3](https://img.shields.io/badge/Hit%403-0.8246-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Modern Corpus](https://img.shields.io/badge/modern_corpus-22%2F22%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Service API](https://img.shields.io/badge/HTTP%20API-26%20endpoints%20%2B%20MCP-9cf)](https://github.com/Across2005/yimai_prophecy_moonbit)
@@ -103,7 +103,7 @@ Or step by step: `scripts/setup.ps1` (env check) → `build.ps1` (compile, needs
 `run.ps1` (start) → `seed.ps1` (sample data) → `smoke.ps1` (verify).
 
 > **确定性回归门禁（纯本地，零云端依赖）**: `scripts/dev.ps1` 在构建前自动运行
-> `moon test --target wasm-gc`（101/101 契约回归），任何一项失败即中止。
+> `moon test --target wasm-gc`（137/137 契约回归），任何一项失败即中止。
 > 此外，仓库自带本地 `pre-commit` hook（`.githooks/pre-commit`，`moon check` +
 > `moon test --target wasm-gc`），已通过 `git config core.hooksPath .githooks`
 > 接入本仓库——每个 commit 前自动挡住破坏确定性契约的改动。
@@ -705,7 +705,7 @@ From the "translation-born skill" brainstorm — what's built vs. pending:
 
 | # | Capability | Status | Notes |
 |---|-----------|--------|-------|
-| 1 | **TM / TermBase first-class** (fuzzy match %, concordance, TBX enforcement) | ✅ Done | `moon test` 101/101; reviewed + hardened (word-boundary, `xml:lang`); S1 fuzzy-match upgrade (IDF + 2-gram + word-order, R23–R25); open-code-review + MoA fixes for `parse_tmx` cross-language/`</tu>` split + `mqm_tags` cross-language false positives + empty-target/language-variant robustness; P0 长文 + 数字守门加固（MAX_TOKENS 截断 / numeric_consistency MQM 维度 / fuzzy_match 长 query 不崩 / L1–L12 长文回归）。 |
+| 1 | **TM / TermBase first-class** (fuzzy match %, concordance, TBX enforcement) | ✅ Done | `moon test` 137/137 (P4 增量后); reviewed + hardened (word-boundary, `xml:lang`); S1 fuzzy-match upgrade (IDF + 2-gram + word-order, R23–R25); open-code-review + MoA fixes for `parse_tmx` cross-language/`</tu>` split + `mqm_tags` cross-language false positives + empty-target/language-variant robustness; P0 长文 + 数字守门加固（MAX_TOKENS 截断 / numeric_consistency MQM 维度 / fuzzy_match 长 query 不崩 / L1–L12 长文回归）; P4 fuzzy_match 抽公共 helper + drift_report.text_chrf_avg + MQM 严重度数值化。 |
 | 2 | **Quality estimation + MQM auto-eval** | ✅ Done | `qe_score` (0.55·match + 0.30·term + 0.15·char) + `mqm_tags` (terminology/accuracy/fluency/omission w/ severity). Tested E1–E3. |
 | 3 | **Format-fidelity round-trip** | ✅ Done | `check_format_fidelity` (missing/extra tag detection) + `protect_tags` (mask tags to `__TAG__`). Tested E4–E5. |
 | 4 | **Multimodal / screenshot translation** | ✅ Done (OCR external stub) | `ocr_image` (external boundary) + `align_regions` (region ↔ TM align). Zero-dep engine speaks JSON at the OCR boundary; real OCR injected by host. Tested E6–E7. |
@@ -714,6 +714,61 @@ From the "translation-born skill" brainstorm — what's built vs. pending:
 | 7 | **Observability & drift monitoring** | ✅ Done | `metrics` (tm/term counts + coverage) + `drift_report` (before/after snapshot diff). Tested E12–E13. |
 
 > This project is **not** packaged as a WorkBuddy skill yet. The dev loop for these is: **research (Deep Research / WebSearch) → review (open-code-review) → verify (browser automation + `moon test`)**. MoA is intentionally *not* embedded inside the skill (kept as an external advisor).
+
+---
+
+## International Standards & Compliance (P4 增量)
+
+> 2026-08 增补：随着项目演进，本节列出当前已声明对齐 / 仍属 roadmap 的国际/区域标准，
+> 以及对应的本地化合规姿态。**yimai 本身是技术构建块（library + local service）而非翻译服务
+> 机构；本节为「adopter 集成指南」，非 ISO 认证声明。**
+
+### 已对齐（algorithm / docs 层）
+
+| 标准 | yimai 映射 | 备注 |
+|---|---|---|
+| **ISO 17100:2015** (Translation services) | `observe` / `predict` + `reward` 反馈闭环；`retrieve_prompt` 注入双语上下文 | 译员能力、项目管理、技术资源、反馈机制由 yimai 闭环支撑；adopter 仍需认证译员/项目流程 |
+| **ISO 18587:2017** (MT post-editing) | `qe_auto`（QE+MQM 标签）+ `bleu` / `chrf` 度量 | MTPE 工作流核心；数字守门 P0 加固后覆盖本地化高危硬伤 |
+| **ISO 30042:2019 / TBX3** (TermBase eXchange) | `load_tbx` 解析 ISO 30042-compliant `<martif>/<termEntry>` | TBX3 v3.0 dialect（非 TBX2 v2.0，namespace 不同） |
+| **ISO 11669:2024 (TS)** (Translation projects — General guidance) | `predict` 逐步推荐 + `consolidate` 项目收尾复盘 | TS（Technical Specification，非 IS） |
+| **ISO 5060:2024** (Translation services — Evaluation of translation output) | `qe_auto` / `mqm_tags` / `drift_report.text_chrf_avg` 三层指标覆盖 | 与 MQM Council 强对齐（MQM 官网声明 "Aligned with ISO 5060"） |
+| **MQM Core** (Lommel et al., 2014–present) | `mqm_tags` 7 维度标签 + 严重度数值（`severity_score`: None=0 / Minor=1 / Major=5 / Critical=10） | 权威背书：https://www.themqm.org/ |
+| **W3C ITS 2.0** (Internationalization Tag Set) | 由宿主 CMS/应用注入；`protect_tags` / `mark_term` 消费 in-text metadata | 不在引擎内；consume 边界由 adopter 决定 |
+| **MCP 2025-11-25** (Model Context Protocol) | `/mcp` 端点（Streamable HTTP + JSON-RPC 2.0） | 24 tools；2026-07-28 RC breaking change 已 defer 到 0.2.0 |
+
+### Roadmap（未在 0.1.0 落地，0.2.0 候选）
+
+| 标准 | 为什么重要 | 状态 |
+|---|---|---|
+| **TMX 1.4b** | CAT-tool 互操作（Trados / memoQ / OmegaT） | `parse_tmx` / `export_tmx` 是 `pub fn` 但无 `/api/*` 入口 |
+| **XLIFF 2.1 / ISO 21720:2024** | 段级交换的事实标准 | `parse_xliff` 是 `pub fn` 但无入口 |
+| **SRX 2.0** | 跨工具段切规则可复现性 | 未声明；需 `/api/import_srx` |
+
+### 合规姿态：EU AI Act + GDPR（2026-08 声明）
+
+- **GDPR Art. 28** 要求翻译记忆若含 PII 必须本地化处理。yimai「**纯本地、零云端依赖**」天然合规——
+  TM/术语/学习闭环全在 `127.0.0.1:8787` 闭环，`tm_store.json` 原子写持久化在本地工作目录。
+- **EU AI Act 2024-2026** 高风险 AI 系统需可审计、可追溯。yimai 是 *non-deployable unit*：
+  adopter 集成进翻译产品时承担部署者责任。引擎提供**白盒路径**（`explain_card` /
+  `activation_path` / `prediction_path` / `value_breakdown`）+ **MQM 严重度尺度**作为
+  可审计凭证。
+- **不引入 OAuth / ID-JAG / Mcp-Session-Id 等云端鉴权方案**——保持"纯本地"定位；如需
+  企业版鉴权，由 fork 独立分支承担。
+
+### MCP server 集成 Claude Code / Cursor / Gemini CLI
+
+yimai `/mcp` 是标准 MCP 2025-11-25 server，可被以下 harness 直接消费（**同一份配置 schema
+对所有 harness 透明；tools 列表一致**）：
+
+| Harness | 配置入口 | 关键字段 |
+|---|---|---|
+| **Claude Code** | `~/.claude/mcp.json` 或项目级 `.mcp.json` | `mcpServers.yimai.{url,type:"http"}` |
+| **Cursor** | `~/.cursor/mcp.json` | 同上 |
+| **Gemini CLI** | `~/.gemini/settings.json` | `mcpServers.yimai.{url,type:"http"}` |
+
+完整 13 个 harness 配置（Claude Desktop / Claude Code / Gemini CLI / Cursor / Cline /
+Continue.dev / Roo Code / Windsurf / OpenAI Codex CLI / Aider / Sourcegraph Cody / Zed /
+GitHub Copilot）见 [`docs/harness-configs/`](./docs/harness-configs/README.md)。
 
 ---
 

@@ -4,12 +4,17 @@ agent_created: true
 description: >-
   译脉·先知 2.0 翻译记忆预测引擎（确定性记忆网络 + TM/术语库 + 下一步预测）。当用户需要翻译记忆检索、
   术语一致性校验、下一步预测、记忆闭环反馈、MT 质量评测（BLEU/chrF++）、风格检查、风格一致报告、回译对齐、术语冲突检测，
-  或把翻译记忆注入 LLM prompt（TMPlm）时使用。服务形态：本地 HTTP 服务（13 REST + 11 补充端点 + /mcp MCP Server +
-  前端工作台）。
+  或把翻译记忆注入 LLM prompt（TMPlm）时使用。服务形态：本地 HTTP 服务（24 REST 端点 + 2 ops（metrics/health）
+  + /mcp MCP Server spec 2025-11-25 + 前端工作台；纯本地、零云端依赖；13 个 harness 已有 drop-in 配置）。
+  P4 增量（2026-08）：decode_pct 路径安全加固 + MCP notifications/* 通配 + fuzzy_match 抽公共 helper
+  + drift_report.text_chrf_avg 翻译质量漂移指标 + MQM 严重度数值化（None=0/Minor=1/Major=5/Critical=10）
+  + predict/consolidate 拆 5/4 段 fn + routes_meta 单一源化。
 tips: >-
   触发词：翻译记忆、TM 检索、术语校验、check_terms、下一步预测、predict、记忆闭环、reward、consolidate、
-  BLEU 评测、chrF 评测、风格检查、回译验证、术语冲突、TMPlm、retrieve_prompt。先用 scripts/dev.ps1 起服务
-  （或确认 127.0.0.1:8787 已运行），再按「API 手册」调用端点；读结果时优先看白盒分数（sim_* 分量）与证据链。
+  BLEU 评测、chrF 评测、风格检查、回译验证、术语冲突、TMPlm、retrieve_prompt、MQM、drift_report、
+  漂移报告、翻译质量、严重度、severity_score、Claude Code、Cursor、Gemini CLI、MCP。
+  先用 scripts/dev.ps1 起服务（或确认 127.0.0.1:8787 已运行），再按「API 手册」调用端点；
+  读结果时优先看白盒分数（sim_* 分量）与证据链。
 ---
 
 # 译脉·先知 2.0 —— 翻译记忆预测引擎
@@ -20,7 +25,7 @@ tips: >-
 - **翻译记忆（TM）+ 术语库（TB）**：#22 模块 —— add_tm / fuzzy_match（S1 四分量白盒：token/tfidf/char/ngram/tokenset）/ concordance / load_tbx / enforce_terms / check_terms。
 - **记忆闭环**：observe（记录步骤）→ predict（下一步预测+证据链）→ reward（采纳/拒绝反馈）→ consolidate（固化重放），重启不丢（tm_store.json 原子落盘）。
 - **质量与扩展**：qe_auto（QE+MQM）、style_check（风格一致性）、style_report（风格一致报告）、back_align（回译 LCS 对齐）、term_conflicts（术语冲突）、bleu_score / chrf_score（MT 评测）、retrieve_for_prompt（TMPlm 三段式 prompt 上下文）。
-- **多形态消费**：13 REST 端点 + 11 补充端点（共 24）+ `/mcp` MCP Server（24 tools）+ 前端工作台（8 面板，含记忆图谱可视化、职业译员双栏工作台、双语对齐热力图、主动学习推荐、风格一致报告）。
+- **多形态消费**：13 REST 端点 + 11 补充端点（共 24；含 metrics/health 共 26）+ `/mcp` MCP Server（24 tools）+ 前端工作台（8 面板，含记忆图谱可视化、职业译员双栏工作台、双语对齐热力图、主动学习推荐、风格一致报告）。
 
 ## 调用条件（触发场景）
 
@@ -86,3 +91,5 @@ powershell -ExecutionPolicy Bypass -File scripts/dev.ps1
 - Windows native 构建需 MSVC（`link.native.cc` 指向 cl.exe，`scripts/setup.ps1` 可检测）。
 - BLEU 实现口径：Add-1 平滑 + BP（Papineni 2002 单参考），与 sacrebleu 数值可能有小幅差异。
 - chrF++：字符 1-6 元 + 词 1-2 元，β=2（Popović 2017），空格不参与字符 n-gram。
+- MQM 严重度采用标准尺度 None=0/Minor=1/Major=5/Critical=10；数字守门（numeric_consistency）
+  不受跨语种影响。
