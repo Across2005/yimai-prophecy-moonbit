@@ -19,35 +19,9 @@ const MAX_BODY_BYTES : Int = 1048576
 // MoonBit 函数非一等公民，故用「字符串名 → match 派发」做表驱动：
 //   1. 单一来源便于枚举/测试（L19-L22）
 //   2. 增删端点只动两处（本表 + handle_request 的 match 分支）
-// /mcp 与 serve_static 不进表：前者是 JSON-RPC 协议分支，后者是文件兜底。
-let routes : Array[(String, String)] = [
-  ("/api/ping", "ping"),
-  ("/api/tm_count", "tm_count"),
-  ("/api/fuzzy_match", "fuzzy_match"),
-  ("/api/add_tm", "add_tm"),
-  ("/api/check_terms", "check_terms"),
-  ("/api/concordance", "concordance"),
-  ("/api/qe_auto", "qe_auto"),
-  ("/api/predict", "predict"),
-  ("/api/observe", "observe"),
-  ("/api/recall", "recall"),
-  ("/api/explain", "explain"),
-  ("/api/reward", "reward"),
-  ("/api/consolidate", "consolidate"),
-  ("/api/retrieve_prompt", "retrieve_prompt"),
-  ("/api/bleu", "bleu"),
-  ("/api/chrf", "chrf"),
-  ("/api/style_check", "style_check"),
-  ("/api/style_report", "style_report"),
-  ("/api/back_align", "back_align"),
-  ("/api/term_conflicts", "term_conflicts"),
-  ("/api/fed_export", "fed_export"),
-  ("/api/fed_import", "fed_import"),
-  ("/api/distill_inject", "distill_inject"),
-  ("/api/active_learning", "active_learning"),
-  ("/api/metrics", "metrics"),
-  ("/api/health", "health"),
-]
+//   P4：路由表已在根包 yimai_prophecy_moonbit.mbt 声明为 pub let routes_meta（wasm-gc 测试可见）；
+//   本处直接用 @lib.routes_meta，避免 26 项硬编码在 4 处（root/router/mcp/route_test）。
+//   /mcp 与 serve_static 不进表：前者是 JSON-RPC 协议分支，后者是文件兜底。
 
 // 进程启动时间戳（ms since epoch，初始化在 main.mbt 启动时一次）
 //   /api/health 据此算 uptime_seconds；不直接用 @env.now() 以避免每次 HTTP 重新采样带来的抖动。
@@ -161,8 +135,9 @@ async fn handle_panic(conn : @http.ServerConnection, err : Error) -> Unit {
 }
 
 // 路由表查找：path 命中返回 handler 名，未命中返 ""。无副作用。
+//   P4：直接迭代 @lib.routes_meta（26 项单一源），消除 cmd/service 内的重复表。
 fn lookup_route(path : String) -> String {
-  for r in routes {
+  for r in @lib.routes_meta {
     let (p, n) = r
     if p == path {
       return n

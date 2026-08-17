@@ -82,15 +82,19 @@ test "L20 /mcp 不在 routes_meta（routes.mbt 单独走 MCP 分支）" {
 //   - handler 名全部在「已知 handler 集合」内（即 routes.mbt::handle_request 的 match 分支）
 // ---------------------------------------------------------------------------
 
-// routes.mbt::handle_request 的 match 派发全集（手工枚举，与 cmd/service 同步）
-//   修改 routes.mbt 的 match 分支时，此集合必须同步更新。
-let known_handlers : Array[String] = [
-  "ping", "tm_count", "fuzzy_match", "add_tm", "check_terms", "concordance",
-  "qe_auto", "predict", "observe", "recall", "explain", "reward",
-  "consolidate", "retrieve_prompt", "bleu", "chrf", "style_check",
-  "style_report", "back_align", "term_conflicts", "fed_export", "fed_import",
-  "distill_inject", "active_learning", "metrics", "health",
-]
+// routes.mbt::handle_request 的 match 派发全集
+//   P4：从 routes_meta 派生（取每项的 handler_name）消除硬编码 26 字符串，
+//   routes_meta 增删时 known_handlers 自动同步；L21 测试断言两者长度一致兜底。
+fn build_known_handlers() -> Array[String] {
+  let out : Array[String] = []
+  for entry in routes_meta {
+    let (_, n) = entry
+    out.push(n)
+  }
+  out
+}
+
+let known_handlers : Array[String] = build_known_handlers()
 
 test "L21 routes_meta 中 handler 名无重复" {
   let mut dups = 0
