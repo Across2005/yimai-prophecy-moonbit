@@ -26,12 +26,40 @@ harness into the location the harness reads from.
 | `cody.json` | Sourcegraph Cody (VS Code) — *deprecated 2025-08* | `~/.config/sourcegraph/cody.json` (only `cody.mcp.servers` segment) | HTTP | JSON |
 | `zed.json` | Zed (editor, ≥ 0.150) | `~/.config/zed/settings.json` (under `context_servers`) | HTTP | JSON |
 | `github-copilot.yml` | GitHub Copilot Coding Agent (runner caveat) | `.github/workflows/copilot-setup-steps.yml` (snippet) | n/a (CI) | YAML doc |
+| `harness_manifest.json` | *(schema single source of truth)* | 由 `scripts/validate-harness-configs.ps1` 读 | n/a | JSON |
 
 > † Cline / Roo Code 在 VS Code UI 内可"Add Server"直接填 name/type/url；JSON 文件形式是新版 (≥ 3.x) 的可选项，文件路径以各扩展的 release notes 为准。
 >
 > ⚠ Sourcegraph Cody 自 2025-08 进入维护模式，AI 主线转入 Amp。`cody.json` 仅作历史参考。
 >
 > ⚠ GitHub Copilot Coding Agent 跑在 GitHub 托管 runner，与 `127.0.0.1:8787` 网络隔离。`github-copilot.yml` 不是 drop-in，是 PR 工作流内同 runner 启 yimai 的示例片段。
+
+## Schema 校验（自动化）
+
+13 个 harness config 共享 `harness_manifest.json` 单一源；schema 一致性由
+`scripts/validate-harness-configs.ps1` 自动校验。运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/validate-harness-configs.ps1
+```
+
+退出码 0 = 13/13 通过；任何 harness 的 URL、top_key 或必填字段偏离
+`http://127.0.0.1:8787/mcp` 契约，脚本会失败并打印具体 harness。
+
+校验规则按 form 区分：
+
+- **JSON**（10 个 harness）：用 `ConvertFrom-Json` 解析，按 `top_key` 进入
+  `url_path`，断言该 URL == `service.url`。
+- **TOML**（`codex.toml`）：手写小 parser 解析 `[mcp_servers.yimai]` 段，
+  断言 `url` + `transport`（Codex ≥ 0.46 强制显式 transport）。
+- **YAML**（`aider.conf.yml` / `github-copilot.yml`）：PS 5.1 没有
+  `ConvertFrom-Yaml`（PS 7+ 才有），降级到文本搜索 —— 文件含 `service.url`
+  即视为 config 型（aider），否则要求 `workflow` + `runner` 关键字（github-copilot 文档型）。
+
+> 改任一 harness 的 schema 字段名 / URL 端口 / transport 值时，先改
+> `harness_manifest.json` 对应 entry 的 `top_key` / `url_path` / `note`，
+> 再同步改 config 文件本身，最后跑一次 `validate-harness-configs.ps1` 确认
+> 13/13 通过。
 
 ## Why every config is the same shape
 
