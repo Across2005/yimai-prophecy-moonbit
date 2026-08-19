@@ -127,6 +127,28 @@ ISO-conformant pipelines:
 | **ISO 11669:2024 (TS)** (Translation projects — General guidance) | Project lifecycle, deliverables, sign-off — **TS** (technical specification) | `predict` is the per-step next-action recommender; `consolidate` is the project-completion review |
 | **MQM / MQM Core** (Lommel et al., 2014–present) | Multidimensional Quality Metrics for translation evaluation. Standard 7 dimensions (terminology / accuracy / linguistic / style / locale / audience / design); standard severity scale **None=0 / Minor=1 / Major=5 / Critical=10** | `qe_auto` returns an MQM-shaped tag set; `back_align` produces the alignment script MQM fluency/accuracy annotations are anchored to. If you add a custom MQM scorer, prefer the standard severity scale for cross-tool comparability. |
 | **MQM Re-annotation** (Riley et al., Google, 2025-10-28) | Two-stage MQM review: a second rater reviews an existing annotation (human or auto), reducing inter-rater variance. The paper reports stronger rater agreement and reliability across all re-annotation scenarios, including LLM-generated annotations like GEMBA-MQM and AutoMQM. | P5 `mqm_re_annotate` walks the same path on every Critical-severity issue: it re-runs `mqm_tags` and emits `re_annotated` / `critical_count` / `re_annotations`. The current implementation is deterministic self-review (consistent = true), but the JSON shape is designed so the engine can be swapped for a multi-rater or LLM-rater implementation without changing the public contract. |
+
+### MQM severity scale (cross-tool alignment, P5 increment)
+
+yimai's `severity_score` follows the standard MQM Core scale: `None=0 / Minor=1 / Major=5 / Critical=10`.
+Three major MQM scoring systems use different penalty weights — below is the explicit mapping so
+adopters can translate yimai scores into whatever external tool they wire us into:
+
+| Severity | yimai `severity_score` | Phrase penalty | Lokalise penalty (vs 100) |
+|----------|------------------------|----------------|---------------------------|
+| None     | 0                      | 0              | 0                         |
+| Minor    | 1                      | 1              | 5                         |
+| Major    | 5                      | 5              | 25                        |
+| Critical | **10**                 | **25**         | **75**                    |
+
+**yimai vs Phrase** — Critical penalty is `10` in yimai vs `25` in Phrase. Rationale: yimai's
+`mqm_re_annotate` already auto-runs a second pass on every Critical issue, so a Critical
+that survives the second pass is by construction "double-checked" and the extra penalty
+weight Phrase uses as a manual-review deterrent isn't needed.
+
+**yimai vs Lokalise** — Lokalise's score is `100 - sum(penalties)`; yimai's `qe_auto` is
+a weighted blend (`0.50·match_rate + 0.25·term_ok + 0.10·char + 0.15·bleu`). They are
+not numerically comparable; convert via the formula.
 | **W3C ITS 2.0** (Internationalization Tag Set) | Markup-level metadata for translation, terminology, language identification | Out of scope for the engine itself; consume from the host CMS/app, push translated strings through `add_tm` |
 | **Model Context Protocol `2025-11-25`** (Anthropic / OpenAI / community) | Streamable HTTP + JSON-RPC 2.0 standard for tool-calling. **Note**: 2026-07-28 RC introduced breaking changes (initialize handshake removal, `Mcp-Method`/`Mcp-Name` headers, JSON Schema 2020-12, error code `-32602`); we are on `2025-11-25` and will migrate in 0.2.0. | `POST /mcp` is the spec-compliant MCP server; see [`docs/harness-configs/`](./docs/harness-configs/README.md) for client config |
 

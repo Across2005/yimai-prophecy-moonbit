@@ -889,6 +889,33 @@ From the "translation-born skill" brainstorm — what's built vs. pending:
 | **W3C ITS 2.0** (Internationalization Tag Set) | 由宿主 CMS/应用注入；`protect_tags` / `mark_term` 消费 in-text metadata | 不在引擎内；consume 边界由 adopter 决定 |
 | **MCP 2025-11-25** (Model Context Protocol) | `/mcp` 端点（Streamable HTTP + JSON-RPC 2.0） | 24 tools；2026-07-28 RC breaking change 已 defer 到 0.2.0 |
 
+#### MQM 严重度尺度（与业界三方对齐，P5 增量）
+
+yimai 采用 MQM Core 严重度数值化。**业界主流 MQM 评分器使用三套不同的 penalty 数值**，
+下表给出显式对照（便于跨工具数据交换）：
+
+| Severity | yimai `severity_score` | Phrase penalty | Lokalise penalty (vs 100) | 用途 |
+|----------|------------------------|----------------|---------------------------|------|
+| **None** | 0 | 0 | 0 | 可接受变体，不扣分 |
+| **Minor** | 1 | 1 | 5 | 局部小问题（拼写/标点） |
+| **Major** | 5 | 5 | 25 | 影响理解（术语错/漏译） |
+| **Critical** | **10** | **25** | **75** | 改变意义（negation flip / 数字错） |
+
+**yimai vs Phrase 差异**：Critical penalty yimai 用 **10** 而非 25。理由是 yimai
+中 Critical 已自动触发 `mqm_re_annotate` 二次标注流程（Google 2025-10-28 论文对齐），
+二次审后再被采纳的 Critical 段会被消费方拦截，因此 penalty 10 已足够震慑。
+Phrase 走纯人工 review 路径，故用更重的 25 防止漏审。
+
+**yimai vs Lokalise 差异**：Lokalise 走 `100 - sum(penalties)` 评分模式（满分 100），
+yimai 走 `severity_score` 原始累计 + `qe_auto` 综合公式（`0.50·match_rate + 0.25·term_ok + 0.10·char + 0.15·bleu`）。
+两者数值不可直接比较，需要按公式反推。
+
+参考：
+- MQM Council 2024 10 周年更新：<https://www.themqm.org/>
+- Phrase MQM 评分：<https://phrase.com/blog/mqm-quality-metric/>
+- Lokalise Translation scoring：<https://docs.lokalise.com/en/articles/11631905-scoring-translation-quality>
+- Google 二次标注论文（Riley et al., 2025-10-28）
+
 ### Roadmap（未在 0.1.0 落地，0.2.0 候选）
 
 | 标准 | 为什么重要 | 状态 |

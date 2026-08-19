@@ -13,7 +13,8 @@ description: >-
 tips: >-
   触发词：翻译记忆、TM 检索、术语校验、check_terms、下一步预测、predict、记忆闭环、reward、consolidate、
   BLEU 评测、chrF 评测、风格检查、回译验证、术语冲突、TMPlm、retrieve_prompt、MQM、drift_report、
-  漂移报告、翻译质量、严重度、severity_score、Claude Code、Cursor、Gemini CLI、MCP。
+  漂移报告、翻译质量、严重度、severity_score、severity_scale、Phrase、Lokalise、ISO 11669、
+  GB/T 30539、商务领域、re_annotate、二次标注、Claude Code、Cursor、Gemini CLI、MCP。
   先用 scripts/dev.ps1 起服务（或确认 127.0.0.1:8787 已运行），再按「API 手册」调用端点；
   读结果时优先看白盒分数（sim_* 分量）与证据链。
 ---
