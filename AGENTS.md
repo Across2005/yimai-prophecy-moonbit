@@ -112,6 +112,28 @@ file path. After `scripts/run.ps1` is up, all clients should be able to
   or any `HashSet/HashMap` from a hypothetical future stdlib — that would break R15 silently.
 - Keep `moon test --target wasm-gc` green on every change.
 
+## Project layout (where new files go)
+
+P5 仓库整理（2026-08）：所有新增文件必须落到合适目录，**禁止再散落在根目录**。
+
+| 文件类型 | 落点 | 命名规范 |
+|---|---|---|
+| Lib 源文件（pub 导出） | 根目录 | `engine.mbt` / `util.mbt` / `yimai_prophecy_moonbit.mbt`（按需新建） |
+| Lib 测试 (`*_test.mbt` / `*_wbtest.mbt`) | `tests/{core,corpus,feature}/` | `yimai_prophecy_moonbit_<topic>_test.mbt` |
+| Sub-package moon.pkg | `tests/<sub>/moon.pkg` | 每加一个子包必须新建 |
+| 跨子包共享 helper | `tests/<sub>/_test_helpers.mbt`（同子包内 `pub`） | DRY 注释：与同子包内 `_test_helpers.mbt` 同步 |
+| Binary 入口 | `cmd/main/` 或 `cmd/service/` | new service 在 `cmd/<name>/` |
+| 文档 | `docs/<topic>/` | 不再放 `docs/superpowers/...` 中间层 |
+| 一次性 plan/notes | `docs/plans/` | 文件名带日期 `YYYY-MM-DD-<topic>.md` |
+| 中文文件名 | **禁止** | 重命名为英文（仓库国际友好） |
+| 散落占位文件（如 `*.mcp.json`） | 删 | 已废弃的占位不进仓 |
+| 调试脚本 | **不入仓** | 用完即删；只留可复现的正式脚本进 `scripts/` |
+
+**关键约束**：
+- MoonBit 0.1.20260724 不支持 sub-package 跨包 import：每个 `tests/<sub>/` 是独立 package，**helper fn 必须 inline 在子包内**（共享 helper 写到 `_test_helpers.mbt` + 跨子包各复制一份），或者提到 `lib` 主包（污染 API，慎用）。
+- 跨子包 helper 改了要在所有副本同步（已加注释提醒）。
+- 根 `moon.pkg` 范围 = 根目录直系 .mbt，**不含 `tests/**`**。每个子包有自己 moon.pkg。
+
 ## International translation standards (alignment, not certification)
 
 This engine is a **technical building block**, not a translation service, so it

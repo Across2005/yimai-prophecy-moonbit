@@ -5,7 +5,7 @@
 // 回归点：旧代码用 `if new_edges.length() != m.edges.length()` 拦截写回，
 // 干净网络上所有边都 >= MIN_EDGE 导致长度相等 -> EDGE_DECAY 形同虚设。
 test "H1 edge decay applies without prune" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   let a = e.remember("术语表锁定", "fact", [])
   let b = e.remember("风格对齐正式中性", "preference", [a])
   let before = match e.memories.get(a) {
@@ -28,12 +28,12 @@ test "H1 edge decay applies without prune" {
 // H2：逻辑时钟 clock 必须随状态序列化往返，否则恢复后 dt<0 令时效项失真。
 // 回归点：旧 to_json/from_json 未包含 clock。
 test "H2 logical clock persists across to_json/from_json" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   let _ = e.remember("新建翻译项目：量子计算综述", "instruction", [])
   let _ = e.remember("提取核心术语表并锁定", "fact", [])
   let c1 = e.clock
   let j = e.to_json()
-  let e2 = ProphecyEngine::from_json(j)
+  let e2 = @lib.ProphecyEngine::from_json(j)
   // 恢复后 clock 与保存时一致
   inspect(e2.clock == c1, content="true")
   // 恢复后 dt 必须非负：clock >= 每个记忆的 last_used（u_rec 路径有效）
@@ -45,7 +45,7 @@ test "H2 logical clock persists across to_json/from_json" {
 // M1b：转移计数衰减后 < 0.5 必须被丢弃（按 D1–D8 规范的 `if nc >= 0.5` 判据）。
 // 回归点：此前 M1 修复对转移「无条件保留」，使转移图只增不减。
 test "M1b transition below 0.5 is pruned" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   // 直接植入一条单计数转移 a->b（count=1.0）
   let inner : Map[String, Double] = Map::from_iter(([] : Array[(String, Double)]).iter())
   inner.set("b", 1.0)

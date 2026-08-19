@@ -76,32 +76,55 @@ The engine is a neuro-inspired memory network. Eight modules map directly to con
 yimai_prophecy_moonbit/
 ├── engine.mbt                  # Layer0: 零依赖预测记忆引擎内核（D1–D8, #22 TM/TB, MQM）
 ├── util.mbt                    # 编码/TF-IDF/对齐/URL解码工具函数（P4 decode_pct 新增）
-├── yimai_prophecy_moonbit.mbt          # 主测试（L1–L2 批量 Hit@3 + determinism + consolidate）
-├── yimai_prophecy_moonbit_modern_corpus_test.mbt      # Modern Corpus：8 个前沿领域 11 测试
-├── yimai_prophecy_moonbit_extended_corpus_test.mbt    # Extended Corpus：6 个领域 11 测试
-├── yimai_prophecy_moonbit_frontier_corpus_test.mbt    # Frontier Corpus：10 个领域 14 测试（P4 新增）
-├── yimai_prophecy_moonbit_quality_test.mbt            # P4 质量/安全测试（T30–T37）
-├── yimai_prophecy_moonbit_routes_test.mbt             # 端点元数据测试（P4 单一源）
-├── yimai_prophecy_moonbit_extension_test.mbt          # 扩展能力回归（E1–E18）
+├── yimai_prophecy_moonbit.mbt  # Lib 主入口（routes_meta 单一源 + lib 共享 helper 文档化）
+├── tests/                      # P5 仓库整理：18 个测试按主题分到 3 个 sub-package
+│   ├── core/                   #   核心/经典测试（53 测试）
+│   │   ├── moon.pkg            #   sub-package（独立 wasm-gc 测试目标）
+│   │   ├── _test_helpers.mbt   #   跨子包共享 helper（canon/topics + 6 fn，pub）
+│   │   ├── yimai_prophecy_moonbit_test.mbt          # 主测试（L1–L2 批量 Hit@3）
+│   │   ├── yimai_prophecy_moonbit_accept_test.mbt   # 验收测试台
+│   │   ├── yimai_prophecy_moonbit_bench_p1.mbt      # 基准 P1（pruned vs full acc）
+│   │   ├── yimai_prophecy_moonbit_benchmark_test.mbt
+│   │   ├── yimai_prophecy_moonbit_golden_test.mbt    # 黄金集回归
+│   │   ├── yimai_prophecy_moonbit_long_text_test.mbt # 长文本 / 分段 / 数字 token
+│   │   ├── yimai_prophecy_moonbit_tm_test.mbt       # TM 专项
+│   │   ├── yimai_prophecy_moonbit_v2_test.mbt       # V2 引擎 API
+│   │   └── yimai_prophecy_moonbit_wbtest.mbt        # 白盒内部测试
+│   ├── corpus/                 #   语料/数据集驱动测试（54 测试）
+│   │   ├── moon.pkg
+│   │   ├── _test_helpers.mbt   #   inline 副本（与 core/ 同步）
+│   │   ├── yimai_prophecy_moonbit_extended_corpus_test.mbt    # 6 个领域 11 测试
+│   │   ├── yimai_prophecy_moonbit_modern_corpus_test.mbt      # Modern Corpus：8 个前沿领域
+│   │   ├── yimai_prophecy_moonbit_roadmap_test.mbt            # Roadmap 增量语料
+│   │   ├── yimai_prophecy_moonbit_frontier_corpus_test.mbt    # Frontier Corpus：10 个领域 14 测试
+│   │   └── yimai_prophecy_moonbit_business_corpus_test.mbt    # 商务领域（P5 新增，ISO 11669 / GB/T 30539）
+│   └── feature/                #   扩展/新功能测试（52 测试）
+│       ├── moon.pkg
+│       ├── yimai_prophecy_moonbit_extension_test.mbt          # 扩展能力回归（E1–E18）
+│       ├── yimai_prophecy_moonbit_quality_test.mbt            # P4 质量/安全（T30–T37）
+│       ├── yimai_prophecy_moonbit_routes_test.mbt             # 端点元数据单一源测试
+│       └── yimai_prophecy_moonbit_mqm_reannotation_test.mbt   # P5 MQM 二次标注（Google 2025-10-28）
 ├── cmd/
 │   ├── main/moon.pkg          # demo 程序（训练 → Hit@3 → replay → D8 冷启动 → consolidate → reward → restore）
 │   └── service/
 │       ├── moon.pkg           # 服务入口（`moon run cmd/service --target native` → 127.0.0.1:8787）
 │       ├── mcp.mbt            # MCP Server 实现（spec 2025-11-25 Streamable HTTP）
-│       ├── routes.mbt         # 26 个 HTTP 端点路由（P4 routes_meta 单一源）
+│       ├── routes.mbt         # 27 个 HTTP 端点路由（24 + metrics + health + mqm_re_annotate）
 │       ├── tm_store.mbt       # 引擎持久化（`save_store` 深度守卫 P4）
 │       └── web/               # 前端工作台（静态资源，`serve_static` URL 解码 P4 修复）
 ├── scripts/
 │   ├── dev.ps1                # 一键起服务（env check → build → run → seed → smoke）
 │   ├── push.ps1               # 双 remote 推送（github via ghproxy.net + gitlink）
-│   └── smoke.ps1              # 烟雾测试（26 端点 + MCP）
+│   ├── smoke.ps1              # 烟雾测试（27 端点 + MCP）
+│   └── reorganize_repo.py     # 仓库整理复现脚本（git mv + add @lib. prefix + sub-package init）
 ├── .githooks/
 │   └── pre-commit             # 本地门禁（`moon check` + `moon test --target wasm-gc`）
 ├── docs/
-│   ├── skill/
-│   │   └── SKILL.md           # WorkBuddy 技能编排手册（frontmatter agent_created=true）
-│   └── harness-configs/       # 13 个 harness 配置（Claude Code / Cursor / Gemini CLI / ...）
-├── AGENTS.md                  # AI agent 集成指南（项目结构 + 构建/运行/消费 + Windows 前置）
+│   ├── skill/SKILL.md         # WorkBuddy 技能编排手册（frontmatter agent_created=true）
+│   ├── harness-configs/       # 13 个 harness 配置（Claude Code / Cursor / Gemini CLI / ...）
+│   ├── plans/                 # 项目级 plan / note（按日期 YYYY-MM-DD-<topic>.md 命名）
+│   └── roadmap.md             # 项目路线图（中文转英文，仓库国际友好）
+├── AGENTS.md                  # AI agent 集成指南（含 Project layout 段：未来 _test.mbt 必须在子目录）
 ├── README.md                  # 项目说明（badge 159/159 + P5 增量说明 + International Standards）
 ├── CHANGELOG.md               # 版本变更记录
 └── LICENSE                    # MIT License

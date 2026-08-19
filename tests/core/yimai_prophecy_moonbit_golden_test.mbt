@@ -90,7 +90,7 @@ let golden_ev_trap_src = "BMS 监控单体电压差不超过 50mV"
 let golden_ev_trap_tgt = "BMS monitors cell voltage difference"
 
 test "G1 新能源: 10 对真实语料 recall + 数字守门 trap" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   for i = 0; i < golden_ev.length(); i = i + 1 {
     let _ = e.add_tm(golden_ev[i].0, golden_ev[i].1)
   }
@@ -131,7 +131,7 @@ let golden_med_trap_src = "辐射剂量低于 2mSv"
 let golden_med_trap_tgt = "Low radiation dose"
 
 test "G2 医疗CT: 10 对真实语料 recall + 数字守门 trap" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   for i = 0; i < golden_med.length(); i = i + 1 {
     let _ = e.add_tm(golden_med[i].0, golden_med[i].1)
   }
@@ -171,7 +171,7 @@ let golden_fin_trap_src = "单笔交易超过 10,000 美元需申报"
 let golden_fin_trap_tgt = "Transaction must be reported"
 
 test "G3 金融AML: 10 对真实语料 recall + 数字守门 trap" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   for i = 0; i < golden_fin.length(); i = i + 1 {
     let _ = e.add_tm(golden_fin[i].0, golden_fin[i].1)
   }
@@ -211,7 +211,7 @@ let golden_l10n_trap_src = "伪翻译长度膨胀控制在 30%"
 let golden_l10n_trap_tgt = "Pseudo-translation length expansion controlled"
 
 test "G4 软件本地化: 10 对真实语料 recall + 数字守门 trap" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   for i = 0; i < golden_l10n.length(); i = i + 1 {
     let _ = e.add_tm(golden_l10n[i].0, golden_l10n[i].1)
   }
@@ -251,7 +251,7 @@ let golden_semi_trap_src = "套刻精度优于 2nm"
 let golden_semi_trap_tgt = "Overlay accuracy is good"
 
 test "G5 半导体EUV: 10 对真实语料 recall + 数字守门 trap" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   for i = 0; i < golden_semi.length(); i = i + 1 {
     let _ = e.add_tm(golden_semi[i].0, golden_semi[i].1)
   }
@@ -274,7 +274,7 @@ test "G5 半导体EUV: 10 对真实语料 recall + 数字守门 trap" {
 // ===========================================================================
 
 test "G6 跨文档数字守门: 3.7V/100℃ 双数字漏译 → critical" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   // 构造一个含 3.7V 和 100℃ 的样本（数字守门是语言无关的，纯字符扫描）
   let src = "Battery cell voltage 3.7V, surface temperature reaches 100℃ under load"
   let tgt = "电池单体电压正常，表面温度在负载下升高"
@@ -288,7 +288,7 @@ test "G6 跨文档数字守门: 3.7V/100℃ 双数字漏译 → critical" {
 // ===========================================================================
 
 test "G7 跨文档术语一致性: thermal management 漏译 → terminology major" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   // 通过 load_tbx 加载术语表，锁定 thermal management → 热管理
   let tbx =
     "<martif><text><body>" +

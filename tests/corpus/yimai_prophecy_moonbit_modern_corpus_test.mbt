@@ -30,7 +30,7 @@ fn modern_recall_texts(rec : Array[Json]) -> Array[String] {
 }
 
 // ---- Helper: generic training loop ----
-fn train_corpus(eng : ProphecyEngine, corpus : Array[(String, String)], reps : Int) -> Unit {
+fn train_corpus(eng : @lib.ProphecyEngine, corpus : Array[(String, String)], reps : Int) -> Unit {
   for _r = 0; _r < reps; _r = _r + 1 {
     eng.end_episode()
     for i = 0; i < corpus.length(); i = i + 1 {
@@ -140,7 +140,7 @@ let all_corpora : Array[(String, Array[(String, String)])] = [
 // ===========================================================================
 
 test "Layer0: workflow prediction across 8 modern domains (Hit@3, cold-start generalization)" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
 
   // Train on all 8 domains, 5 rounds each
   for i = 0; i < all_corpora.length(); i = i + 1 {
@@ -182,7 +182,7 @@ test "Layer0: workflow prediction across 8 modern domains (Hit@3, cold-start gen
 // ===========================================================================
 
 test "Layer1: TM fuzzy match with modern technical English terminology" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
 
   // Add modern technical TM pairs (English-English)
   let _ = eng.add_tm(
@@ -256,7 +256,7 @@ test "Layer1: TM fuzzy match with modern technical English terminology" {
 // ===========================================================================
 
 test "Layer2: term enforcement and consistency checking" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
 
   // Load modern terminology (simulating TBX glossary)
   // TBX format: each termEntry with en-US source + zh-CN target langSets
@@ -314,7 +314,7 @@ test "Layer2: term enforcement and consistency checking" {
 // ===========================================================================
 
 test "Layer3: cross-domain semantic recall with spreading activation" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
 
   // Train on all 8 domains
   for i = 0; i < all_corpora.length(); i = i + 1 {
@@ -356,7 +356,7 @@ test "Layer3: cross-domain semantic recall with spreading activation" {
 // ===========================================================================
 
 test "Layer4: cold-start generalization into unseen modern domain" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
 
   // Train on 7 domains, leave out "Cybersecurity"
   for i = 0; i < all_corpora.length(); i = i + 1 {
@@ -393,7 +393,7 @@ test "Layer4: cold-start generalization into unseen modern domain" {
 // ===========================================================================
 
 test "Layer5: deep fuzzy match quality with white-box scores" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
 
   // Dense technical corpus: AI + Climate + Quantum
   let _ = eng.add_tm(
@@ -456,7 +456,7 @@ test "Layer5: deep fuzzy match quality with white-box scores" {
 // ===========================================================================
 
 test "Layer6: deterministic reproducibility and JSON round-trip integrity" {
-  let eng1 = ProphecyEngine::make()
+  let eng1 = @lib.ProphecyEngine::make()
 
   // Train engine with one domain
   train_corpus(eng1, corpus_quantum, 5)
@@ -465,7 +465,7 @@ test "Layer6: deterministic reproducibility and JSON round-trip integrity" {
   let json1 = eng1.to_json()
 
   // Recreate identical engine
-  let eng2 = ProphecyEngine::make()
+  let eng2 = @lib.ProphecyEngine::make()
   train_corpus(eng2, corpus_quantum, 5)
   let json2 = eng2.to_json()
 
@@ -477,7 +477,7 @@ test "Layer6: deterministic reproducibility and JSON round-trip integrity" {
   inspect(deterministic, content="true")
 
   // JSON round-trip: serialize → deserialize → serialize
-  let eng3 = ProphecyEngine::from_json(json1)
+  let eng3 = @lib.ProphecyEngine::from_json(json1)
   let json3 = eng3.to_json()
   let str3 = json3.stringify()
   let roundtrip = str1 == str3
@@ -505,7 +505,7 @@ test "Layer6: deterministic reproducibility and JSON round-trip integrity" {
 // ===========================================================================
 
 test "Layer7: consolidation, metrics, and WAL event sourcing" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
 
   // Train on all 8 domains, 4 rounds each
   for i = 0; i < all_corpora.length(); i = i + 1 {
@@ -558,7 +558,7 @@ test "Layer7: consolidation, metrics, and WAL event sourcing" {
 // ===========================================================================
 
 test "Layer8: white-box explainability with activation and prediction paths" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
 
   // Train on NLP domain
   train_corpus(eng, corpus_nlp, 5)
@@ -610,7 +610,7 @@ test "Layer8: white-box explainability with activation and prediction paths" {
 // ===========================================================================
 
 test "Layer9: attention-gated recall with domain bias (extensions #18-#19)" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
 
   // Train on Quantum + Distributed domains (both involve "error", "latency", "benchmark")
   train_corpus(eng, corpus_quantum, 4)
@@ -652,7 +652,7 @@ test "Layer9: attention-gated recall with domain bias (extensions #18-#19)" {
 // ===========================================================================
 
 test "Layer10: active learning candidates, federated export, domain bias distillation" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
 
   // Train on 4 domains
   train_corpus(eng, corpus_ai_safety, 3)

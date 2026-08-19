@@ -58,7 +58,7 @@ let v2_pool : Array[(String, String)] = [
 ]
 
 // 按 N 条生成 TM 节点；为增大 IDF 区分度，对每条加 0..K 段扰动后缀
-fn v2_seed_tms(e : ProphecyEngine, n : Int) -> Unit {
+fn v2_seed_tms(e : @lib.ProphecyEngine, n : Int) -> Unit {
   for i = 0; i < n; i = i + 1 {
     let p = v2_pool[i % v2_pool.length()]
     // 加 0..3 段中英扰动让 token 分布更接近真实语料（部分 token 唯一）
@@ -77,7 +77,7 @@ fn v2_seed_tms(e : ProphecyEngine, n : Int) -> Unit {
 // 在 10K+ 语料上跑 fuzzy_match，统计次数与时间。
 // wasm-gc 下没有内置 wall clock；用「同 query 跑 N 次必须全部完成」做软约束，
 // 真实耗时会反映在 moon test 的总 wall-time 上（< 50ms × N 远小于 wasm-gc 启动 ~1s）。
-fn v2_bench_fuzzy(e : ProphecyEngine, query : String, n : Int) -> Int {
+fn v2_bench_fuzzy(e : @lib.ProphecyEngine, query : String, n : Int) -> Int {
   let mut ok = 0
   for _i = 0; _i < n; _i = _i + 1 {
     let r = e.fuzzy_match(query, 3, 0.0)
@@ -94,7 +94,7 @@ fn v2_bench_fuzzy(e : ProphecyEngine, query : String, n : Int) -> Int {
 // ---------------------------------------------------------------------------
 
 test "L13 fuzzy_match 10K TM 含 warmup 总延迟可接受" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   v2_seed_tms(e, 10000)
   // 3 次 warmup 拉满缓存（IDF/postings/sort 等热路径）
   let _ = e.fuzzy_match("电池包热管理", 3, 0.0)
@@ -133,7 +133,7 @@ fn v2_extract_topk(j : Json) -> Array[(String, Double)] {
 }
 
 test "L14 倒排剪枝 Top-3 与全图完全一致 + score 差 < 0.01" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   v2_seed_tms(e, 1000)   // 1000 > PRUNE_MIN_TM (200) → 走剪枝
   let query = "电池包热管理"
   // 剪枝路径
@@ -165,7 +165,7 @@ test "L14 倒排剪枝 Top-3 与全图完全一致 + score 差 < 0.01" {
 // ---------------------------------------------------------------------------
 
 test "L15 qe_score BLEU 校准：完美匹配 = 1.0；完全无关 < 0.3" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   // 完美匹配：源 = 译文（同语种）
   let s1 = e.qe_score("the cat is on the mat", "the cat is on the mat", 1.0, true)
   // r4(1.0) = 1.0；0.50 + 0.25 + 0.10 + 0.15 = 1.0
@@ -183,7 +183,7 @@ test "L15 qe_score BLEU 校准：完美匹配 = 1.0；完全无关 < 0.3" {
 // ---------------------------------------------------------------------------
 
 test "L16 剪枝退化：query 全是停用词 / 0 词 → 候选集为空 → 退回全图" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   // 注意：R16 的 3 条 TM 在 PRUNE_MIN_TM 之下，本来就走全图。
   // 这里用 500 条语料强制走剪枝，再用「全停用词 query」制造「候选集为空」分支。
   v2_seed_tms(e, 500)
@@ -213,7 +213,7 @@ test "L16 剪枝退化：query 全是停用词 / 0 词 → 候选集为空 → �
 // ---------------------------------------------------------------------------
 
 test "L17 跨语种 en→zh BLEU 校准不爆炸（≤1.0，不超 1.0）" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   // 完美翻译对（语义同；BLEU 在不同语种间几乎为 0，应 < 0.1）
   let s_perfect = e.qe_score("Open the battery pack thermal management panel", "打开电池包热管理面板", 0.95, true)
   // 即使 term 满分 + match 0.95，跨语种 BLEU ~0 → 分数 ~0.50·0.95 + 0.25 + 0.10·~0.05 + 0.15·~0
@@ -230,7 +230,7 @@ test "L17 跨语种 en→zh BLEU 校准不爆炸（≤1.0，不超 1.0）" {
 // ---------------------------------------------------------------------------
 
 test "L18 fuzzy_match weights? 改变权重能影响 Top-1 排序" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   // 构造两个差异点：
   //   A: sim_tok 高、sim_ng 中（IDF dice 高、bigram 中等）
   //   B: sim_tok 中、sim_ng 高（IDF dice 中、bigram 高）

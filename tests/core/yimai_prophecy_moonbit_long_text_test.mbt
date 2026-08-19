@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------
 
 test "L1 numeric_tokens: 浮点 + 整数 + 不接单位" {
-  let nums = numeric_tokens("电池电压 3.7V，工作温度 20~85，效率 95")
+  let nums = @lib.numeric_tokens("电池电压 3.7V，工作温度 20~85，效率 95")
   // 期望: 3.7 / 20 / 85 / 95（v1 不接单位字母/℃/°/%，浮点和整数都被识别）
   let mut found_3_7 = false
   let mut found_85 = false
@@ -31,8 +31,8 @@ test "L1 numeric_tokens: 浮点 + 整数 + 不接单位" {
 
 test "L2 numeric_tokens: 确定性" {
   let s = "range 100-200m at 5GHz, peak 2.4V"
-  let a = numeric_tokens(s)
-  let b = numeric_tokens(s)
+  let a = @lib.numeric_tokens(s)
+  let b = @lib.numeric_tokens(s)
   let mut same = a.length() == b.length()
   if same {
     for i = 0; i < a.length(); i = i + 1 {
@@ -47,7 +47,7 @@ test "L2 numeric_tokens: 确定性" {
 // ---------------------------------------------------------------------------
 
 test "L3 numeric_tokens: 千分位逗号不会吞掉后续数字" {
-  let nums = numeric_tokens("capacity 1,000mAh, 后续 2,500 字")
+  let nums = @lib.numeric_tokens("capacity 1,000mAh, 后续 2,500 字")
   // 期望：仅识别出 "1" "2" 两个独立数字（逗号作分隔）
   let mut one = false
   let mut two = false
@@ -64,7 +64,7 @@ test "L3 numeric_tokens: 千分位逗号不会吞掉后续数字" {
 // ---------------------------------------------------------------------------
 
 test "L4 split_into_segments: 中文句号/全角叹号/全角问号切分" {
-  let segs = split_into_segments("第一句。第二句！第三句？", 100)
+  let segs = @lib.split_into_segments("第一句。第二句！第三句？", 100)
   inspect(segs.length() == 3, content="true")
 }
 
@@ -75,7 +75,7 @@ test "L4 split_into_segments: 中文句号/全角叹号/全角问号切分" {
 test "L5 split_into_segments: 超长段按空格切" {
   // 构造一个 > 200 字符长段，无句号，max_chars=50 → 必触发二次切
   let long = "传感器A安装在3号支架与主控板通过屏蔽线缆连接并进行阻抗匹配 传感器B连接主控并接入数据采集模块以实现高精度信号调理与滤波 传感器C接入数据采集模块并通过光电隔离保护后端设备 传感器D作为冗余备份在主链路失效时自动切换至备用信道"
-  let segs = split_into_segments(long, 50)
+  let segs = @lib.split_into_segments(long, 50)
   // 至少切成 2 段
   inspect(segs.length() >= 2, content="true")
   // 每段不超过 50 + 一点余量（max_chars 边界）
@@ -91,7 +91,7 @@ test "L5 split_into_segments: 超长段按空格切" {
 // ---------------------------------------------------------------------------
 
 test "L6 split_into_segments: 空文本返回空数组" {
-  let segs = split_into_segments("", 100)
+  let segs = @lib.split_into_segments("", 100)
   inspect(segs.length() == 0, content="true")
 }
 
@@ -105,7 +105,7 @@ test "L7 yimai_tokenize: 5万字不爆" {
   for i = 0; i < 50000; i = i + 1 {
     s.write_char('中')
   }
-  let toks = yimai_tokenize(s.to_string())
+  let toks = @lib.yimai_tokenize(s.to_string())
   // 截断后应 <= MAX_TOKENS（允许等于或略小）
   inspect(toks.length() <= 20000, content="true")
 }
@@ -115,7 +115,7 @@ test "L7 yimai_tokenize: 5万字不爆" {
 // ---------------------------------------------------------------------------
 
 test "L8 mqm_tags: 数字漏译 → critical" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   let tags = e.mqm_tags("Voltage 3.7V at 100mA", "电压电流正常", 0.8, true)
   // 期望 issues 数组含 dimension=numeric_consistency, severity=critical
   let mut found_critical = false
@@ -147,7 +147,7 @@ test "L8 mqm_tags: 数字漏译 → critical" {
 // ---------------------------------------------------------------------------
 
 test "L9 mqm_tags: 数字集合不一致 → major" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   // 源 3.7 / 100；译 3.7（漏 100）+ 多 200 → 不一致
   let tags = e.mqm_tags("Voltage 3.7V at 100mA", "电压 3.7V 额外 200", 0.8, true)
   let mut found_major = false
@@ -179,7 +179,7 @@ test "L9 mqm_tags: 数字集合不一致 → major" {
 // ---------------------------------------------------------------------------
 
 test "L10 mqm_tags: 数字一致 → 无 numeric_consistency 标签" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   let tags = e.mqm_tags("Voltage 3.7V", "电压 3.7V", 1.0, true)
   let mut found_num_issue = false
   match tags {
@@ -205,7 +205,7 @@ test "L10 mqm_tags: 数字一致 → 无 numeric_consistency 标签" {
 // ---------------------------------------------------------------------------
 
 test "L11 qe_auto: 数字漏译反映到 mqm 数组" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   let r = e.qe_auto("Voltage 3.7V", "电压", 0.8)
   // r 是 {qe_score, term_ok, mqm}
   let mut found = false
@@ -236,7 +236,7 @@ test "L11 qe_auto: 数字漏译反映到 mqm 数组" {
 // ---------------------------------------------------------------------------
 
 test "L12 fuzzy_match: 超长 query 不崩（空 TM 应返回 []）" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   // 构造 5000 字符 query
   let q = StringBuilder()
   for i = 0; i < 5000; i = i + 1 {

@@ -10,6 +10,10 @@ description: >-
   + drift_report.text_chrf_avg 翻译质量漂移指标 + MQM 严重度数值化（None=0/Minor=1/Major=5/Critical=10）
   + predict/consolidate 拆 5/4 段 fn + routes_meta 单一源化。
   P4 frontier corpus (2026-08 后续)：新增 10 个跨域双语专业语料（前沿科技 × 2 / 科学 / 数学 × 2 / 哲学 / 文学 / 心理学 / 民航 / 航天），共 60 句 (text, mtype) 对；测试从 137/137 → 151/151。
+  P5 增量（2026-08）：MQM severity 三方对齐（yimai vs Phrase vs Lokalise）+ /api/mqm_re_annotate 端点（Google 2025-10-28 re-annotation 论文对齐）
+  + 商务领域 8 句语料（ISO 11669 / GB/T 30539-2025）+ 仓库结构整理（18 个测试 *_test.mbt 从根目录移到 tests/{core,corpus,feature}/ sub-package；
+  MoonBit 0.1.20260724 不支持 sub-package 跨包 import，跨子包共享 helper 改为 inline `_test_helpers.mbt` + 多子包各复制）；
+  测试 151/151 → 159/159（核心 53 + 语料 54 + 扩展 52）。所有新增文件必须落到 tests/、docs/、cmd/ 等有组织目录，**禁止再散落根目录**。
 tips: >-
   触发词：翻译记忆、TM 检索、术语校验、check_terms、下一步预测、predict、记忆闭环、reward、consolidate、
   BLEU 评测、chrF 评测、风格检查、回译验证、术语冲突、TMPlm、retrieve_prompt、MQM、drift_report、

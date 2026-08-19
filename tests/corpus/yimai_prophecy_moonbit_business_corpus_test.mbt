@@ -37,7 +37,7 @@ let business_corpus : Array[(String, String)] = [
 //   （P4 frontier_corpus T48 已验证此模式）
 // ---------------------------------------------------------------------------
 test "T42 business_corpus_hit_at_3" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
   // add_tm 8 句入 TM 索引
   for i = 0; i < business_corpus.length(); i = i + 1 {
     let (s, t) = business_corpus[i]
@@ -76,7 +76,7 @@ test "T42 business_corpus_hit_at_3" {
 //   这是商务翻译最常见的硬伤：付款条件漏数字会导致合同争议
 // ---------------------------------------------------------------------------
 test "T43 business_corpus_numeric_gate_critical" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
   // add_tm 8 句入索引
   for i = 0; i < business_corpus.length(); i = i + 1 {
     let (s, t) = business_corpus[i]
@@ -101,7 +101,7 @@ test "T43 business_corpus_numeric_gate_critical" {
 //   商务术语一致性是 ISO 11669 强调的硬要求
 // ---------------------------------------------------------------------------
 test "T44 business_corpus_term_gate" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
   // add_tm 8 句入索引
   for i = 0; i < business_corpus.length(); i = i + 1 {
     let (s, t) = business_corpus[i]

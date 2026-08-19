@@ -76,7 +76,7 @@ fn bench_contains(arr : Array[String], s : String) -> Bool {
 test "B1 基线对照：引擎显著优于频率先验与随机基线" {
   let reps = 8
   // 引擎在线 Hit@3（复现验收数字）
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
   train_all(eng, reps)
   let eng_hit = eng.hit_rate()
 
@@ -123,7 +123,7 @@ test "B2 留出集泛化：未见主题名的冷启动 Top-3 命中（leave-one-
   let total = topics.length()
   for h = 0; h < total; h = h + 1 {
     let held = topics[h]
-    let e = ProphecyEngine::make()
+    let e = @lib.ProphecyEngine::make()
     // 仅用【其余 7 个主题】训练（held 从不进入训练）
     for _r = 0; _r < 6; _r = _r + 1 {
       for t in topics {
@@ -161,7 +161,7 @@ test "B2 留出集泛化：未见主题名的冷启动 Top-3 命中（leave-one-
 // ---------------------------------------------------------------------------
 
 test "B3 鲁棒性：注入噪声后仍能预测正确下一步" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   train_all(e, 6)
   // 注入无关噪声（与任何工作流步骤都不相关的句子）
   let _ = e.observe("顺便一提：今天午餐吃了牛肉面味道不错", "fact")
@@ -181,7 +181,7 @@ test "B3 鲁棒性：注入噪声后仍能预测正确下一步" {
 // ---------------------------------------------------------------------------
 
 test "B4 召回精度：术语查询 Top-3 命中对应双语术语" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   // 建一个小型双语术语库（真实内容）
   let glossary : Array[(String, String)] = [
     ("【术语】电池管理系统 → Battery Management System (BMS)", "fact"),

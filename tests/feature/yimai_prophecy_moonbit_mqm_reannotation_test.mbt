@@ -17,7 +17,7 @@
 //   mqm_re_annotate 据此走二次审并 re_annotated=true。
 // ---------------------------------------------------------------------------
 test "T38 mqm_re_annotate_flags_critical" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
   let result = eng.mqm_re_annotate(
     "The device must not be pressurized at 30 psi.",
     "应当对该装置加压。",
@@ -36,7 +36,7 @@ test "T38 mqm_re_annotate_flags_critical" {
 // T39: 确定性 — 同一段两次调用返回完全相同（re-annotation 也是 deterministic）
 // ---------------------------------------------------------------------------
 test "T39 mqm_re_annotate_deterministic" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
   let a = eng.mqm_re_annotate(
     "The device must not be pressurized at 30 psi.",
     "应当对该装置加压。",
@@ -55,7 +55,7 @@ test "T39 mqm_re_annotate_deterministic" {
 //   高 match_rate + 译文长度正常 + 无数字丢失 → 不会触发 Critical
 // ---------------------------------------------------------------------------
 test "T40 mqm_re_annotate_skips_minor" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
   let result = eng.mqm_re_annotate(
     "Use a pressure valve to activate the device.",
     "使用压力阀激活装置。",
@@ -71,7 +71,7 @@ test "T40 mqm_re_annotate_skips_minor" {
 // T40b: re_annotations 段在 critical_count=0 时为空数组
 // ---------------------------------------------------------------------------
 test "T40b mqm_re_annotate_empty_array_when_no_critical" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
   let result = eng.mqm_re_annotate(
     "Hello world",
     "你好世界",
@@ -87,7 +87,7 @@ test "T40b mqm_re_annotate_empty_array_when_no_critical" {
 //   未来走多标注员模型时此断言不再恒真，需更新测试。
 // ---------------------------------------------------------------------------
 test "T41 mqm_re_annotate_consistent_under_deterministic_self_review" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
   let result = eng.mqm_re_annotate(
     "The device must not be pressurized at 30 psi.",
     "应当对该装置加压。",

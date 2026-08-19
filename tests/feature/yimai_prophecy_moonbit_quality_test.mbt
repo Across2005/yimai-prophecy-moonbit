@@ -3,22 +3,22 @@
 // 覆盖：bleu_score / chrf_score / style_check / back_align / term_conflicts / retrieve_for_prompt / recall 角色剪枝
 
 test "T1 BLEU：完全匹配 = 1.0" {
-  let s = bleu_score("the cat is on the mat", "the cat is on the mat")
+  let s = @lib.bleu_score("the cat is on the mat", "the cat is on the mat")
   inspect(s == 1.0, content="true")
 }
 
 test "T2 BLEU：部分匹配介于 (0,1)" {
-  let s = bleu_score("the cat is on the mat", "a cat sits on a mat")
+  let s = @lib.bleu_score("the cat is on the mat", "a cat sits on a mat")
   inspect(s > 0.0 && s < 1.0, content="true")
 }
 
 test "T3 chrF++：完全匹配 = 1.0" {
-  let s = chrf_score("the cat is on the mat", "the cat is on the mat")
+  let s = @lib.chrf_score("the cat is on the mat", "the cat is on the mat")
   inspect(s == 1.0, content="true")
 }
 
 test "T4 style_check：检测重复标点" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   let r = e.style_check("这是测试。这是第二句。。")
   match r {
     Json::Array(a) => {
@@ -40,7 +40,7 @@ test "T4 style_check：检测重复标点" {
 }
 
 test "T4b style_report：记忆库分布 + 术语变体 + 偏离建议" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   let m1 = e.add_tm("电池包热管理", "battery pack thermal management")
   let m2 = e.add_tm("电池管理系统", "battery management system")
   let _ = e.add_tm("快充功率", "fast charging power")
@@ -68,7 +68,7 @@ test "T4b style_report：记忆库分布 + 术语变体 + 偏离建议" {
     _ => inspect(false, content="true")
   }
   // 拉丁词根按首个单词归并（switch/switcher 共享词根 "switch"），且输出按 root 字典序
-  let e2 = ProphecyEngine::make()
+  let e2 = @lib.ProphecyEngine::make()
   let l1 = e2.add_tm("switch mode", "开关模式")
   let l2 = e2.add_tm("switch unit", "切换单元")
   let _ = e2.mark_term(l1)
@@ -85,7 +85,7 @@ test "T4b style_report：记忆库分布 + 术语变体 + 偏离建议" {
 }
 
 test "T5 back_align：LCS 对齐分数合理" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   let r = e.back_align("install sensor", "install the sensor")
   match r {
     Json::Object(o) =>
@@ -98,7 +98,7 @@ test "T5 back_align：LCS 对齐分数合理" {
 }
 
 test "T6 term_conflicts：一词多译检出" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   let _ = e.load_tbx(
     "<termEntry><langSet xml:lang=\"en-US\"><ntig><term>API</term></ntig></langSet><langSet xml:lang=\"zh-CN\"><ntig><term>接口</term></ntig></langSet></termEntry>" +
       "<termEntry><langSet xml:lang=\"en-US\"><ntig><term>API</term></ntig></langSet><langSet xml:lang=\"zh-CN\"><ntig><term>应用程序接口</term></ntig></langSet></termEntry>",
@@ -124,7 +124,7 @@ test "T6 term_conflicts：一词多译检出" {
 }
 
 test "T7 retrieve_for_prompt：三段式结构" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   let _ = e.add_tm("电池包热管理策略", "Battery pack thermal management strategy")
   let r = e.retrieve_for_prompt("电池包热管理", 2, 0.3)
   match r {
@@ -146,31 +146,31 @@ test "T7 retrieve_for_prompt：三段式结构" {
 // ---------------------------------------------------------------------------
 
 test "T30 decode_pct: %2e%2e%2f 解码为 \"../\"" {
-  let out = decode_pct("%2e%2e%2f")
+  let out = @lib.decode_pct("%2e%2e%2f")
   inspect(out == "../", content="true")
 }
 
 test "T31 decode_pct: 大写 hex %2F 同样解码为 /" {
-  let out = decode_pct("a%2Fb")
+  let out = @lib.decode_pct("a%2Fb")
   inspect(out == "a/b", content="true")
 }
 
 test "T32 decode_pct: 无 % 序列原样透传" {
-  let out = decode_pct("plain/path/with-slashes")
+  let out = @lib.decode_pct("plain/path/with-slashes")
   inspect(out == "plain/path/with-slashes", content="true")
 }
 
 test "T33 decode_pct: 非 hex %ZZ 保守保留原样" {
   // %ZZ 不是合法 hex 序列，保守策略：透传整个 % 字节（不丢字符）
-  let out = decode_pct("a%ZZb")
+  let out = @lib.decode_pct("a%ZZb")
   inspect(out == "a%ZZb", content="true")
 }
 
 test "T34 decode_pct: %2e%2e%2fcmd 显式返回 \"..cmd\" 前缀触发 '..' 检查" {
   // 模拟 serve_static 的检查链路：解码后必含 ".."，被现有 str_contains 拦截
-  let decoded = decode_pct("%2e%2e%2fcmd%2fservice%2fmcp.mbt")
-  inspect(str_contains(decoded, ".."), content="true")
-  inspect(str_contains(decoded, "\\"), content="false")
+  let decoded = @lib.decode_pct("%2e%2e%2fcmd%2fservice%2fmcp.mbt")
+  inspect(@lib.str_contains(decoded, ".."), content="true")
+  inspect(@lib.str_contains(decoded, "\\"), content="false")
 }
 
 // ---------------------------------------------------------------------------
@@ -179,14 +179,14 @@ test "T34 decode_pct: %2e%2e%2fcmd 显式返回 \"..cmd\" 前缀触发 '..' 检�
 // ---------------------------------------------------------------------------
 
 test "T35 mqm_severity_to_score: 标准 4 档全部正确" {
-  inspect(mqm_severity_to_score("none") == 0.0, content="true")
-  inspect(mqm_severity_to_score("minor") == 1.0, content="true")
-  inspect(mqm_severity_to_score("major") == 5.0, content="true")
-  inspect(mqm_severity_to_score("critical") == 10.0, content="true")
+  inspect(@lib.mqm_severity_to_score("none") == 0.0, content="true")
+  inspect(@lib.mqm_severity_to_score("minor") == 1.0, content="true")
+  inspect(@lib.mqm_severity_to_score("major") == 5.0, content="true")
+  inspect(@lib.mqm_severity_to_score("critical") == 10.0, content="true")
 }
 
 test "T36 mqm_issue: 输出 4 字段 (dimension/severity/severity_score/detail)" {
-  let issue = mqm_issue("terminology", "major", "术语违规")
+  let issue = @lib.mqm_issue("terminology", "major", "术语违规")
   match issue {
     Json::Object(o) => {
       let has_dim = match o.get("dimension") { Some(Json::String("terminology")) => true; _ => false }
@@ -200,7 +200,7 @@ test "T36 mqm_issue: 输出 4 字段 (dimension/severity/severity_score/detail)"
 }
 
 test "T37 mqm_tags: critical 空译文 issue 带 severity_score=10.0" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   let r = e.mqm_tags("测试源文", "", 0.0, true)
   match r {
     Json::Array(issues) => {

@@ -3,7 +3,7 @@
 // 覆盖：TM 模糊匹配(匹配率%)、concordance 检索、TBX 加载 + 强制对齐 + 一致性校验、序列化往返。
 
 test "R16 TM 模糊匹配返回 Top-K 且匹配率正确" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   let _ = e.add_tm("电池包热管理策略", "Battery pack thermal management strategy")
   let _ = e.add_tm("电机冷却系统", "Motor cooling system")
   let _ = e.add_tm("电池包温度管理方案", "Battery pack temperature management plan")
@@ -47,7 +47,7 @@ test "R16 TM 模糊匹配返回 Top-K 且匹配率正确" {
 }
 
 test "R17 concordance 检索命中含术语的句段" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   let _ = e.add_tm("打开设置菜单选择网络", "Open Settings menu, choose Network")
   let _ = e.add_tm("网络连接有问题", "Network connection has issues")
   let _ = e.add_tm("保存文件到本地", "Save file locally")
@@ -59,7 +59,7 @@ test "R17 concordance 检索命中含术语的句段" {
 }
 
 test "R18 TBX 加载 + 强制对齐命中" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   let tbx =
     "<martif><text><body>" +
     "<termEntry id=\"1\"><langSet xml:lang=\"en-US\"><ntig><termGrp><term>network logon</term></termGrp></ntig></langSet>" +
@@ -75,7 +75,7 @@ test "R18 TBX 加载 + 强制对齐命中" {
 }
 
 test "R19 TBX 一致性校验捕获术语漏译" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   let tbx =
     "<martif><text><body>" +
     "<termEntry id=\"1\"><langSet xml:lang=\"en-US\"><ntig><termGrp><term>sensor</term></termGrp></ntig></langSet>" +
@@ -97,9 +97,9 @@ test "R19 TBX 一致性校验捕获术语漏译" {
 }
 
 test "R20 TM 节点序列化往返保留 translation" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   let _ = e.add_tm("源句 A", "译文 A")
-  let e2 = ProphecyEngine::from_json(e.to_json())
+  let e2 = @lib.ProphecyEngine::from_json(e.to_json())
   let r = e2.fuzzy_match("源句 A", 1, 0.0)
   match r {
     Json::Array(a) => {
@@ -117,7 +117,7 @@ test "R20 TM 节点序列化往返保留 translation" {
 }
 
 test "R21 术语词边界：log 不应误命中 logical" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   let tbx =
     "<martif><text><body>" +
     "<termEntry id=\"1\"><langSet xml:lang=\"en-US\"><ntig><termGrp><term>log</term></termGrp></ntig></langSet>" +
@@ -139,7 +139,7 @@ test "R21 术语词边界：log 不应误命中 logical" {
 }
 
 test "R22 多语言 TBX：按 xml:lang 取 en→zh（忽略 fr）" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   let tbx =
     "<martif><text><body>" +
     "<termEntry id=\"1\">" +
@@ -188,7 +188,7 @@ fn json_source(j : Json) -> String {
 }
 
 test "R23 S1 IDF 加权：常见词噪音下罕见术语优先召回，且 top1-top2 区分度 >= 旧公式" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   let _ = e.add_tm("打开文件保存", "Open file and save")
   let _ = e.add_tm("打开设置界面", "Open settings UI")
   let _ = e.add_tm("打开浏览器窗口", "Open browser window")
@@ -217,7 +217,7 @@ test "R23 S1 IDF 加权：常见词噪音下罕见术语优先召回，且 top1-
 }
 
 test "R24 S1 词序重排：新公式命中（>0.70），旧公式漏掉（<0.70）" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   let _ = e.add_tm("请检查设置按钮", "Please check the settings button")
   // 中文 bigram 分词下词序重排改变 bigram，旧公式的 token 余弦显著受损；新公式 sim_tokenset 不敏感
   let rn = e.fuzzy_match("设置按钮请检查", 1, 0.70)
@@ -233,7 +233,7 @@ test "R24 S1 词序重排：新公式命中（>0.70），旧公式漏掉（<0.70
 }
 
 test "R25 S1 边界：空查询不崩溃；单字查询无 2-gram 时不过 0.70 阈值" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   let _ = e.add_tm("请检查设置按钮", "Please check the settings button")
   let r1 = e.fuzzy_match("", 3, 0.0)
   match r1 {

@@ -50,7 +50,7 @@ fn fc_recall_texts(rec : Array[Json]) -> Array[String] {
 }
 
 // ---- Helper: generic training loop ----
-fn fc_train(eng : ProphecyEngine, corpus : Array[(String, String)], reps : Int) -> Unit {
+fn fc_train(eng : @lib.ProphecyEngine, corpus : Array[(String, String)], reps : Int) -> Unit {
   for _r = 0; _r < reps; _r = _r + 1 {
     eng.end_episode()
     for i = 0; i < corpus.length(); i = i + 1 {
@@ -165,7 +165,7 @@ let fc_ilrs : Array[(String, String)] = [
 ]
 
 // ---- Training helper that iterates all 10 sub-corpora ----
-fn fc_train_all(eng : ProphecyEngine, reps : Int) -> Unit {
+fn fc_train_all(eng : @lib.ProphecyEngine, reps : Int) -> Unit {
   fc_train(eng, fc_ai_safety, reps)
   fc_train(eng, fc_agent_edge, reps)
   fc_train(eng, fc_majorana, reps)
@@ -198,7 +198,7 @@ let fc_corpus_names : Array[String] = [
 
 // T38: 训练后 predict 能产出非空预测 (10 语料中至少一个能召回)
 test "T38 frontier-corpus: 训练 10 语料后 predict 至少一个产出" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   fc_train_all(e, 2)
   let p = e.predict(3)
   match p {
@@ -212,120 +212,120 @@ test "T38 frontier-corpus: 训练 10 语料后 predict 至少一个产出" {
 
 // T39: AI Safety 训练后 recall 召回 EU AI Act 相关记忆
 test "T39 frontier-AI-Safety: recall 召回 EU AI Act 关键词" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   fc_train(e, fc_ai_safety, 3)
   let r = e.recall("EU AI Act Article 52 compliance score", 5)
   let texts = fc_recall_texts(r)
   let mut has_match = false
   for t in texts {
-    if str_contains(t, "EU AI Act") { has_match = true }
+    if @lib.str_contains(t, "EU AI Act") { has_match = true }
   }
   inspect(has_match, content="true")
 }
 
 // T40: 凝聚态物理 训练后 recall 召回 Majorana 关键词
 test "T40 frontier-Majorana: recall 召回 Majorana 关键词" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   fc_train(e, fc_majorana, 3)
   let r = e.recall("topological superconductor Majorana zero modes criticality", 5)
   let texts = fc_recall_texts(r)
   let mut has_match = false
   for t in texts {
-    if str_contains(t, "Majorana") { has_match = true }
+    if @lib.str_contains(t, "Majorana") { has_match = true }
   }
   inspect(has_match, content="true")
 }
 
 // T41: 算术几何 训练后 recall 召回 BSD / Selmer 关键词
 test "T41 frontier-BSD: recall 召回 BSD 猜想与 Selmer 关键词" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   fc_train(e, fc_bsd, 3)
   let r = e.recall("BSD conjecture Mordell-Weil rank Selmer group", 5)
   let texts = fc_recall_texts(r)
   let mut has_match = false
   for t in texts {
-    if str_contains(t, "BSD") || str_contains(t, "Mordell-Weil") ||
-       str_contains(t, "Selmer") { has_match = true }
+    if @lib.str_contains(t, "BSD") || @lib.str_contains(t, "Mordell-Weil") ||
+       @lib.str_contains(t, "Selmer") { has_match = true }
   }
   inspect(has_match, content="true")
 }
 
 // T42: 拓扑学 训练后 recall 召回 infinity-category 关键词
 test "T42 frontier-higher-cat: recall 召回 infinity-category 关键词" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   fc_train(e, fc_higher_cat, 3)
   let r = e.recall("infinity-category presentable simplicial presheaf", 5)
   let texts = fc_recall_texts(r)
   let mut has_match = false
   for t in texts {
-    if str_contains(t, "infinity-category") { has_match = true }
+    if @lib.str_contains(t, "infinity-category") { has_match = true }
   }
   inspect(has_match, content="true")
 }
 
 // T43: 现象学 训练后 recall 召回 intentionality 关键词
 test "T43 frontier-phenomenology: recall 召回 intentionality 关键词" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   fc_train(e, fc_phenomenology, 3)
   let r = e.recall("Husserl intentionality noetic-noematic phenomenology", 5)
   let texts = fc_recall_texts(r)
   let mut has_match = false
   for t in texts {
-    if str_contains(t, "intentionality") || str_contains(t, "Husserl") { has_match = true }
+    if @lib.str_contains(t, "intentionality") || @lib.str_contains(t, "Husserl") { has_match = true }
   }
   inspect(has_match, content="true")
 }
 
 // T44: 数字人文 训练后 recall 召回 stylometry / BERTopic 关键词
 test "T44 frontier-digital-humanities: recall 召回 stylometry 关键词" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   fc_train(e, fc_digital_humanities, 3)
   let r = e.recall("stylometric authorship BERTopic distant reading", 5)
   let texts = fc_recall_texts(r)
   let mut has_match = false
   for t in texts {
-    if str_contains(t, "stylometric") || str_contains(t, "BERTopic") { has_match = true }
+    if @lib.str_contains(t, "stylometric") || @lib.str_contains(t, "BERTopic") { has_match = true }
   }
   inspect(has_match, content="true")
 }
 
 // T45: 心理学 训练后 recall 召回 WOOP / If-Then 关键词
 test "T45 frontier-CBT: recall 召回 WOOP / If-Then 关键词" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   fc_train(e, fc_cbt, 3)
   let r = e.recall("WOOP implementation intentions If-Then plan cognitive restructuring", 5)
   let texts = fc_recall_texts(r)
   let mut has_match = false
   for t in texts {
-    if str_contains(t, "WOOP") || str_contains(t, "If-Then") { has_match = true }
+    if @lib.str_contains(t, "WOOP") || @lib.str_contains(t, "If-Then") { has_match = true }
   }
   inspect(has_match, content="true")
 }
 
 // T46: 民航 训练后 recall 召回 RNP AR 关键词
 test "T46 frontier-civil-aviation: recall 召回 RNP AR 关键词" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   fc_train(e, fc_civil_aviation, 3)
   let r = e.recall("RNP AR approach procedure RF leg BCAR Section L", 5)
   let texts = fc_recall_texts(r)
   let mut has_match = false
   for t in texts {
-    if str_contains(t, "RNP") || str_contains(t, "BCAR") { has_match = true }
+    if @lib.str_contains(t, "RNP") || @lib.str_contains(t, "BCAR") { has_match = true }
   }
   inspect(has_match, content="true")
 }
 
 // T47: 航天 训练后 recall 召回 ILRS / 月球 关键词
 test "T47 frontier-ILRS: recall 召回 ILRS 关键词" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   fc_train(e, fc_ilrs, 3)
   let r = e.recall("International Lunar Research Station ILRS Chang'e-7 methalox", 5)
   let texts = fc_recall_texts(r)
   let mut has_match = false
   for t in texts {
-    if str_contains(t, "Lunar Research Station") ||
-       str_contains(t, "ILRS") ||
-       str_contains(t, "Chang'e-7") { has_match = true }
+    if @lib.str_contains(t, "Lunar Research Station") ||
+       @lib.str_contains(t, "ILRS") ||
+       @lib.str_contains(t, "Chang'e-7") { has_match = true }
   }
   inspect(has_match, content="true")
 }
@@ -334,7 +334,7 @@ test "T47 frontier-ILRS: recall 召回 ILRS 关键词" {
 //   fuzzy_match 只搜索 mtype="tm" 的 memory, observe 训练不入索引;
 //   add_tm 是 fuzzy_match 真正测试的入口。验证跨域 TM 一等公民能力。
 test "T48 frontier-cross-corpus: 跨域 add_tm 后 fuzzy_match 命中 TM 文本" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   fc_train_all(e, 2)
   // 把 4 个跨域术语对加入 TM 索引 (翻译记忆一等公民)
   let _ = e.add_tm(
@@ -363,7 +363,7 @@ test "T48 frontier-cross-corpus: 跨域 add_tm 后 fuzzy_match 命中 TM 文本"
           Json::Object(o) =>
             match o.get("source") {
               Some(Json::String(s)) =>
-                if str_contains(s, "RNP") && str_contains(s, "RF") { has_hit = true }
+                if @lib.str_contains(s, "RNP") && @lib.str_contains(s, "RF") { has_hit = true }
               _ => ()
             }
           _ => ()
@@ -377,10 +377,10 @@ test "T48 frontier-cross-corpus: 跨域 add_tm 后 fuzzy_match 命中 TM 文本"
 
 // T49: 跨域训练后同输入两次 predict 字节级一致 (R15 确定性契约)
 test "T49 frontier-cross-corpus: 确定性 (R15) — 同输入两次状态逐字节一致" {
-  let e1 = ProphecyEngine::make()
+  let e1 = @lib.ProphecyEngine::make()
   fc_train_all(e1, 1)
   let snap1 = e1.to_json()
-  let e2 = ProphecyEngine::make()
+  let e2 = @lib.ProphecyEngine::make()
   fc_train_all(e2, 1)
   let snap2 = e2.to_json()
   inspect(snap1.stringify() == snap2.stringify(), content="true")
@@ -388,7 +388,7 @@ test "T49 frontier-cross-corpus: 确定性 (R15) — 同输入两次状态逐字
 
 // T50: 跨域训练后 consolidate 不崩 + 记忆总量非负
 test "T50 frontier-cross-corpus: consolidate 后记忆数 ≥ 0 (无回滚)" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   fc_train_all(e, 2)
   let r = e.consolidate(false)
   match r {
@@ -403,7 +403,7 @@ test "T50 frontier-cross-corpus: consolidate 后记忆数 ≥ 0 (无回滚)" {
 
 // T51: 跨域训练后 predict 返回 confidence 字段 (D7 不确定性)
 test "T51 frontier-cross-corpus: predict 返回 confidence + uncertainty 字段" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   fc_train_all(e, 2)
   let p = e.predict(3)
   match p {

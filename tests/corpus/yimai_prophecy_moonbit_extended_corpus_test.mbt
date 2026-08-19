@@ -34,7 +34,7 @@ fn er_recall_texts(rec : Array[Json]) -> Array[String] {
 }
 
 // ---- Helper: generic training loop ----
-fn train_extended_corpus(eng : ProphecyEngine, corpus : Array[(String, String)], reps : Int) -> Unit {
+fn train_extended_corpus(eng : @lib.ProphecyEngine, corpus : Array[(String, String)], reps : Int) -> Unit {
   for _r = 0; _r < reps; _r = _r + 1 {
     eng.end_episode()
     for i = 0; i < corpus.length(); i = i + 1 {
@@ -123,7 +123,7 @@ let extended_corpora : Array[(String, Array[(String, String)])] = [
 // ===========================================================================
 
 test "Layer0: extended domain workflow prediction across 6 new fields" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
 
   let mut hits = 0
   for i = 0; i < extended_corpora.length(); i = i + 1 {
@@ -151,7 +151,7 @@ test "Layer0: extended domain workflow prediction across 6 new fields" {
 // ===========================================================================
 
 test "Layer1: extended TM fuzzy match with robotics & fusion terminology" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
 
   // Robotics TM pairs
   let _ = eng.add_tm(
@@ -194,7 +194,7 @@ test "Layer1: extended TM fuzzy match with robotics & fusion terminology" {
 // ===========================================================================
 
 test "Layer2: extended term enforcement for space & battery glossary" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
 
   let tbx_xml =
     #|<termEntry id="e1"><langSet xml:lang="en-US"><ntig><term>vision-language-action</term></ntig></langSet><langSet xml:lang="zh-CN"><ntig><term>视觉-语言-动作</term></ntig></langSet></termEntry> + 
@@ -240,7 +240,7 @@ test "Layer2: extended term enforcement for space & battery glossary" {
 // ===========================================================================
 
 test "Layer3: extended cross-domain recall across 6 new fields" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
 
   // Train on all 6 extended domains, 2 reps each
   for i = 0; i < extended_corpora.length(); i = i + 1 {
@@ -264,7 +264,7 @@ test "Layer3: extended cross-domain recall across 6 new fields" {
 // ===========================================================================
 
 test "Layer4: extended cold-start generalization on unseen domains" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
 
   // Train on 4 of the 6 domains
   train_extended_corpus(eng, corpus_robotics, 4)
@@ -299,7 +299,7 @@ test "Layer4: extended cold-start generalization on unseen domains" {
 // ===========================================================================
 
 test "Layer5: extended deep fuzzy match with multi-granularity scoring" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
 
   // Add TM across all 6 domains
   let _ = eng.add_tm("grasp unknown object with tactile feedback", "use GelSight fingertip for slip detection during grasp execution")
@@ -331,11 +331,11 @@ test "Layer5: extended deep fuzzy match with multi-granularity scoring" {
 // ===========================================================================
 
 test "Layer6: extended deterministic serialization with identical training" {
-  let eng1 = ProphecyEngine::make()
+  let eng1 = @lib.ProphecyEngine::make()
   train_extended_corpus(eng1, corpus_robotics, 5)
 
   let json1 = eng1.to_json()
-  let eng2 = ProphecyEngine::make()
+  let eng2 = @lib.ProphecyEngine::make()
   train_extended_corpus(eng2, corpus_robotics, 5)
   let json2 = eng2.to_json()
 
@@ -346,7 +346,7 @@ test "Layer6: extended deterministic serialization with identical training" {
   inspect(det, content="true")
 
   // Round-trip
-  let eng3 = ProphecyEngine::from_json(json1)
+  let eng3 = @lib.ProphecyEngine::from_json(json1)
   let json3 = eng3.to_json()
   let rt = json1.stringify() == json3.stringify()
   inspect(rt, content="true")
@@ -358,7 +358,7 @@ test "Layer6: extended deterministic serialization with identical training" {
 // ===========================================================================
 
 test "Layer7: extended consolidation and WAL event sourcing" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
 
   for i = 0; i < extended_corpora.length(); i = i + 1 {
     train_extended_corpus(eng, extended_corpora[i].1, 3)
@@ -401,7 +401,7 @@ test "Layer7: extended consolidation and WAL event sourcing" {
 // ===========================================================================
 
 test "Layer8: extended white-box explainability on protein design domain" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
   train_extended_corpus(eng, corpus_protein, 5)
 
   eng.end_episode()
@@ -425,7 +425,7 @@ test "Layer8: extended white-box explainability on protein design domain" {
 // ===========================================================================
 
 test "Layer9: extended attention-gated recall with battery domain bias" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
 
   // Train on all domains
   for i = 0; i < extended_corpora.length(); i = i + 1 {
@@ -452,7 +452,7 @@ test "Layer9: extended attention-gated recall with battery domain bias" {
 // ===========================================================================
 
 test "Layer10: extended active learning, federated export and distillation" {
-  let eng = ProphecyEngine::make()
+  let eng = @lib.ProphecyEngine::make()
 
   train_extended_corpus(eng, corpus_robotics, 4)
   train_extended_corpus(eng, corpus_fusion, 4)

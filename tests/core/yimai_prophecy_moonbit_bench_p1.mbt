@@ -48,7 +48,7 @@ let bench_pool : Array[(String, String)] = [
   ("热管理控制器", "Thermal Management Controller"),
 ]
 
-fn bench_seed(e : ProphecyEngine, n : Int) -> Unit {
+fn bench_seed(e : @lib.ProphecyEngine, n : Int) -> Unit {
   for i = 0; i < n; i = i + 1 {
     let p = bench_pool[i % bench_pool.length()]
     let tail = match i % 4 {
@@ -63,7 +63,7 @@ fn bench_seed(e : ProphecyEngine, n : Int) -> Unit {
   let _ = e.fuzzy_match("warmup", 1, 0.0)
 }
 
-fn bench_acc(e : ProphecyEngine, query : String, n : Int, full : Bool) -> Int {
+fn bench_acc(e : @lib.ProphecyEngine, query : String, n : Int, full : Bool) -> Int {
   let mut acc = 0
   for _i = 0; _i < n; _i = _i + 1 {
     let r = if full { e.fuzzy_match_full(query, 3, 0.0) } else { e.fuzzy_match(query, 3, 0.0) }
@@ -89,7 +89,7 @@ test "BENCH P1 1K/5K/10K pruned vs full 200 iter" {
   let query = "电池包热管理"
   let n = 200
   // 1K
-  let e1 = ProphecyEngine::make()
+  let e1 = @lib.ProphecyEngine::make()
   bench_seed(e1, 1000)
   let _ = e1.fuzzy_match(query, 1, 0.0)
   let _ = e1.fuzzy_match_full(query, 1, 0.0)
@@ -97,7 +97,7 @@ test "BENCH P1 1K/5K/10K pruned vs full 200 iter" {
   let f1 = bench_acc(e1, query, n, true)
   println(">>> [BENCH 1K]  pruned_acc=" + p1.to_string() + "  full_acc=" + f1.to_string() + "  (per-iter hits pruned=3 full=3)")
   // 5K
-  let e5 = ProphecyEngine::make()
+  let e5 = @lib.ProphecyEngine::make()
   bench_seed(e5, 5000)
   let _ = e5.fuzzy_match(query, 1, 0.0)
   let _ = e5.fuzzy_match_full(query, 1, 0.0)
@@ -105,7 +105,7 @@ test "BENCH P1 1K/5K/10K pruned vs full 200 iter" {
   let f5 = bench_acc(e5, query, n, true)
   println(">>> [BENCH 5K]  pruned_acc=" + p5.to_string() + "  full_acc=" + f5.to_string() + "  (per-iter hits pruned=3 full=3)")
   // 10K
-  let e10 = ProphecyEngine::make()
+  let e10 = @lib.ProphecyEngine::make()
   bench_seed(e10, 10000)
   let _ = e10.fuzzy_match(query, 1, 0.0)
   let _ = e10.fuzzy_match_full(query, 1, 0.0)
@@ -121,7 +121,7 @@ test "BENCH P1 1K/5K/10K pruned vs full 200 iter" {
 // L13 实际延迟验证：10K TM + warmup + 20 iter，PowerShell Measure-Command 测本 test 总耗时
 // （单 iter 估算 ≈ (总耗时 - seed/warmup 开销) / 20）
 test "BENCH P1 10K fuzzy_match 20 iter 含 warmup 延迟" {
-  let e = ProphecyEngine::make()
+  let e = @lib.ProphecyEngine::make()
   bench_seed(e, 10000)
   // 2 次 warmup（IDF 表 / postings / 排序热路径）
   let _ = e.fuzzy_match("电池包热管理", 3, 0.0)

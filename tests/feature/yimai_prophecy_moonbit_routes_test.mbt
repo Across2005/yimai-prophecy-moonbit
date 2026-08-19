@@ -14,9 +14,9 @@
 test "L19 routes_meta 包含全部 24 baseline 端点路径" {
   // 把 routes_meta 转成「路径集合」
   let mut count = 0
-  for entry in routes_meta {
+  for entry in @lib.routes_meta {
     let (p, _) = entry
-    for bp in baseline_paths {
+    for bp in @lib.baseline_paths {
       if p == bp {
         count = count + 1
         break
@@ -24,13 +24,13 @@ test "L19 routes_meta 包含全部 24 baseline 端点路径" {
     }
   }
   // baseline_paths 长度 = 24，必须全部命中
-  inspect(count == baseline_paths.length(), content="true")
+  inspect(count == @lib.baseline_paths.length(), content="true")
 }
 
 test "L19 routes_meta 含 /api/metrics 与 /api/health 两个 P1 新增端点" {
   let mut has_metrics = false
   let mut has_health = false
-  for entry in routes_meta {
+  for entry in @lib.routes_meta {
     let (p, _) = entry
     if p == "/api/metrics" { has_metrics = true }
     if p == "/api/health" { has_health = true }
@@ -40,7 +40,7 @@ test "L19 routes_meta 含 /api/metrics 与 /api/health 两个 P1 新增端点" {
 }
 
 test "L19 routes_meta 总条目数为 27（24 既有 + 2 ops + mqm_re_annotate P5 新增）" {
-  inspect(routes_meta.length() == 27, content="true")
+  inspect(@lib.routes_meta.length() == 27, content="true")
 }
 
 // ---------------------------------------------------------------------------
@@ -50,7 +50,7 @@ test "L19 routes_meta 总条目数为 27（24 既有 + 2 ops + mqm_re_annotate P
 
 test "L20 未知路径 /api/nonexistent 在 routes_meta 中无匹配" {
   let mut found = false
-  for entry in routes_meta {
+  for entry in @lib.routes_meta {
     let (p, _) = entry
     if p == "/api/nonexistent" { found = true }
   }
@@ -59,7 +59,7 @@ test "L20 未知路径 /api/nonexistent 在 routes_meta 中无匹配" {
 
 test "L20 未知路径 /random/path 在 routes_meta 中无匹配" {
   let mut found = false
-  for entry in routes_meta {
+  for entry in @lib.routes_meta {
     let (p, _) = entry
     if p == "/random/path" { found = true }
   }
@@ -68,7 +68,7 @@ test "L20 未知路径 /random/path 在 routes_meta 中无匹配" {
 
 test "L20 /mcp 不在 routes_meta（routes.mbt 单独走 MCP 分支）" {
   let mut found = false
-  for entry in routes_meta {
+  for entry in @lib.routes_meta {
     let (p, _) = entry
     if p == "/mcp" { found = true }
   }
@@ -87,7 +87,7 @@ test "L20 /mcp 不在 routes_meta（routes.mbt 单独走 MCP 分支）" {
 //   routes_meta 增删时 known_handlers 自动同步；L21 测试断言两者长度一致兜底。
 fn build_known_handlers() -> Array[String] {
   let out : Array[String] = []
-  for entry in routes_meta {
+  for entry in @lib.routes_meta {
     let (_, n) = entry
     out.push(n)
   }
@@ -98,10 +98,10 @@ let known_handlers : Array[String] = build_known_handlers()
 
 test "L21 routes_meta 中 handler 名无重复" {
   let mut dups = 0
-  for i = 0; i < routes_meta.length(); i = i + 1 {
-    let (_, n1) = routes_meta[i]
-    for j = i + 1; j < routes_meta.length(); j = j + 1 {
-      let (_, n2) = routes_meta[j]
+  for i = 0; i < @lib.routes_meta.length(); i = i + 1 {
+    let (_, n1) = @lib.routes_meta[i]
+    for j = i + 1; j < @lib.routes_meta.length(); j = j + 1 {
+      let (_, n2) = @lib.routes_meta[j]
       if n1 == n2 { dups = dups + 1 }
     }
   }
@@ -110,7 +110,7 @@ test "L21 routes_meta 中 handler 名无重复" {
 
 test "L21 routes_meta 中 handler 名无空串" {
   let mut empties = 0
-  for entry in routes_meta {
+  for entry in @lib.routes_meta {
     let (_, n) = entry
     if n == "" { empties = empties + 1 }
   }
@@ -119,7 +119,7 @@ test "L21 routes_meta 中 handler 名无空串" {
 
 test "L21 routes_meta 中 handler 名全部在 known_handlers 内（无 dangling）" {
   let mut bad = 0
-  for entry in routes_meta {
+  for entry in @lib.routes_meta {
     let (_, n) = entry
     let mut in_set = false
     for h in known_handlers {
@@ -131,7 +131,7 @@ test "L21 routes_meta 中 handler 名全部在 known_handlers 内（无 dangling
 }
 
 test "L21 known_handlers 与 routes_meta 长度一致（match 分支无遗漏）" {
-  inspect(known_handlers.length() == routes_meta.length(), content="true")
+  inspect(known_handlers.length() == @lib.routes_meta.length(), content="true")
 }
 
 // ---------------------------------------------------------------------------
@@ -147,11 +147,11 @@ test "L21 known_handlers 与 routes_meta 长度一致（match 分支无遗漏）
 // ---------------------------------------------------------------------------
 
 test "L22 error_codes 恰好六码且互不相同" {
-  inspect(error_codes.length() == 6, content="true")
+  inspect(@lib.error_codes.length() == 6, content="true")
   let mut dups = 0
-  for i = 0; i < error_codes.length(); i = i + 1 {
-    for j = i + 1; j < error_codes.length(); j = j + 1 {
-      if error_codes[i] == error_codes[j] { dups = dups + 1 }
+  for i = 0; i < @lib.error_codes.length(); i = i + 1 {
+    for j = i + 1; j < @lib.error_codes.length(); j = j + 1 {
+      if @lib.error_codes[i] == @lib.error_codes[j] { dups = dups + 1 }
     }
   }
   inspect(dups == 0, content="true")
@@ -170,7 +170,7 @@ test "L22 error_codes 包含全部六类稳定码（与 send_error 7 调用点�
   ]
   for want in expected {
     let mut has = false
-    for c in error_codes {
+    for c in @lib.error_codes {
       if c == want { has = true }
     }
     inspect(has, content="true")
