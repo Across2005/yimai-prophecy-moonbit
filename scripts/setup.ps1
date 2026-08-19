@@ -58,17 +58,26 @@ if ($mod -match 'async@([0-9.]+)') {
 }
 
 # 5. git hooks — activate .githooks/pre-commit via core.hooksPath
-$hooksDir = Join-Path $root ".githooks"
-if (Test-Path (Join-Path $root ".git")) {
-  $current = git config --local core.hooksPath 2>$null
-  if ($current -ne $hooksDir) {
-    git config --local core.hooksPath $hooksDir
-    Write-Host "[OK] git core.hooksPath -> $hooksDir (pre-commit hook activated)"
+$git = Get-Command git -ErrorAction SilentlyContinue
+$preCommit = Join-Path (Join-Path $root ".githooks") "pre-commit"
+if (-not $git) {
+  Write-Host "[SKIP] git not found in PATH — hooks not configured"
+} elseif (-not (Test-Path (Join-Path $root ".git"))) {
+  Write-Host "[SKIP] .git not found — not a git checkout; hooks not configured"
+} elseif (-not (Test-Path $preCommit)) {
+  Write-Host "[WARN] .githooks/pre-commit not found — hook file missing, skipping config"
+} else {
+  $current = git config --local --get core.hooksPath 2>$null
+  if ($LASTEXITCODE -ne 0) { $current = $null }
+  if ($current -and $current -ne '.githooks') {
+    Write-Host "[WARN] overriding existing core.hooksPath: $current -> .githooks"
+  }
+  if ($current -ne '.githooks') {
+    git config --local core.hooksPath '.githooks'
+    Write-Host "[OK] git core.hooksPath -> .githooks (pre-commit hook activated)"
   } else {
     Write-Host "[OK] git core.hooksPath already set: $current"
   }
-} else {
-  Write-Host "[SKIP] .git not found — not a git checkout; hooks not configured"
 }
 
 Write-Host ""

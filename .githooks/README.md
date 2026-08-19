@@ -13,10 +13,12 @@ This pre-commit hook performs automatic checks before finalizing your commit.
 
 任一失败即中止提交，保护「确定性硬契约」不被破坏。
 
-### Enable (one-time)
+### Enable
+
+`scripts/setup.ps1` 会自动完成配置（运行 `dev.ps1` 也会触发）。
+
+如需手动启用：
 
 ```bash
 git config core.hooksPath .githooks
 ```
-
-（本仓库已默认接入；若 clone 到新机器，执行上面一行即可启用。）
