@@ -4,7 +4,7 @@
 >
 > 在「预测记忆」内核之外，已落地 **#22 翻译记忆（TM）/ 术语库（TB）一等公民**：真正的 fuzzy match（含匹配率%）、concordance 检索、TBX 术语库强制对齐与一致性校验——让引擎从「只预测」走向「预测 + 检索 + 术语守门」。
 
-[![Tests](https://img.shields.io/badge/tests-151%2F151%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
+[![Tests](https://img.shields.io/badge/tests-159%2F159%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Hit@3](https://img.shields.io/badge/Hit%403-0.8246-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Modern Corpus](https://img.shields.io/badge/modern_corpus-22%2F22%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Service API](https://img.shields.io/badge/HTTP%20API-26%20endpoints%20%2B%20MCP-9cf)](https://github.com/Across2005/yimai_prophecy_moonbit)
@@ -102,7 +102,7 @@ yimai_prophecy_moonbit/
 │   │   └── SKILL.md           # WorkBuddy 技能编排手册（frontmatter agent_created=true）
 │   └── harness-configs/       # 13 个 harness 配置（Claude Code / Cursor / Gemini CLI / ...）
 ├── AGENTS.md                  # AI agent 集成指南（项目结构 + 构建/运行/消费 + Windows 前置）
-├── README.md                  # 项目说明（badge 151/151 + P4 增量说明 + International Standards）
+├── README.md                  # 项目说明（badge 159/159 + P5 增量说明 + International Standards）
 ├── CHANGELOG.md               # 版本变更记录
 └── LICENSE                    # MIT License
 ```
@@ -115,7 +115,7 @@ yimai_prophecy_moonbit/
 **测试策略**：
 - **契约回归**：4 个定量验收 + 3 个语料库文件（modern + extended + frontier）25 测试 + 25 个 roadmap 回归（R1–R25）+ 18 个扩展能力回归（E1–E18）+ 22 个 P4 质量/安全测试（T30–T51）
 - **门禁**：`scripts/dev.ps1` + `.githooks/pre-commit` —— 构建/提交前自动运行 `moon test --target wasm-gc`
-- **目标**：151/151 全绿（wasm-gc 目标，可复现）
+- **目标**：159/159 全绿（wasm-gc 目标，可复现）
 
 ---
 
@@ -152,7 +152,7 @@ Or step by step: `scripts/setup.ps1` (env check) → `build.ps1` (compile, needs
 `run.ps1` (start) → `seed.ps1` (sample data) → `smoke.ps1` (verify).
 
 > **确定性回归门禁（纯本地，零云端依赖）**: `scripts/dev.ps1` 在构建前自动运行
-> `moon test --target wasm-gc`（151/151 契约回归，P4 增量后），任何一项失败即中止。
+> `moon test --target wasm-gc`（159/159 契约回归，P5 增量后），任何一项失败即中止。
 > 此外，仓库自带本地 `pre-commit` hook（`.githooks/pre-commit`，`moon check` +
 > `moon test --target wasm-gc`），已通过 `git config core.hooksPath .githooks`
 > 接入本仓库——每个 commit 前自动挡住破坏确定性契约的改动。
@@ -697,7 +697,7 @@ All six methods are covered by regression tests **R16–R22** (see [Evaluation](
 
 All numbers below are produced by `moon test --target wasm-gc` and are reproducible.
 
-**Summary: `Total tests: 151, passed: 151, failed: 0`**
+**Summary: `Total tests: 159, passed: 159, failed: 0`**
 (4 quantitative acceptance + 3 corpus evaluation files (modern + extended + frontier) [Layer 0–10: 25 tests] + 25 roadmap regression [R1–R25] + 18 extension-capability regression [E1–E18] + 14 P4 quality/security tests [T30–T37, T38–T51] + 5 frontier corpus tests [T38–T51]).
 
 | Layer | Check | Result | Evidence |
@@ -731,7 +731,7 @@ Reproduce:
 
 ```bash
 cd yimai_prophecy_moonbit
-moon test --target wasm-gc      # all 151 tests (P4 hardened)
+moon test --target wasm-gc      # all 159 tests (P5 hardened)
 moon test --target wasm-gc --filter Layer*   # modern + extended + frontier corpus (25 tests)
 moon test --target wasm-gc --filter T*       # P4 quality/security tests (T30–T51, 22 tests)
 moon build --target wasm-gc     # library only
@@ -796,7 +796,7 @@ P4 增量包含 6 个 commits（a3df919 → 8857bc2 → 09edae8），聚焦代�
 | 文档 | 新增内容 |
 |---|---|
 | `README.md` | "International Standards & Compliance" 章节（ISO 5060:2024 + EU AI Act + GDPR + MQM Council + MCP 集成） |
-| `README.md` | 测试数字更新 89/101 → 137 → 151（badge + 门禁段 + roadmap + AGENTS.md） |
+| `README.md` | 测试数字更新 89/101 → 137 → 151 → 159（badge + 门禁段 + roadmap + AGENTS.md） |
 | `docs/skill/SKILL.md` | frontmatter 加 P4 摘要 + 触发词（MQM / drift_report / severity_score） |
 
 ### P4-frontier-corpus (09edae8) — 前沿语料库扩展
@@ -804,7 +804,7 @@ P4 增量包含 6 个 commits（a3df919 → 8857bc2 → 09edae8），聚焦代�
 | 新增 | 位置 | 说明 |
 |---|---|---|
 | `yimai_prophecy_moonbit_frontier_corpus_test.mbt` | 根目录 | 10 个前沿领域（AI Safety×2, Science, Math×2, Philosophy, Digital Humanities, CBT, Aviation, Space），60 句对，14 个测试（T38–T51） |
-| 测试数量 | 137 → 151 | 新增 14 个测试，全语料库覆盖 22 个前沿领域 |
+| 测试数量 | 137 → 151 → 159 | 新增 14+8=22 个测试，全语料库覆盖 22+1=23 个前沿领域（含商务 ISO 11669 / GB/T 30539-2025） |
 
 ### P4 增量统计
 
@@ -814,8 +814,8 @@ P4 增量包含 6 个 commits（a3df919 → 8857bc2 → 09edae8），聚焦代�
 | 文件修改 | 21 files |
 | 代码增删 | +561 / -238 |
 | 新增测试 | 22 (T30–T37 quality/security + T38–T51 frontier corpus) |
-| 测试总数 | 137 → 151 |
-| 测试通过率 | 151/151 (100%) |
+| 测试总数 | 137 → 151 → 159 |
+| 测试通过率 | 159/159 (100%) |
 
 ---
 
