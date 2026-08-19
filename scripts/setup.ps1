@@ -57,6 +57,20 @@ if ($mod -match 'async@([0-9.]+)') {
   Write-Host "[OK] async dependency: $($matches[1]) (registry version, no local override needed)"
 }
 
+# 5. git hooks — activate .githooks/pre-commit via core.hooksPath
+$hooksDir = Join-Path $root ".githooks"
+if (Test-Path (Join-Path $root ".git")) {
+  $current = git config --local core.hooksPath 2>$null
+  if ($current -ne $hooksDir) {
+    git config --local core.hooksPath $hooksDir
+    Write-Host "[OK] git core.hooksPath -> $hooksDir (pre-commit hook activated)"
+  } else {
+    Write-Host "[OK] git core.hooksPath already set: $current"
+  }
+} else {
+  Write-Host "[SKIP] .git not found — not a git checkout; hooks not configured"
+}
+
 Write-Host ""
 Write-Host "Setup checks done. Next:"
 Write-Host "  scripts/build.ps1   -> compile cmd/service (native)"
