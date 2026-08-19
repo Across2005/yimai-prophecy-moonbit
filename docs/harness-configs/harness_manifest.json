@@ -1,0 +1,135 @@
+{
+  "$schema": "https://yimai-prophecy-moonbit.local/schemas/harness-manifest.v1.json",
+  "version": 1,
+  "service": {
+    "url": "http://127.0.0.1:8787/mcp",
+    "protocol": "mcp",
+    "spec": "2025-11-25",
+    "transport": "streamable-http"
+  },
+  "harnesses": [
+    {
+      "name": "claude-desktop",
+      "config_file": "claude-desktop.json",
+      "form": "json",
+      "top_key": "mcpServers",
+      "url_path": ["yimai", "url"],
+      "required_fields": ["mcpServers.yimai.url"],
+      "client_reads": "%APPDATA%\\Claude\\claude_desktop_config.json"
+    },
+    {
+      "name": "claude-code",
+      "config_file": "claude-code.json",
+      "form": "json",
+      "top_key": "mcpServers",
+      "url_path": ["yimai", "url"],
+      "required_fields": ["mcpServers.yimai.url"],
+      "client_reads": "~/.claude/mcp.json"
+    },
+    {
+      "name": "gemini-cli",
+      "config_file": "gemini-cli.json",
+      "form": "json",
+      "top_key": "mcpServers",
+      "url_path": ["yimai", "url"],
+      "required_fields": ["mcpServers.yimai.url"],
+      "client_reads": "~/.gemini/settings.json"
+    },
+    {
+      "name": "cursor",
+      "config_file": "cursor.json",
+      "form": "json",
+      "top_key": "mcpServers",
+      "url_path": ["yimai", "url"],
+      "required_fields": ["mcpServers.yimai.url"],
+      "client_reads": "~/.cursor/mcp.json"
+    },
+    {
+      "name": "cline",
+      "config_file": "cline.json",
+      "form": "json",
+      "top_key": "mcpServers",
+      "url_path": ["yimai", "url"],
+      "required_fields": ["mcpServers.yimai.url"],
+      "client_reads": "Cline VS Code UI (cline_mcp_settings.json)"
+    },
+    {
+      "name": "continue",
+      "config_file": "continue.json",
+      "form": "json",
+      "top_key": "mcpServers",
+      "url_path": ["yimai", "url"],
+      "required_fields": ["mcpServers.yimai.url"],
+      "client_reads": "~/.continue/config.json",
+      "note": "Continue 用 transport=\"streamable-http\" 显式声明，与 service.transport 一致"
+    },
+    {
+      "name": "roo-code",
+      "config_file": "roo-code.json",
+      "form": "json",
+      "top_key": "mcpServers",
+      "url_path": ["yimai", "url"],
+      "required_fields": ["mcpServers.yimai.url"],
+      "client_reads": "Roo Code VS Code UI (.roo/mcp.json)",
+      "note": "Roo Code 用 transport=\"http\"（不是 type）"
+    },
+    {
+      "name": "windsurf",
+      "config_file": "windsurf.json",
+      "form": "json",
+      "top_key": "mcpServers",
+      "url_path": ["yimai", "serverUrl"],
+      "required_fields": ["mcpServers.yimai.serverUrl"],
+      "client_reads": "~/.windsurf/mcp.json",
+      "note": "Windsurf 字段名是 serverUrl（不是 url）"
+    },
+    {
+      "name": "codex",
+      "config_file": "codex.toml",
+      "form": "toml",
+      "top_key": "mcp_servers",
+      "url_path": ["yimai", "url"],
+      "required_fields": ["[mcp_servers.yimai]", "url", "transport"],
+      "client_reads": "~/.codex/config.toml"
+    },
+    {
+      "name": "aider",
+      "config_file": "aider.conf.yml",
+      "form": "yaml",
+      "top_key": null,
+      "url_path": null,
+      "required_fields": ["mcp_servers[*].url"],
+      "client_reads": "~/.aider.conf.yml",
+      "note": "Aider ≥ 0.86 通过 CLI flag --mcp 启用，YAML 仅作记录；transport 字段 = http"
+    },
+    {
+      "name": "cody",
+      "config_file": "cody.json",
+      "form": "json",
+      "top_key": "cody.mcp.servers",
+      "url_path": ["yimai", "url"],
+      "required_fields": ["cody.mcp.servers.yimai.url"],
+      "client_reads": "~/.config/sourcegraph/cody.json",
+      "deprecated": "2025-08 (Sourcegraph Cody AI 主线转入 Amp，本文件仅作历史参考)"
+    },
+    {
+      "name": "zed",
+      "config_file": "zed.json",
+      "form": "json",
+      "top_key": "context_servers",
+      "url_path": ["yimai", "url"],
+      "required_fields": ["context_servers.yimai.url"],
+      "client_reads": "~/.config/zed/settings.json"
+    },
+    {
+      "name": "github-copilot",
+      "config_file": "github-copilot.yml",
+      "form": "yaml",
+      "top_key": null,
+      "url_path": null,
+      "required_fields": ["copilot-setup-steps.yml (workflow snippet)"],
+      "client_reads": ".github/workflows/copilot-setup-steps.yml",
+      "note": "GitHub 托管 runner 与 127.0.0.1:8787 网络隔离；本文件是 PR 工作流内同 runner 启动 yimai 的示例片段，不含 URL 字段"
+    }
+  ]
+}
