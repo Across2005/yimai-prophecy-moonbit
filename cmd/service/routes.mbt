@@ -11,21 +11,51 @@
 // 注：MoonBit async 调用无需 await；Request.path 含完整 query string（路由需剥离）。
 
 // 请求体最大字符数（按 char-count 校验，UTF-8 1 char ≈ 1-3 bytes；实际字节上限 ~1-3 MiB）
-//   P1 修订：原注释"最大字节数 1 MiB"方向写反 — char-count 实际偏松（CJK 1 char = 3 bytes，1 MiB char ≈ 3 MiB bytes）
-//   现改为"防御上限"，仍可防 read_all OOM；未来如需精确字节级可换 @fs.read_file 路径
-const MAX_BODY_BYTES : Int = 1048576
+//   P6 修订：命名由 MAX_BODY_BYTES 改为 MAX_BODY_CHARS，避免与真实字节数混淆。
+//   当前实现先 read_all 再校验长度，本地 127.0.0.1 场景下由本常量做软上限；
+//   如需严格流控，可在 handle_request/handle_mcp 中先根据 Content-Length 预拒绝。
+const MAX_BODY_CHARS : Int = 1048576
 
-// 路由表（path, handler_name）：与根模块 routes_meta 保持 26 项同步。
+// 路由表（path, handler_name）：与根模块 routes_meta 保持 27 项同步。
 // MoonBit 函数非一等公民，故用「字符串名 → match 派发」做表驱动：
 //   1. 单一来源便于枚举/测试（L19-L22）
 //   2. 增删端点只动两处（本表 + handle_request 的 match 分支）
 //   P4：路由表已在根包 yimai_prophecy_moonbit.mbt 声明为 pub let routes_meta（wasm-gc 测试可见）；
-//   本处直接用 @lib.routes_meta，避免 26 项硬编码在 4 处（root/router/mcp/route_test）。
+//   本处直接用 @lib.routes_meta，避免 27 项硬编码在 4 处（root/router/mcp/route_test）。
 //   /mcp 与 serve_static 不进表：前者是 JSON-RPC 协议分支，后者是文件兜底。
 
 // 进程启动时间戳（ms since epoch，初始化在 main.mbt 启动时一次）
 //   /api/health 据此算 uptime_seconds；不直接用 @env.now() 以避免每次 HTTP 重新采样带来的抖动。
 let start_time_ms : @ref.Ref[UInt64] = @ref.new(0)
+
+// 安全解析非负整数；失败返回 -1 表示无法解析（调用方可据此放行，由后续读取逻辑兜底）。
+// P6 加固：Content-Length 超过 10 位必然已大于 MAX_BODY_CHARS，直接返回 MAX_BODY_CHARS+1 触发拒绝，
+// 避免超长数字导致 Int 溢出后绕过大小检查。
+fn parse_nonnegative_int(s : String) -> Int {
+  if s == "" { return -1 }
+  if s.length() > 10 { return MAX_BODY_CHARS + 1 }
+  let mut n = 0
+  for i = 0; i < s.length(); i = i + 1 {
+    let c = s[i]
+    if c >= '0' && c <= '9' {
+      n = n * 10 + (c.to_int() - '0'.to_int())
+    } else {
+      return -1
+    }
+  }
+  n
+}
+
+// 根据 Content-Length 头判断请求体是否超过上限；缺失或无法解析时返回 false（由读取后校验兜底）
+fn content_length_too_large(req : @http.Request) -> Bool {
+  match req.headers.get("Content-Length") {
+    Some(cl) => {
+      let len = parse_nonnegative_int(cl)
+      len > MAX_BODY_CHARS
+    }
+    None => false
+  }
+}
 
 // 从 path 提取 ? 之前的 base path（async 的 Request.path 含完整 query string）
 fn extract_base_path(path : String) -> String {
@@ -63,7 +93,7 @@ async fn read_json_or_400(conn : @http.ServerConnection, body : &@io.Reader) -> 
     Some(j) => Some(j)
     None => {
       if last_body_oversize.val {
-        send_error(conn, 413, "body_too_large", "request body exceeds MAX_BODY_BYTES")
+        send_error(conn, 413, "body_too_large", "request body exceeds MAX_BODY_CHARS")
       } else {
         send_error(conn, 400, "invalid_json", "invalid JSON body")
       }
@@ -79,11 +109,17 @@ async fn read_json_or_400(conn : @http.ServerConnection, body : &@io.Reader) -> 
 async fn handle_request(req : @http.Request, body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
   let path = extract_base_path(req.path)
   // MCP Server 变体（spec 2025-11-25，Streamable HTTP；实现见 mcp.mbt）独立分支
+  //   /mcp 使用 JSON-RPC 错误格式，由 handle_mcp 自行做大小校验。
   if path == "/mcp" {
     try { handle_mcp(req, body, conn) } catch { err => handle_panic(conn, err) }
     return
   }
-  // 在路由表里线性查找（26 项规模，O(n) 即可）
+  // P6 加固：非 MCP 的 POST 请求在读取 body 前根据 Content-Length 预拒绝，减少大 payload 读取。
+  if req.meth == @http.RequestMethod::Post && content_length_too_large(req) {
+    send_error(conn, 413, "body_too_large", "request body exceeds MAX_BODY_CHARS")
+    return
+  }
+  // 在路由表里线性查找（27 项规模，O(n) 即可）
   let name = lookup_route(path)
   if name == "" {
     serve_static(path, conn)
@@ -136,7 +172,7 @@ async fn handle_panic(conn : @http.ServerConnection, err : Error) -> Unit {
 }
 
 // 路由表查找：path 命中返回 handler 名，未命中返 ""。无副作用。
-//   P4：直接迭代 @lib.routes_meta（26 项单一源），消除 cmd/service 内的重复表。
+//   P4：直接迭代 @lib.routes_meta（27 项单一源），消除 cmd/service 内的重复表。
 fn lookup_route(path : String) -> String {
   for r in @lib.routes_meta {
     let (p, n) = r
@@ -159,6 +195,22 @@ fn content_type(path : String) -> String {
   else { "text/plain" }
 }
 
+// 静态文件 web 根目录（相对服务启动工作目录）
+const WEB_ROOT : String = "cmd/service/web/"
+
+// 判断静态文件请求路径是否安全：拒绝绝对路径、反斜杠、空字节、父目录引用及空路径
+fn is_safe_static_path(rel : String) -> Bool {
+  if rel == "" { return false }
+  // 拒绝绝对路径 / 驱动器前缀 / 前导 slash，防止越出 WEB_ROOT
+  if rel.starts_with("/") || rel.starts_with("\\") { return false }
+  if @lib.str_contains(rel, ":") { return false }
+  // 拒绝父目录引用与反斜杠（反斜杠在某些 FS 上等价于斜杠）
+  if @lib.str_contains(rel, "..") || @lib.str_contains(rel, "\\") { return false }
+  // 拒绝空字节：URL 解码后不应出现控制字符
+  if @lib.str_contains(rel, "\u0000") { return false }
+  true
+}
+
 // 服务 web/ 目录下静态文件（防路径穿越：拒绝 .. 与反斜杠；先 percent-decode 防 %2e%2e 绕过）
 async fn serve_static(path : String, conn : @http.ServerConnection) -> Unit {
   let rel_raw = if path == "/" || path == "/index.html" {
@@ -169,12 +221,12 @@ async fn serve_static(path : String, conn : @http.ServerConnection) -> Unit {
   // P4 安全加固：先 URL 解码再做".." / "\" 检查，阻止 %2e%2e%2f 等编码形式绕过。
   // decode_pct 仅做 %XX 单字节解码，不解析 '+' 也不做路径规范化，保守可控。
   let rel = @lib.decode_pct(rel_raw)
-  if @lib.str_contains(rel, "..") || @lib.str_contains(rel, "\\") {
+  if not(is_safe_static_path(rel)) {
     conn.send_response(403, "Forbidden")
     conn.end_response()
     return
   }
-  let full = "cmd/service/web/" + rel
+  let full = WEB_ROOT + rel
   if @fs.exists(full) {
     let data = @fs.read_file(full)
     let body = try { data.text() } catch { _ => "" }
@@ -187,20 +239,18 @@ async fn serve_static(path : String, conn : @http.ServerConnection) -> Unit {
   }
 }
 
-// 最近一次 read_json_body 是否触发 MAX_BODY_BYTES 上限（handler 据此区分 400 vs 413）
-//   为全局 ref 而非函数 out-param：保持 24 端点签名不变，最小侵入。
+// 最近一次 read_json_body 是否触发 MAX_BODY_CHARS 上限（handler 据此区分 400 vs 413）
+//   为全局 ref 而非函数 out-param：保持 POST 端点签名不变，最小侵入。
 let last_body_oversize : @ref.Ref[Bool] = @ref.new(false)
 
 // 从 body 读取 JSON（async；返回 Option[Json]）
-//   超 MAX_BODY_BYTES 即置 last_body_oversize=true 并返回 None；handler 据此回 413。
+//   超 MAX_BODY_CHARS 即置 last_body_oversize=true 并返回 None；handler 据此回 413。
 //   解析失败返回 None 且 last_body_oversize 不变；handler 据此回 400。
+//   P6 加固：read_all/text 任一环节异常均视为超大/非法请求，直接回 400/413，避免连接悬挂。
 async fn read_json_body(body : &@io.Reader) -> Option[Json] {
   last_body_oversize.val = false
-  let data = body.read_all()
-  // P1 修订：实际 char-count 上界（UTF-8 1 char = 1-3 bytes，CJK 实际偏松），
-  //   保留此 guard 仅为防止恶意 agent 灌超大 payload 触发 OOM；精准字节级需换流式读取。
-  let s = try { data.text() } catch { _ => "" }
-  if s.length() > MAX_BODY_BYTES {
+  let s = try { body.read_all().text() } catch { _ => "" }
+  if s.length() > MAX_BODY_CHARS {
     last_body_oversize.val = true
     return None
   }

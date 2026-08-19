@@ -3,13 +3,14 @@ _build/
 target/
 .mooncakes/
 .moonagent/
+.qoder-cn/
 *.mbti
 # TM 持久化文件（开发残留；服务运行时由 cmd/service 自动写）
 tm_store.json
 # 推送凭据（建议放 ~/.git-credentials，不入仓；如误放进仓库下面这行保险）
 .git-credentials
-# ocr / 一次性工具产物
-ocr-moonbit-rule.json
+# qoder / internal review rule (kept in docs/internal)
+/ocr-moonbit-rule.json
 # 临时清理暂存（mavis-trash 整理用，安全：mavis-trash 是可恢复的回收站）
 .cleanup-staging/
 # 占位文件：旧版 Codex MCP 样例，已迁移到 docs/harness-configs/codex.toml

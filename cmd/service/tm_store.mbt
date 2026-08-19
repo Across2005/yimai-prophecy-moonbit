@@ -31,11 +31,19 @@ fn tm_count() -> Int {
   }
 }
 
+// TM 存储文件字符数上限（软防御：防止启动时加载被恶意放大的 JSON）
+const MAX_STORE_CHARS : Int = 100000000
+
 // 启动时加载 tm_store.json（若存在）到引擎
 async fn load_store() -> Unit {
   if @fs.exists(TM_STORE_PATH) {
     let data = @fs.read_file(TM_STORE_PATH)
     let s = try { data.text() } catch { _ => "" }
+    // P6 加固：拒绝过大的持久化文件，防止 OOM
+    if s.length() > MAX_STORE_CHARS {
+      println("警告: TM 存储文件过大，忽略并冷启动")
+      return
+    }
     let parsed : Option[Json] = try { Some(@json.parse(s)) } catch { _ => None }
     match parsed {
       None => println("警告: TM 存储解析失败，使用空引擎")

@@ -17,7 +17,7 @@ import {
   "moonbitlang/async@0.20.1",
 }
 
-readme = "README.mbt.md"
+readme = "README.md"
 
 repository = "https://github.com/Across2005/yimai-prophecy-moonbit"
 

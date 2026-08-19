@@ -137,7 +137,7 @@ test "L21 known_handlers 与 routes_meta 长度一致（match 分支无遗漏）
 // ---------------------------------------------------------------------------
 // L22：send_error 六类 code 字符串覆盖（稳定机器可读码）
 //   400 invalid_json     JSON 解析失败
-//   413 body_too_large   request body 超过 MAX_BODY_BYTES
+//   413 body_too_large   request body 超过 MAX_BODY_CHARS
 //   400 missing_field    必填字段缺失
 //   404 unknown_mid      reward 收到不存在的 mid
 //   500 internal_error   handler 顶层 panic 兜底

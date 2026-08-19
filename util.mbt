@@ -83,13 +83,56 @@ fn hex_nibble_char(c : Char) -> Option[Int] {
   else { None }
 }
 
-// 单个十六进制字符 → 0..15；非 hex 返回 None
-fn hex_nibble(b : Byte) -> Option[Int] {
-  let v = b.to_int()
-  if v >= 0x30 && v <= 0x39 { Some(v - 0x30) }                    // 0-9
-  else if v >= 0x41 && v <= 0x46 { Some(v - 0x41 + 10) }          // A-F
-  else if v >= 0x61 && v <= 0x66 { Some(v - 0x61 + 10) }          // a-f
-  else { None }
+
+// WAL 字段转义：确保控制字符分隔符 \u0001 不会出现在字段内容中。
+//   转义规则（双字符）：\u0002 -> \u0002\u0002, \u0001 -> \u0002\u0001
+//   正常文本不会包含这两个控制字符，因此转义操作通常是零开销。
+// 将 UTF-16 码点转换为 Char（控制字符走此路径）
+fn u16_to_char(c : UInt16) -> Char {
+  c.to_int().unsafe_to_char()
+}
+
+pub fn wal_escape_field(s : String) -> String {
+  let b = StringBuilder()
+  for i = 0; i < s.length(); i = i + 1 {
+    let c = u16_to_char(s[i])
+    if c == '\u0002' {
+      b.write_char('\u0002')
+      b.write_char('\u0002')
+    } else if c == '\u0001' {
+      b.write_char('\u0002')
+      b.write_char('\u0001')
+    } else {
+      b.write_char(c)
+    }
+  }
+  b.to_string()
+}
+
+// WAL 字段反转义：与 wal_escape_field 配对。
+pub fn wal_unescape_field(s : String) -> String {
+  let b = StringBuilder()
+  let mut i = 0
+  while i < s.length() {
+    let c = u16_to_char(s[i])
+    if c == '\u0002' && i + 1 < s.length() {
+      let next = u16_to_char(s[i + 1])
+      if next == '\u0002' {
+        b.write_char('\u0002')
+        i = i + 2
+      } else if next == '\u0001' {
+        b.write_char('\u0001')
+        i = i + 2
+      } else {
+        b.write_char(c)
+        i = i + 1
+      }
+    } else {
+      b.write_char(c)
+      i = i + 1
+    }
+  }
+  b.to_string()
 }
 
 // 概念抽象·角色抽取：取文本前 4 字作为粗略类别键（跨主题稳定）
@@ -371,12 +414,19 @@ fn arr_contains(arr : Array[String], s : String) -> Bool {
   false
 }
 
+// 对齐长度上限：单串字符数与动态规划表总 cell 数双限制，防止恶意长输入 OOM/CPU 耗尽
+const MAX_ALIGN_CHARS : Int = 4096
+const MAX_ALIGN_CELLS : Int = 4000000
+
 // 双语字符级对齐（LCS 编辑脚本，等价于 Myers 差分的对齐结果）
 // 返回对齐序列：op 0=对齐 1=删A 2=插B；i/j 为 A/B 中的字符下标
 // 供术语/句段双语对齐热力图与对齐质量评估使用（纯算法，零依赖）
 pub fn align_diff(a : String, b : String) -> Array[(Int, Int, Int)] {
   let n = a.length()
   let m = b.length()
+  if n > MAX_ALIGN_CHARS || m > MAX_ALIGN_CHARS || n.to_double() * m.to_double() > MAX_ALIGN_CELLS.to_double() {
+    return []
+  }
   let dp : Array[Array[Int]] = []
   let mut i = 0
   while i <= n {
@@ -906,7 +956,7 @@ fn ngrams(toks : Array[String], n : Int) -> Array[Array[String]] {
 
 // n-gram 计数（key = join with unit separator）
 fn ngram_counts(toks : Array[String], n : Int) -> Map[String, Int] {
-  let counts : Map[String, Int] = Map::new()
+  let counts : Map[String, Int] = Map([])
   let gs = ngrams(toks, n)
   for g in gs {
     let mut key = ""
@@ -970,7 +1020,7 @@ fn chars_of(s : String) -> Array[String] {
 
 // 字符 n-gram 计数
 fn char_ngram_counts(chars : Array[String], n : Int) -> Map[String, Int] {
-  let counts : Map[String, Int] = Map::new()
+  let counts : Map[String, Int] = Map([])
   let len = chars.length()
   let mut i = 0
   while i + n <= len {
@@ -994,8 +1044,8 @@ fn char_ngram_counts(chars : Array[String], n : Int) -> Map[String, Int] {
 pub fn chrf_score(ref_text : String, hyp_text : String) -> Double {
   let ref_chars = chars_of(ref_text)
   let hyp_chars = chars_of(hyp_text)
-  let ref_words = ref_text.split(" ").to_array().map(fn(x) { x.to_string() })
-  let hyp_words = hyp_text.split(" ").to_array().map(fn(x) { x.to_string() })
+  let ref_words = ref_text.split(" ").to_array().map(fn(x) { x.to_owned() })
+  let hyp_words = hyp_text.split(" ").to_array().map(fn(x) { x.to_owned() })
   if ref_chars.length() == 0 && hyp_chars.length() == 0 {
     return 1.0
   }

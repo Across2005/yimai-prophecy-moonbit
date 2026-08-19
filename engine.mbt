@@ -711,7 +711,7 @@ pub fn ProphecyEngine::remember(
     // to_json，只做角色限定召回的剪枝，幂等/确定性零影响；与 consolidate/restore 同源）
     self.rebuild_role_members()
     self._wire(best, ctx)
-    self.wal_append("remember" + WAL_SEP + best + WAL_SEP + text + WAL_SEP + mtype)
+    self.wal_append("remember" + WAL_SEP + best + WAL_SEP + wal_escape_field(text) + WAL_SEP + wal_escape_field(mtype))
     self.invalidate_pred_cache()
     self.fed_upd = self.fed_upd + 1
     return best
@@ -744,7 +744,7 @@ pub fn ProphecyEngine::remember(
     self.role_index.set(rk, mid)
     self.role_members_add(rk, mid)
   }
-  self.wal_append("remember" + WAL_SEP + mid + WAL_SEP + text + WAL_SEP + mtype)
+  self.wal_append("remember" + WAL_SEP + mid + WAL_SEP + wal_escape_field(text) + WAL_SEP + wal_escape_field(mtype))
   self.invalidate_pred_cache()
   self.memories.set(mid, node)
   self._wire(mid, ctx)
@@ -838,7 +838,7 @@ pub fn ProphecyEngine::recall(
     }
   }
   let sims : Array[(String, Double)] = []
-  if pool.size() > 0 {
+  if pool.length() > 0 {
     for mid, _ in pool.iter2() {
       match self.memories.get(mid) {
         Some(m) => {
@@ -1332,7 +1332,7 @@ pub fn ProphecyEngine::observe(
   if self.context.length() > CTX_WINDOW {
     let _ = self.context.remove(0)
   }
-  self.wal_append("observe" + WAL_SEP + mid + WAL_SEP + text + WAL_SEP + mtype)
+  self.wal_append("observe" + WAL_SEP + mid + WAL_SEP + wal_escape_field(text) + WAL_SEP + wal_escape_field(mtype))
   self.fed_upd = self.fed_upd + 1
   self.invalidate_pred_cache()
   mid
@@ -2879,11 +2879,12 @@ pub fn ProphecyEngine::wal_replay(self : ProphecyEngine) -> ProphecyEngine {
   let e = ProphecyEngine::make()
   for line in self.wal_log {
     let parts = line.split(WAL_SEP).to_array()
-    // 记录格式: op␁mid␁text␁mtype（␁ = WAL_SEP）
+    // 记录格式: op␁mid␁text␁mtype（␁ = WAL_SEP）；text/mtype 已做 wal_escape_field 转义
     if parts.length() >= 4 {
       let op = parts[0].to_owned()
-      let text = parts[2].to_owned()
-      let mtype = parts[3].to_owned()
+      let text = wal_unescape_field(parts[2].to_owned())
+      let mtype = wal_unescape_field(parts[3].to_owned())
+      // P6 加固：只接受已知的 op，未知 op 直接跳过，防止被污染 WAL 破坏状态
       if op == "observe" {
         let _ = e.observe(text, mtype)
       } else if op == "remember" {
@@ -3220,7 +3221,7 @@ pub fn ProphecyEngine::from_json(data : Json) -> ProphecyEngine {
 // ===== M1 风格一致性检查（启发式，确定性）=====
 pub fn ProphecyEngine::style_check(self : ProphecyEngine, text : String) -> Json {
   let issues : Array[Json] = []
-  let sentences = text.split("。").to_array().map(fn(x) { x.to_string() })
+  let sentences = text.split("。").to_array().map(fn(x) { x.to_owned() })
   // 1. 句长（>80 字符提示）
   for s in sentences {
     if s.length() > 80 {
@@ -3547,7 +3548,7 @@ pub fn ProphecyEngine::retrieve_for_prompt(
             Json::Array(arr) =>
               for c in arr {
                 let cid = get_str(c, "id")
-                if cid != "" && not(seen.contains(cid)) {
+                if cid != "" && !seen.contains(cid) {
                   seen.set(cid, true)
                   gloss.push(c)
                 }

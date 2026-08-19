@@ -42,6 +42,16 @@ function Get-ByPath {
   return $cur
 }
 
+# 校验 JSON harness 中可选枚举字段：若声明，则必须落在白名单内。
+function Test-ValidEnumField {
+  param($Obj, [string[]]$Path, [string[]]$Allowed)
+  $val = Get-ByPath $obj $Path
+  if ($null -ne $val -and "$val" -notin $Allowed) {
+    $name = $Path -join '.'
+    throw "$name='$val' not in {$($Allowed -join ', ')}"
+  }
+}
+
 # 简单 TOML 解析器：仅支持 `[section.sub]` 表头 + 标量键值（string / bareword）。
 # 够用即可 —— codex.toml 只有一段 [mcp_servers.yimai] + url/transport 两键。
 # 跳过空行 + `#` 注释行 + 段内 `key = # comment` 后的注释尾巴。
@@ -125,6 +135,9 @@ foreach ($h in $harnesses) {
         if ($urlResolved -ne $serviceUrl) {
           throw "url='$urlResolved' != service.url='$serviceUrl'"
         }
+        # P6 加固：JSON harness 若声明 type/transport，必须为允许的合法值
+        Test-ValidEnumField $top @('type') @('http','streamable-http')
+        Test-ValidEnumField $top @('transport') @('http','streamable-http')
       }
       'toml' {
         $text = [System.IO.File]::ReadAllText($cfgPath, $utf8NoBom)

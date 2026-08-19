@@ -19,7 +19,7 @@ Three layers, one language (no bridge code):
 | Layer | Where | What |
 |---|---|---|
 | Layer 0 · engine | `engine.mbt` / `util.mbt` | D1-D8 memory network + #22 TM/TB + #2-#7 extensions + S1 fuzzy-match |
-| Layer 2 · service | `cmd/service/` | 24 REST endpoints (`/api/*`) + `/mcp` MCP server + web workbench |
+| Layer 2 · service | `cmd/service/` | 27 REST endpoints (`/api/*`) + `/mcp` MCP server + web workbench |
 | Layer 1 · knowledge | `README.md`, `AGENTS.md`, web workbench | docs + how-to |
 
 ## Fast start (Windows, verified environment)
@@ -42,7 +42,7 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke.ps1   # verify endpoints 
 Engine tests (no MSVC needed):
 
 ```bash
-moon test --target wasm-gc        # 101/101 green
+moon test --target wasm-gc        # 159/159 green
 ```
 
 ## Using this project as MCP tools (recommended for Claude Code)
@@ -62,11 +62,11 @@ service in your Claude Code config (`~/.claude/mcp.json` or via the
 ```
 
 The service speaks MCP spec `2025-11-25` (Streamable HTTP, JSON-RPC 2.0) and
-exposes **24 tools** — `fuzzy_match`, `add_tm`, `check_terms`, `concordance`,
+exposes **25 tools** — `fuzzy_match`, `add_tm`, `check_terms`, `concordance`,
 `qe_auto`, `predict`, `observe`, `recall`, `explain`, `reward`, `consolidate`,
 `tm_count`, `ping`, `retrieve_prompt`, `bleu`, `chrf`, `style_check`,
 `style_report`, `back_align`, `term_conflicts`, `fed_export`, `fed_import`,
-`distill_inject`, `active_learning`.
+`distill_inject`, `active_learning`, `mqm_re_annotate`.
 
 ## Determinism contract (read before refactoring)
 

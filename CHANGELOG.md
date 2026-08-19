@@ -8,6 +8,30 @@ since `0.1.0`.
 > **Pure local, zero cloud dependency** — every change below is verifiable
 > on `127.0.0.1` with `scripts/dev.ps1` and `moon test --target wasm-gc`.
 
+## [Unreleased] — P6 hardening, multi-harness compat & repo tidy
+
+### Fixed
+- **`cmd/service/routes.mbt` `MAX_BODY_BYTES` → `MAX_BODY_CHARS`** — renamed and clarified char-count limit; added `Content-Length` pre-check for non-MCP POST requests and hardened JSON body error handling.
+- **`cmd/service/mcp.mbt` `/mcp` body size protection** — added `Content-Length` pre-rejection and JSON-RPC `-32700` error response for oversized bodies; switched unknown tool error from `-32601` to `-32602`.
+- **`cmd/service/mcp.mbt` `tools/call` required-field validation** — added `check_required_fields` for all tools with required args, returning `-32602 Invalid params` on missing fields.
+- **`cmd/service/routes.mbt` `serve_static`** — hardened path traversal defense: reject absolute paths, leading slashes, drive colons, and null bytes; extracted `WEB_ROOT` constant and `is_safe_static_path` helper.
+- **`engine.mbt` WAL separator injection** — `text`/`mtype` fields are now escaped with `wal_escape_field` on append and unescaped on replay; unknown `op` values are skipped during `wal_replay`.
+- **`util.mbt` `align_diff` DoS** — added `MAX_ALIGN_CHARS` / `MAX_ALIGN_CELLS` limits to prevent OOM from maliciously long `source`/`target` inputs.
+- **`cmd/service/tm_store.mbt` `load_store`** — added `MAX_STORE_CHARS` soft cap and warning on oversized `tm_store.json`.
+- **Deprecated API cleanup** — replaced `.size()` → `.length()`, `not(...)` → `!...`, `Map::new()` → `Map([])`, `StringView.to_string()` → `to_owned()` in engine/util; added `moonbitlang/core/json` imports in `tests/core/moon.pkg` and `tests/corpus/moon.pkg`.
+- **Documentation count sync** — README.md/AGENTS.md/CLAUDE.md/GEMINI.md/docs/skill/SKILL.md/docs/harness-configs/README.md/scripts now consistently state 27 REST endpoints and 25 MCP tools (was 24/24).
+- **`AGENTS.md` standards table** — ISO 11669:2024 is now a full standard (replaced ISO/TS 11669:2012); ISO 21720:2024 noted as second edition; XLIFF 2.2 in Committee Specification as of 2025-03.
+- **`scripts/smoke.ps1` portability** — removed UTF-8 BOM and replaced Chinese string literals/check names with ASCII to keep `powershell -File` reliable across OEM code pages.
+- **`scripts/validate-harness-configs.ps1` robustness** — extracted `Test-ValidEnumField` helper to DRY up type/transport whitelist validation; cast values to string before comparison.
+- **`moon.mod`** — corrected `readme` from deleted `README.mbt.md` to `README.md`.
+
+### Added
+- **`docs/plans/2026-08-19-full-audit-and-hardening.md`** — plan marker and baseline record for the P6 audit.
+- **`docs/plans/2026-08-19-security-audit.md`** — security audit report (Critical/High/Medium/Low findings).
+- **`docs/plans/2026-08-19-quality-audit.md`** — code quality audit report.
+- **`docs/plans/2026-08-19-harness-audit.md`** — MCP/harness compatibility audit report.
+- **`docs/plans/2026-08-19-translation-standards-research.md`** — frontier international translation standards research report.
+
 ## [Unreleased] — P3 hardening & multi-harness schema correction
 
 ### Fixed
@@ -88,6 +112,39 @@ since `0.1.0`.
   was `~/.config/claude-desktop/mcp.json`); added schema-specific notes
   per harness (`transport = "http"` for Codex ≥ 0.46, `serverUrl` for
   Windsurf, `type: "streamable-http"` for Continue, `url` for Zed ≥ 0.150).
+
+## [Unreleased] — P5 I18n-Hardening & Multi-Harness Connectivity (2026-08-19)
+
+### Added (5 commits)
+- **`docs/harness-configs/harness_manifest.json`** — 13 harness schema 单一源清单
+  (form / top_key / required_fields / client_reads / notes)；将 13 个 drop-in config
+  的契约从 13 个散落文件收敛为 1 个 JSON，便于自动化校验和 adopter 集成。
+- **`scripts/validate-harness-configs.ps1`** — 自动化 schema 校验脚本（Windows PS 5.1
+  兼容，UTF-8 BOM 编码）：JSON 走 `ConvertFrom-Json`、TOML 手写 mini-parser、YAML
+  降级文本搜索；13/13 PASS，退出码 0/1。
+- **`POST /api/mqm_re_annotate`** + `cmd/service/mcp.mbt` `mqm_re_annotate` tool —
+  MQM 二次标注（Google 2025-10-28 论文对齐）：所有 Critical severity 段强制走二次审，
+  显式产出 `re_annotated` / `critical_count` / `re_annotations` 三段式 JSON；当前是
+  deterministic 自重审（consistent=true），接口设计保留未来多标注员模型扩展空间。
+- **`yimai_prophecy_moonbit_business_corpus_test.mbt`** — 商务领域 8 句语料
+  (合同 / 商务信函 / 招投标 / 议价 / 付款条件 / 装运 / 索赔 / 仲裁)，
+  对齐 ISO 11669:2024 + GB/T 30539-2025 中国商务领域语言服务国家标准。
+- **README / AGENTS.md / SKILL.md** — MQM 严重度三方对齐文档化（yimai vs Phrase vs
+  Lokalise），含 severity_score 转换公式与设计差异说明。
+
+### Tests
+- 测试数量：151 → 159（T38–T41 mqm_re_annotate × 4 + T42–T44 商务语料 × 3 + 1 集合）
+- 16/16 P5 增量测试全绿；pre-commit 门禁保持绿色
+- `routes_meta`：26 → 27（加 mqm_re_annotate）；`L19` 测试同步
+- MCP `known_tool_names`：24 → 25（加 mqm_re_annotate）
+- 13 harness configs 全部通过 `validate-harness-configs.ps1` 自动校验
+
+### Documentation alignment
+- README MQM 段：新增三方对齐表（yimai severity_score / Phrase penalty / Lokalise vs 100）
+- AGENTS.md 标准对齐表：新增"MQM Re-annotation"行（Riley et al. 2025-10-28）
+- AGENTS.md 新增"### MQM severity scale (cross-tool alignment, P5 increment)"子段
+- SKILL.md frontmatter tips：新增 severity_scale / Phrase / Lokalise / ISO 11669 /
+  GB/T 30539 / 商务领域 / re_annotate / 二次标注 关键词
 
 ## [0.1.0] — 2026-08-15 — P1 hardening
 

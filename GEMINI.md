@@ -19,7 +19,7 @@ Three layers, one language (no bridge code):
 | Layer | Where | What |
 |---|---|---|
 | Layer 0 · engine | `engine.mbt` / `util.mbt` | D1-D8 memory network + #22 TM/TB + #2-#7 extensions + S1 fuzzy-match |
-| Layer 2 · service | `cmd/service/` | 24 REST endpoints (`/api/*`) + `/mcp` MCP server + web workbench |
+| Layer 2 · service | `cmd/service/` | 27 REST endpoints (`/api/*`) + `/mcp` MCP server + web workbench |
 | Layer 1 · knowledge | `README.md`, `AGENTS.md`, web workbench | docs + how-to |
 
 ## Fast start (Windows, verified environment)
@@ -42,13 +42,13 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke.ps1   # verify endpoints 
 Engine tests (no MSVC needed):
 
 ```bash
-moon test --target wasm-gc        # 101/101 green
+moon test --target wasm-gc        # 159/159 green
 ```
 
 ## Consuming the service
 
-- **REST**: 24 个 `/api/*` 端点（多数 `POST` JSON 体，`/api/ping` 与 `/api/tm_count` 为 GET）
-- **MCP**: `POST /mcp` speaks JSON-RPC 2.0 (spec 2025-11-25). `initialize` → `tools/list` (24 tools) → `tools/call {"name":"fuzzy_match","arguments":{...}}`. Gemini CLI `settings.json` MCP config:
+- **REST**: 27 个 `/api/*` 端点（多数 `POST` JSON 体，`/api/ping`、`/api/tm_count`、`/api/metrics` 与 `/api/health` 为 GET）
+- **MCP**: `POST /mcp` speaks JSON-RPC 2.0 (spec 2025-11-25). `initialize` → `tools/list` (25 tools) → `tools/call {"name":"fuzzy_match","arguments":{...}}`. Gemini CLI `settings.json` MCP config:
   ```json
   {
     "mcpServers": {

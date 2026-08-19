@@ -20,7 +20,7 @@ Three layers, one language (no bridge code):
 | Layer | Where | What |
 |---|---|---|
 | Layer 0 · engine | `engine.mbt` / `util.mbt` | D1-D8 memory network + #22 TM/TB + #2-#7 extensions + S1 fuzzy-match |
-| Layer 2 · service | `cmd/service/` | 24 REST endpoints (`/api/*`) + `/mcp` MCP server + web workbench |
+| Layer 2 · service | `cmd/service/` | 27 REST endpoints (`/api/*`) + `/mcp` MCP server + web workbench |
 | Layer 1 · knowledge | `README.md`, `AGENTS.md`, web workbench | docs + how-to |
 
 ## Fast start (Windows, verified environment)
@@ -48,10 +48,10 @@ moon test --target wasm-gc        # 151/151 green (P4 + frontier corpus 后)
 
 ## Consuming the service
 
-- **REST**: 24 个 `/api/*` 端点（多数 `POST` JSON 体，`/api/ping` 与 `/api/tm_count` 为 GET）。示例
+- **REST**: 27 个 `/api/*` 端点（多数 `POST` JSON 体，`/api/ping` 与 `/api/tm_count` 为 GET）。示例
   `POST /api/fuzzy_match {"query":"电池包热管理方案","k":3,"threshold":0.5}` → Top-K with
   white-box scores (`sim_token/sim_tfidf/sim_char/sim_ngram/sim_tokenset`)（详见 `README.md` → Service Layer）。
-- **MCP**: `POST /mcp` speaks JSON-RPC 2.0 (spec 2025-11-25). `initialize` → `tools/list` (24 tools)
+- **MCP**: `POST /mcp` speaks JSON-RPC 2.0 (spec 2025-11-25). `initialize` → `tools/list` (25 tools)
   → `tools/call {"name":"fuzzy_match","arguments":{...}}`. Standard MCP config:
   `{"mcpServers":{"yimai":{"url":"http://127.0.0.1:8787/mcp"}}}`.
 - **Web workbench**: open `http://127.0.0.1:8787/` (three panels: TM search / term check / evidence chain).
@@ -78,7 +78,7 @@ moon test --target wasm-gc        # 151/151 green (P4 + frontier corpus 后)
 
 All clients use the same MCP shape. The only thing that varies is the config
 file path. After `scripts/run.ps1` is up, all clients should be able to
-`tools/list` and see the 24 tools.
+`tools/list` and see the 25 tools.
 
 > 📁 **Full sample set** (one file per harness + per-harness install path
 > table) lives under [`docs/harness-configs/`](./docs/harness-configs/README.md).
@@ -146,7 +146,7 @@ ISO-conformant pipelines:
 | **ISO 17100:2015** (Translation services — Requirements) | Translator competence, project management, technical resources, post-delivery feedback | `observe`/`predict` + `reward` give the post-delivery feedback loop; `retrieve_prompt` injects bilingual context into the LLM step; `consolidate` is the meta-cognitive review that ISO 17100 §5.5 expects for "technical revision" |
 | **ISO 18587:2017** (Post-editing of machine translation output) | MTPE workflow, post-editor competence, output quality | `qe_auto` (QE + MQM tagging) and `bleu`/`chrf` measure MT output before/after post-edit; `retrieve_prompt` injects TM hits into the post-edit LLM step |
 | **ISO 30042:2019 / TBX3** (TermBase eXchange, v3 dialect) | TermBase XML schema for terminology exchange (TBX3 v3.0, not TBX2 v2.0 — namespace and structure changed) | `load_tbx` parses ISO 30042-compliant `<martif>/<termEntry>` XML; `add_tm` + `check_terms` enforce term consistency (the "TB" half of TM/TB) |
-| **ISO 11669:2024 (TS)** (Translation projects — General guidance) | Project lifecycle, deliverables, sign-off — **TS** (technical specification) | `predict` is the per-step next-action recommender; `consolidate` is the project-completion review |
+| **ISO 11669:2024** (Translation projects — General guidance) | Project lifecycle, deliverables, sign-off — full standard (replaced ISO/TS 11669:2012) | `predict` is the per-step next-action recommender; `consolidate` is the project-completion review |
 | **MQM / MQM Core** (Lommel et al., 2014–present) | Multidimensional Quality Metrics for translation evaluation. Standard 7 dimensions (terminology / accuracy / linguistic / style / locale / audience / design); standard severity scale **None=0 / Minor=1 / Major=5 / Critical=10** | `qe_auto` returns an MQM-shaped tag set; `back_align` produces the alignment script MQM fluency/accuracy annotations are anchored to. If you add a custom MQM scorer, prefer the standard severity scale for cross-tool comparability. |
 | **MQM Re-annotation** (Riley et al., Google, 2025-10-28) | Two-stage MQM review: a second rater reviews an existing annotation (human or auto), reducing inter-rater variance. The paper reports stronger rater agreement and reliability across all re-annotation scenarios, including LLM-generated annotations like GEMBA-MQM and AutoMQM. | P5 `mqm_re_annotate` walks the same path on every Critical-severity issue: it re-runs `mqm_tags` and emits `re_annotated` / `critical_count` / `re_annotations`. The current implementation is deterministic self-review (consistent = true), but the JSON shape is designed so the engine can be swapped for a multi-rater or LLM-rater implementation without changing the public contract. |
 
@@ -178,8 +178,8 @@ not numerically comparable; convert via the formula.
 
 | Standard | Why it matters | Status |
 |---|---|---|
-| **TMX 1.4b** (Translation Memory eXchange, GALA Global) | The CAT-tool lingua franca for TM export/import. A 24-tool MCP service without `parse_tmx` / `export_tmx` can't be dropped into a Trados / memoQ / OmegaT pipeline. | `parse_tmx` / `export_tmx` declared in `engine.mbt` as `pub fn` but **not yet exposed** via `/api/*` or `/mcp`. Add `/api/import_tmx` + `/api/export_tmx` for v0.2. |
-| **XLIFF 2.1** (OASIS) / **ISO 21720:2024** (XLIFF 2.0) | The CAT-tool lingua franca for segment-level exchange. ISO 21720:2024 = XLIFF 2.0; OASIS 2.1 is the newer revision. | `parse_xliff` declared in `engine.mbt` as `pub fn` but **not yet exposed**. Add `/api/import_xliff` + `/api/export_xliff` for v0.2. |
+| **TMX 1.4b** (Translation Memory eXchange, GALA Global) | The CAT-tool lingua franca for TM export/import. A 25-tool MCP service without `parse_tmx` / `export_tmx` can't be dropped into a Trados / memoQ / OmegaT pipeline. | `parse_tmx` / `export_tmx` declared in `engine.mbt` as `pub fn` but **not yet exposed** via `/api/*` or `/mcp`. Add `/api/import_tmx` + `/api/export_tmx` for v0.2. |
+| **XLIFF 2.1** (OASIS) / **ISO 21720:2024** (XLIFF 2.0) | The CAT-tool lingua franca for segment-level exchange. ISO 21720:2024 = XLIFF 2.0 (second edition, updated from 2017); OASIS XLIFF 2.2 is in Committee Specification as of 2025-03. | `parse_xliff` declared in `engine.mbt` as `pub fn` but **not yet exposed**. Add `/api/import_xliff` + `/api/export_xliff` for v0.2. |
 | **SRX 2.0** (Segmentation Rules eXchange) | Sentence-segmentation rules that make `concordance` and TM hit windows reproducible across CAT tools. | Not yet declared; would need a `/api/import_srx` endpoint. |
 | **MQM severity scale** (None/Minor/Major/Critical + 0/1/5/10) | If/when adding a strict MQM scorer, use this scale so yimai scores are comparable to the broader MQM ecosystem. | Default scale recommendation documented here; engine `qe_auto` currently emits dimension tags only (not severity). |
 

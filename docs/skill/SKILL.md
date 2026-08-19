@@ -4,7 +4,7 @@ agent_created: true
 description: >-
   译脉·先知 2.0 翻译记忆预测引擎（确定性记忆网络 + TM/术语库 + 下一步预测）。当用户需要翻译记忆检索、
   术语一致性校验、下一步预测、记忆闭环反馈、MT 质量评测（BLEU/chrF++）、风格检查、风格一致报告、回译对齐、术语冲突检测，
-  或把翻译记忆注入 LLM prompt（TMPlm）时使用。服务形态：本地 HTTP 服务（24 REST 端点 + 2 ops（metrics/health）
+  或把翻译记忆注入 LLM prompt（TMPlm）时使用。服务形态：本地 HTTP 服务（27 REST 端点（25 业务 + metrics/health）
   + /mcp MCP Server spec 2025-11-25 + 前端工作台；纯本地、零云端依赖；13 个 harness 已有 drop-in 配置）。
   P4 增量（2026-08）：decode_pct 路径安全加固 + MCP notifications/* 通配 + fuzzy_match 抽公共 helper
   + drift_report.text_chrf_avg 翻译质量漂移指标 + MQM 严重度数值化（None=0/Minor=1/Major=5/Critical=10）
@@ -31,7 +31,7 @@ tips: >-
 - **翻译记忆（TM）+ 术语库（TB）**：#22 模块 —— add_tm / fuzzy_match（S1 四分量白盒：token/tfidf/char/ngram/tokenset）/ concordance / load_tbx / enforce_terms / check_terms。
 - **记忆闭环**：observe（记录步骤）→ predict（下一步预测+证据链）→ reward（采纳/拒绝反馈）→ consolidate（固化重放），重启不丢（tm_store.json 原子落盘）。
 - **质量与扩展**：qe_auto（QE+MQM）、style_check（风格一致性）、style_report（风格一致报告）、back_align（回译 LCS 对齐）、term_conflicts（术语冲突）、bleu_score / chrf_score（MT 评测）、retrieve_for_prompt（TMPlm 三段式 prompt 上下文）。
-- **多形态消费**：13 REST 端点 + 11 补充端点（共 24；含 metrics/health 共 26）+ `/mcp` MCP Server（24 tools）+ 前端工作台（8 面板，含记忆图谱可视化、职业译员双栏工作台、双语对齐热力图、主动学习推荐、风格一致报告）。
+- **多形态消费**：27 REST 端点（25 业务 + metrics/health）+ `/mcp` MCP Server（25 tools）+ 前端工作台（8 面板，含记忆图谱可视化、职业译员双栏工作台、双语对齐热力图、主动学习推荐、风格一致报告）。
 
 ## 调用条件（触发场景）
 
@@ -76,6 +76,9 @@ powershell -ExecutionPolicy Bypass -File scripts/dev.ps1
 | `/api/fed_export` · `/api/fed_import` | `{"added","updated"}` | 联邦增量 |
 | `/api/distill_inject` | `{"table":{k:v}}` | 蒸馏偏置注入 |
 | `/api/active_learning` | `{"k"}` | 主动学习推荐：待标注句 Top-K（uncertainty×0.6+novelty×0.4，角色去重） |
+| `/api/mqm_re_annotate` | `{"source","target","match_rate"}` | MQM 二次标注（re_annotated / critical_count / re_annotations） |
+| `/api/metrics` | — | 引擎运行指标（tm_count / term_count / total_memories / term_coverage / predict_calls / hit_rate） |
+| `/api/health` | — | 健康详情（uptime_seconds / version / last_save_status / last_save_age_seconds） |
 | `/api/ping` | — | 健康检查 |
 
 ## MCP 接入（Claude Desktop / 通用 MCP 客户端）
@@ -84,7 +87,7 @@ powershell -ExecutionPolicy Bypass -File scripts/dev.ps1
 { "mcpServers": { "yimai": { "url": "http://127.0.0.1:8787/mcp" } } }
 ```
 
-24 个 MCP tools 与上表端点一一对应（initialize → tools/list → tools/call）。
+25 个 MCP tools 与上表端点一一对应（initialize → tools/list → tools/call）。
 
 ## 数据契约
 

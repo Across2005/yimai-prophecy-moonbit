@@ -1,6 +1,6 @@
 // mcp.mbt —— /mcp 端点：MCP (Model Context Protocol) Server 变体
 // spec 2025-11-25 · Streamable HTTP 传输（挂 8787 服务，POST 单 JSON-RPC 消息，application/json 响应）
-// 24 个引擎能力映射为 MCP tools，供 Claude Desktop / 通用 MCP 客户端消费。
+// 25 个引擎能力映射为 MCP tools，供 Claude Desktop / 通用 MCP 客户端消费。
 // 注：MoonBit Json 为 FFI 类型，构造一律走 @lib.obj/str_json/num_json/arr_json。
 
 // ===== JSON-RPC 响应构造 =====
@@ -226,6 +226,40 @@ fn is_known_tool(name : String) -> Bool {
   Array::contains(known_tool_names, name)
 }
 
+// P6 加固：根据 tool schema 的 required 数组校验必填参数，返回缺失字段列表。
+fn check_required_fields(name : String, args : Json) -> Array[String] {
+  let required = match name {
+    "fuzzy_match" => ["query"]
+    "add_tm" => ["src", "tgt"]
+    "check_terms" => ["source", "target"]
+    "concordance" => ["term"]
+    "qe_auto" => ["source", "target"]
+    "observe" => ["text"]
+    "recall" => ["query"]
+    "explain" => ["mid"]
+    "reward" => ["mid"]
+    "retrieve_prompt" => ["query"]
+    "bleu" => ["ref", "hyp"]
+    "chrf" => ["ref", "hyp"]
+    "style_check" => ["text"]
+    "back_align" => ["source", "target"]
+    "mqm_re_annotate" => ["source", "target"]
+    _ => []
+  }
+  let missing : Array[String] = []
+  let arg_obj = match args {
+    Json::Object(o) => o
+    _ => Map::from_iter(([] : Array[(String, Json)]).iter())
+  }
+  for field in required {
+    match arg_obj.get(field) {
+      Some(_) => ()
+      None => missing.push(field)
+    }
+  }
+  missing
+}
+
 // 分派工具调用（写操作后落盘；async 因调用 save_store）
 async fn invoke_tool(name : String, args : Json) -> Json {
   if name == "fuzzy_match" {
@@ -351,8 +385,13 @@ async fn handle_tools_call(id : Json, params : Json) -> Json {
     _ => @lib.obj([])
   }
   if not(is_known_tool(name)) {
-    // P1: unknown tool 属 method-level 而非 param-level，业界惯例 -32601 (Method not found)
-    return rpc_error(id, -32601, "Unknown tool: " + name)
+    // P6 修正：tool name 是 tools/call 的参数，不存在时应返回 -32602 (Invalid params)。
+    return rpc_error(id, -32602, "Unknown tool: " + name)
+  }
+  // P6 加固：按 tool schema 的 required 字段校验必填参数
+  let missing = check_required_fields(name, args)
+  if missing.length() > 0 {
+    return rpc_error(id, -32602, "Invalid params: missing '" + missing[0] + "'")
   }
   let result = try { invoke_tool(name, args) } catch {
     err => @lib.obj([("error", @lib.str_json(err.to_string()))])
@@ -410,6 +449,17 @@ async fn handle_mcp(req : @http.Request, body : &@io.Reader, conn : @http.Server
     conn.end_response()
     return
   }
+  // P6 加固：MCP 端点使用 JSON-RPC 错误格式返回 body 过大；Content-Length 缺失或无法解析时放行。
+  match req.headers.get("Content-Length") {
+    Some(cl) => {
+      let len = parse_nonnegative_int(cl)
+      if len > MAX_BODY_CHARS {
+        send_json(conn, 413, rpc_error(@lib.str_json(""), -32700, "Parse error: request body too large").stringify())
+        return
+      }
+    }
+    None => ()
+  }
   let parsed = read_json_body(body)
   match parsed {
     Some(req_json) => {
@@ -427,6 +477,13 @@ async fn handle_mcp(req : @http.Request, body : &@io.Reader, conn : @http.Server
     }
     // P1: 改用 JSON-RPC -32700 (Parse error) 标准错误体替代裸字符串
     //   spec 2025-11-25 + JSON-RPC 2.0 标准；客户端可正确解析
-    None => send_json(conn, 400, rpc_error(@lib.str_json(""), -32700, "Parse error: invalid JSON").stringify())
+    None => {
+      let err = if last_body_oversize.val {
+        rpc_error(@lib.str_json(""), -32700, "Parse error: request body too large")
+      } else {
+        rpc_error(@lib.str_json(""), -32700, "Parse error: invalid JSON")
+      }
+      send_json(conn, 400, err.stringify())
+    }
   }
 }

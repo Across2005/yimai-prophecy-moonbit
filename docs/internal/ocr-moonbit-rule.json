@@ -1,0 +1,10 @@
+{
+  "rules": [
+    {
+      "id": "moonbit-default",
+      "name": "MoonBit default review rule",
+      "applies_to": ["*.mbt"],
+      "content": "## Correctness\nIs the MoonBit logic correct? Are there missing boundary conditions (empty input, NaN propagation, Map lookups returning None)?\nAre exceptions handled properly (try/catch coverage, async behavior)?\nIs the engine state mutation thread-safe in concurrent scenarios?\n\n## Security\nAre there security vulnerabilities? Is sensitive information logged (api keys, raw user input)?\nIs the read_json_body size limit enforced? Is serve_static path-traversal protected?\n\n## Performance\nAre there obvious performance issues (O(N*M) full-graph scans, repeated to_json serialization)?\nAre resources properly released (ref / StringBuilder / Array)?\nDoes the function avoid unnecessary Map iteration?\n\n## Maintainability\nIs the code clear and easy to understand? Do names accurately express intent?\nDoes it follow the project's existing code style and architecture patterns (e.g. D1-D8 module names)?\nIs the function signature idiomatic MoonBit (pub fn Struct::method(self, ...) -> ReturnType)?\n\n## Determinism (project-specific hard contract)\nIs the function deterministic? Same input -> byte-identical output?\nDoes it use logical clock (self.clock) instead of wall-clock time?\nDoes it avoid random number generation?\n\n## Test Coverage\nDo critical logic paths have corresponding test cases?\nDo test cases cover boundary conditions (empty input, max input, NaN)?"
+    }
+  ]
+}

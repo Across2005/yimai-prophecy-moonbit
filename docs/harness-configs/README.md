@@ -66,7 +66,7 @@ powershell -ExecutionPolicy Bypass -File scripts/validate-harness-configs.ps1
 The MCP spec (`2025-11-25`, Streamable HTTP, JSON-RPC 2.0) is a wire-level
 contract. Every client above speaks the same wire — only the **config file
 path** and the **field names** differ. The yimai service does not care which
-client is on the other end: `initialize` → `tools/list` (24 tools) →
+client is on the other end: `initialize` → `tools/list` (25 tools) →
 `tools/call` works the same way for all of them.
 
 > **2026-08 现状**：`modelcontextprotocol/specification` 已在 2026-07-28 发布
@@ -90,12 +90,12 @@ Copy-Item docs/harness-configs/cursor.json ~/.cursor/mcp.json
 
 ## Verifying
 
-After the harness restarts, ask it to call one of the 24 tools, e.g.:
+After the harness restarts, ask it to call one of the 25 tools, e.g.:
 
 > "Use the yimai MCP server's `fuzzy_match` tool to find translations of
 >  '电池包热管理方案'."
 
-If the harness does not see the tool, check `tools/list` returns 24 entries:
+If the harness does not see the tool, check `tools/list` returns 25 entries:
 
 ```bash
 curl -s -X POST http://127.0.0.1:8787/mcp \
