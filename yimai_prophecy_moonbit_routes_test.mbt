@@ -2,13 +2,13 @@
 // P1 路由层契约回归（routes.mbt 是 native-only；本测试仅验证「meta 结构」与「错误码表」）。
 //
 // 覆盖：
-//   L19  24 既有端点 + 2 新增（metrics/health）共 26 项在 routes_meta 内，且 baseline 路径全部命中
+//   L19  24 既有端点 + 2 ops（metrics/health） + mqm_re_annotate（P5）共 27 项在 routes_meta 内，且 baseline 路径全部命中
 //   L20  未知路径在 routes_meta 中无匹配（兜底走 serve_static，routes.mbt 的 lookup_route 返 ""）
 //   L21  routes_meta 的 handler 名无重复、无空串，且全部在已知 handler 集合内（无 dangling reference）
-//   L22  error_codes 恰好三码：invalid_json / body_too_large / missing_field（send_error 唯一出口）
+//   L22  error_codes 恰好六码：invalid_json / body_too_large / missing_field / unknown_mid / internal_error / align_failed（send_error 唯一出口）
 
 // ---------------------------------------------------------------------------
-// L19：路由表 26 项全覆盖（24 既有 baseline + 2 新增 metrics/health）
+// L19：路由表 27 项全覆盖（24 既有 baseline + 2 ops metrics/health + mqm_re_annotate P5 新增）
 // ---------------------------------------------------------------------------
 
 test "L19 routes_meta 包含全部 24 baseline 端点路径" {
@@ -39,8 +39,8 @@ test "L19 routes_meta 含 /api/metrics 与 /api/health 两个 P1 新增端点" {
   inspect(has_health, content="true")
 }
 
-test "L19 routes_meta 总条目数为 26（24 既有 + 2 新增）" {
-  inspect(routes_meta.length() == 26, content="true")
+test "L19 routes_meta 总条目数为 27（24 既有 + 2 ops + mqm_re_annotate P5 新增）" {
+  inspect(routes_meta.length() == 27, content="true")
 }
 
 // ---------------------------------------------------------------------------

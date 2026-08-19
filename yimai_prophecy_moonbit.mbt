@@ -19,7 +19,8 @@
 //        L19 测试断言 24 端点 + 2 新增 全部在表内。
 // ---------------------------------------------------------------------------
 
-// 路由表：26 项（24 既有 + metrics + health）。handler_name 为 handler 内部短名。
+// 路由表：27 项（24 既有 + metrics + health + mqm_re_annotate）。handler_name 为 handler 内部短名。
+//   P5 增量：mqm_re_annotate 加入（Google 2025-10-28 re-annotation 论文对齐）
 pub let routes_meta : Array[(String, String)] = [
   ("/api/ping", "ping"),
   ("/api/tm_count", "tm_count"),
@@ -47,6 +48,7 @@ pub let routes_meta : Array[(String, String)] = [
   ("/api/active_learning", "active_learning"),
   ("/api/metrics", "metrics"),
   ("/api/health", "health"),
+  ("/api/mqm_re_annotate", "mqm_re_annotate"),
 ]
 
 // 错误码稳定表：send_error 全部用此六码（机器可读）；L22 测试断言覆盖。

@@ -201,18 +201,24 @@ fn all_tools() -> Json {
     tool_def("active_learning", "主动学习推荐：按 uncertainty+diversity 推 Top-K 待标注句", [
       ("k", schema_prop("integer", "Top-K（默认 5）")),
     ], []),
+    tool_def("mqm_re_annotate", "MQM 二次标注：对 Critical 段强制重审（Google 2025-10-28 论文对齐），返回 re_annotated/critical_count/re_annotations", [
+      ("source", schema_prop("string", "源文")),
+      ("target", schema_prop("string", "译文")),
+      ("match_rate", schema_prop("number", "匹配率（默认 0）")),
+    ], ["source", "target"]),
   ]
   @lib.arr_json(tools)
 }
 
-// 工具名清单（24 项；与 all_tools 内的 tool_def name 必须同步）。
+// 工具名清单（25 项；与 all_tools 内的 tool_def name 必须同步）。
 // P4 抽出来为顶层 let，便于 is_known_tool 用 Array::contains 替代手写循环，
 // 减少一处 24 字符串表（all_tools 仍硬编码，因 tool_def 的 name/desc/props 三元组不便拆分）。
+// P5 增量：mqm_re_annotate 加入（25 项）。
 pub let known_tool_names : Array[String] = [
   "fuzzy_match", "add_tm", "check_terms", "concordance", "qe_auto", "predict", "observe",
   "recall", "explain", "reward", "consolidate", "tm_count", "ping", "retrieve_prompt", "bleu", "chrf",
   "style_check", "style_report", "back_align", "term_conflicts", "fed_export", "fed_import", "distill_inject",
-  "active_learning",
+  "active_learning", "mqm_re_annotate",
 ]
 
 fn is_known_tool(name : String) -> Bool {
@@ -308,6 +314,8 @@ async fn invoke_tool(name : String, args : Json) -> Json {
     ])
   } else if name == "active_learning" {
     @lib.arr_json(engine_ref.val.active_learning_candidates(arg_int(args, "k", 5)))
+  } else if name == "mqm_re_annotate" {
+    engine_ref.val.mqm_re_annotate(arg_str(args, "source"), arg_str(args, "target"), arg_num(args, "match_rate", 0.0))
   } else {
     @lib.obj([("error", @lib.str_json("unknown tool"))])
   }

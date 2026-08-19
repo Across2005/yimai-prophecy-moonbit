@@ -120,6 +120,7 @@ async fn handle_request(req : @http.Request, body : &@io.Reader, conn : @http.Se
       "active_learning" => handle_active_learning(body, conn)
       "metrics" => handle_metrics(conn)
       "health" => handle_health(conn)
+      "mqm_re_annotate" => handle_mqm_re_annotate(body, conn)
       _ => serve_static(path, conn)  // 表里居然有 unknown 名：兜底防 dangling
     }
   } catch {
@@ -357,6 +358,28 @@ async fn handle_predict(body : &@io.Reader, conn : @http.ServerConnection) -> Un
         _ => 3
       }
       let result = engine_ref.val.predict(k)
+      send_json(conn, 200, result.stringify())
+    }
+    _ => ()  // read_json_or_400 已发 4xx 响应
+  }
+}
+
+// POST /api/mqm_re_annotate  {"source":"..","target":"..","match_rate":0.3}  MQM 二次标注
+//   P5 增量（Google 2025-10-28 re-annotation 论文对齐）：
+//   - 无 Critical 段时跳过二次审（re_annotated=false）
+//   - 有 Critical 段时显式产出审计痕迹（re_annotated=true + critical_count + re_annotations 数组）
+//   - 当前是 deterministic 自重审，未来可扩多标注员模型
+async fn handle_mqm_re_annotate(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+  let parsed = read_json_or_400(conn, body)
+  match parsed {
+    Some(Json::Object(o)) => {
+      let source = json_str(o, "source")
+      let target = json_str(o, "target")
+      let mr = match o.get("match_rate") {
+        Some(Json::Number(n, ..)) => n
+        _ => 0.0
+      }
+      let result = engine_ref.val.mqm_re_annotate(source, target, mr)
       send_json(conn, 200, result.stringify())
     }
     _ => ()  // read_json_or_400 已发 4xx 响应
