@@ -43,7 +43,7 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke.ps1   # verify endpoints 
 Engine tests (no MSVC needed):
 
 ```bash
-moon test --target wasm-gc        # 151/151 green (P4 + frontier corpus 后)
+moon test --target wasm-gc        # 159/159 green (P4 + P5 frontier corpus + 子包重组 后)
 ```
 
 ## Consuming the service
@@ -82,6 +82,24 @@ file path. After `scripts/run.ps1` is up, all clients should be able to
 
 > 📁 **Full sample set** (one file per harness + per-harness install path
 > table) lives under [`docs/harness-configs/`](./docs/harness-configs/README.md).
+
+### Project-level auto-discovery (zero-copy)
+
+This repo ships **in-repo MCP configs** so agents see the 25 tools immediately
+after `scripts/run.ps1` — no manual copy to `~/.config/…` needed:
+
+| File | Agent |
+|---|---|
+| `.mcp.json` | Claude Code, Gemini CLI, generic MCP clients |
+| `.cursor/mcp.json` | Cursor (per-project) |
+| `.cline/mcp.json` | Cline (per-project, ≥ 3.x) |
+| `.roo/mcp.json` | Roo Code (per-project) |
+| `.windsurf/mcp.json` | Windsurf / Cascade (per-project) |
+| `.codex/config.toml` | OpenAI Codex CLI (≥ 0.21, per-project) |
+
+All point at `http://127.0.0.1:8787/mcp`. Start the service first
+(`scripts/dev.ps1` or `scripts/run.ps1`), then restart the agent — it will
+auto-discover the 25 tools via `tools/list`.
 
 ## Windows prerequisites (native build)
 

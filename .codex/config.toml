@@ -1,0 +1,7 @@
+# OpenAI Codex CLI — yimai MCP server (Streamable HTTP, per-project)
+# Auto-discovered from <repo>/.codex/config.toml.
+# Codex >= 0.46 requires explicit transport = "http".
+
+[mcp_servers.yimai]
+url = "http://127.0.0.1:8787/mcp"
+transport = "http"

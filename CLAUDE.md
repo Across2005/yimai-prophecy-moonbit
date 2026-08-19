@@ -47,9 +47,12 @@ moon test --target wasm-gc        # 159/159 green
 
 ## Using this project as MCP tools (recommended for Claude Code)
 
-After `scripts/run.ps1` is running on `http://127.0.0.1:8787`, register the
-service in your Claude Code config (`~/.claude/mcp.json` or via the
-`/mcp` slash command):
+After `scripts/run.ps1` is running on `http://127.0.0.1:8787`, Claude Code
+auto-discovers the 25 tools from the project-level `.mcp.json` at the repo
+root — no manual copy to `~/.claude/mcp.json` needed.
+
+> If you prefer a global config instead, add the same block to
+> `~/.claude/mcp.json` or use the `/mcp` slash command:
 
 ```json
 {

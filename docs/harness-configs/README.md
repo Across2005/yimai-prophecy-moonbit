@@ -81,8 +81,14 @@ client is on the other end: `initialize` → `tools/list` (25 tools) →
 # 1) build & start the service (one command)
 powershell -ExecutionPolicy Bypass -File scripts/dev.ps1
 
-# 2) pick your harness and copy the matching file to its expected path
-#    (see the table above)
+# 2) Project-level auto-discovery configs are already in the repo root.
+#    Supported agents: Claude Code (.mcp.json), Cursor (.cursor/mcp.json),
+#    Cline (.cline/mcp.json), Roo Code (.roo/mcp.json),
+#    Windsurf (.windsurf/mcp.json), Codex CLI (.codex/config.toml).
+#    Just restart the agent — it will see the 25 tools via tools/list.
+
+# 2b) For agents that need a global/user-level config, copy the matching
+#     file to its expected path (see the table above):
 Copy-Item docs/harness-configs/cursor.json ~/.cursor/mcp.json
 
 # 3) restart the harness so it picks up the new server

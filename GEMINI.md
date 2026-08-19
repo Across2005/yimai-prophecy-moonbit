@@ -48,7 +48,7 @@ moon test --target wasm-gc        # 159/159 green
 ## Consuming the service
 
 - **REST**: 27 个 `/api/*` 端点（多数 `POST` JSON 体，`/api/ping`、`/api/tm_count`、`/api/metrics` 与 `/api/health` 为 GET）
-- **MCP**: `POST /mcp` speaks JSON-RPC 2.0 (spec 2025-11-25). `initialize` → `tools/list` (25 tools) → `tools/call {"name":"fuzzy_match","arguments":{...}}`. Gemini CLI `settings.json` MCP config:
+- **MCP**: `POST /mcp` speaks JSON-RPC 2.0 (spec 2025-11-25). `initialize` → `tools/list` (25 tools) → `tools/call {"name":"fuzzy_match","arguments":{...}}`. Gemini CLI auto-discovers the MCP server from the project-level `.mcp.json` at the repo root — no manual copy to `~/.gemini/settings.json` needed. If you prefer a global config:
   ```json
   {
     "mcpServers": {

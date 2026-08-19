@@ -15,3 +15,7 @@ tm_store.json
 .cleanup-staging/
 # 占位文件：旧版 Codex MCP 样例，已迁移到 docs/harness-configs/codex.toml
 AGENTS.md.mcp.json
+# Qoder IDE 本地工作树 (canvas/findings/report 状态) — 不入仓
+.qoder/
+# gitlink 平台根目录截图 — 个人参考用，不入仓
+gitlink_root*.png
