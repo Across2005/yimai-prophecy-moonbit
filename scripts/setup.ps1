@@ -20,22 +20,28 @@ Write-Host "[OK] moon: $($moon.Source)"
 moon version
 
 # 2. MSVC cl.exe (needed for native target; async requires MSVC on Windows)
+#   cmd/{service,main}/moon.pkg uses cc = "cl.exe" (PATH 探测);
+#   override with $env:MSVC_CC for non-standard install locations.
 $ccOk = $false
-foreach ($pkg in @("cmd/service/moon.pkg", "cmd/main/moon.pkg")) {
-  if (Test-Path $pkg) {
-    $content = Get-Content $pkg -Raw
-    if ($content -match '"cc"\s*:\s*"([^"]+)"') {
-      $cc = $matches[1]
-      if (Test-Path $cc) { $ccOk = $true; Write-Host "[OK] $pkg -> cl.exe found" }
-      else { Write-Host "[WARN] $pkg points to missing cl.exe: $cc" }
-    }
+$ccPath = $null
+if ($env:MSVC_CC -and (Test-Path $env:MSVC_CC)) {
+  $ccPath = $env:MSVC_CC
+  $ccOk = $true
+  Write-Host "[OK] MSVC_CC env override: $ccPath"
+} else {
+  $ccFromPath = Get-Command cl.exe -ErrorAction SilentlyContinue
+  if ($ccFromPath) {
+    $ccPath = $ccFromPath.Source
+    $ccOk = $true
+    Write-Host "[OK] cl.exe on PATH: $ccPath"
   }
 }
 if (-not $ccOk) {
-  Write-Host "[HINT] Native build needs MSVC. Fix 'link.native.cc' in both:"
-  Write-Host "       cmd/service/moon.pkg  and  cmd/main/moon.pkg"
-  Write-Host "       Typical: C:/Program Files/Microsoft Visual Studio/<ver>/Community/VC/Tools/MSVC/<v>/bin/Hostx64/x64/cl.exe"
-  Write-Host "       Or use Build Tools:  C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/<v>/bin/Hostx64/x64/cl.exe"
+  Write-Host "[HINT] Native build needs MSVC. Either:"
+  Write-Host "       1. Run from Developer Command Prompt (vcvars64.bat auto-loads cl.exe)"
+  Write-Host "       2. Set MSVC_CC to your cl.exe absolute path:"
+  Write-Host "          `$env:MSVC_CC = 'C:/Program Files/Microsoft Visual Studio/<ver>/Community/VC/Tools/MSVC/<v>/bin/Hostx64/x64/cl.exe'"
+  Write-Host "       3. Or VS Build Tools: `$env:MSVC_CC = 'C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/<v>/bin/Hostx64/x64/cl.exe'"
 }
 
 # 3. core native bundle (rebuild after a moon toolchain upgrade)

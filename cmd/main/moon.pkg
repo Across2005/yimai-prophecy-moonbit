@@ -8,8 +8,12 @@ options(
   "is-main": true,
   link: {
     "native": {
-      // 本机 MSVC（VS18 Community）；换环境请改为对应 cl.exe 路径（scripts/setup.ps1 可检测）
-      "cc": "C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64/cl.exe",
+      // MSVC 探测：依赖 PATH 里的 cl.exe。
+      //   1. Developer Command Prompt (vcvars64.bat 已加载) → 直接 build
+      //   2. 其它终端：先跑一次 vcvars64.bat 再 build
+      //   3. 装在非标准路径：set MSVC_CC 环境变量覆盖（见 cmd/service/moon.pkg 注释）
+      //   4. setup.ps1 会探测 $env:MSVC_CC 或 PATH 并给出明确提示
+      "cc": "cl.exe"
     },
   },
 )
