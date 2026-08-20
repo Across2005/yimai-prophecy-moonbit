@@ -958,7 +958,7 @@ pub fn ProphecyEngine::recall(
 //   predict 主体只做缓存、orchestrator 与缓存写；保留 R15 排序依赖（Map 插入序）
 
 // 收集上下文激活：context 中每个 mid 获得 (1+1/n)^exp 形式的近期权重（取最大，重复 mid 不重复加权）
-fn predict_collect_activations(self : ProphecyEngine) -> Map[String, Double] {
+fn ProphecyEngine::predict_collect_activations(self : ProphecyEngine) -> Map[String, Double] {
   let act : Map[String, Double] = Map::from_iter(([] : Array[(String, Double)]).iter())
   let n = self.context.length()
   if n == 0 { return act }
@@ -981,7 +981,7 @@ fn predict_collect_activations(self : ProphecyEngine) -> Map[String, Double] {
 // 一阶转移 + D8 角色回退聚合到 score + path（in-place 修改）
 //   转移动作（含 Top-8 剪枝快路径）后，紧接 D8 概念抽象回退：具体转移稀疏时用
 //   角色级 (role_trans × role_index) 规律补位，权重 0.5。
-fn predict_aggregate_transitions(
+fn ProphecyEngine::predict_aggregate_transitions(
   self : ProphecyEngine,
   act : Map[String, Double],
   score : Map[String, Double],
@@ -1146,7 +1146,7 @@ fn predict_aggregate_transitions(
 }
 
 // 排名 + 熵 + pack Json；副作用：更新 self.stats_preds/last_pred、topk mid 的 predict_count
-fn predict_rank_and_pack(
+fn ProphecyEngine::predict_rank_and_pack(
   self : ProphecyEngine,
   score : Map[String, Double],
   path : Map[String, Array[Json]],
@@ -1417,7 +1417,7 @@ fn ProphecyEngine::_recompute_values(self : ProphecyEngine) -> Unit {
 //   快照/重算价值仍留在主 fn（属于编排不变量，F1 约束）
 
 // 段 1：边权弹性衰减 + 边剪枝（始终执行；不依赖 prune flag）
-fn consolidate_edge_decay(self : ProphecyEngine) -> Unit {
+fn ProphecyEngine::consolidate_edge_decay(self : ProphecyEngine) -> Unit {
   for mid, m in self.memories.iter2() {
     let new_edges : Map[String, Double] =
       Map::from_iter(([] : Array[(String, Double)]).iter())
@@ -1439,7 +1439,7 @@ fn consolidate_edge_decay(self : ProphecyEngine) -> Unit {
 }
 
 // 段 2：转移计数衰减（对齐 D1–D8 规范：缓慢衰减，权重 < 0.5 的转移被丢弃）
-fn consolidate_trans_decay(self : ProphecyEngine) -> Unit {
+fn ProphecyEngine::consolidate_trans_decay(self : ProphecyEngine) -> Unit {
   for a, d in self.transitions.iter2() {
     let newd : Map[String, Double] = Map::from_iter(([] : Array[(String, Double)]).iter())
     for dst, c in d.iter2() {
@@ -1453,7 +1453,7 @@ fn consolidate_trans_decay(self : ProphecyEngine) -> Unit {
 }
 
 // 段 3：(可选) 压缩零预测价值噪声节点；返回剪枝数
-fn consolidate_prune_nodes(self : ProphecyEngine) -> Int {
+fn ProphecyEngine::consolidate_prune_nodes(self : ProphecyEngine) -> Int {
   let mut removed = 0
   let ids : Array[String] = []
   for mid, _ in self.memories.iter2() {
@@ -1482,7 +1482,7 @@ fn consolidate_prune_nodes(self : ProphecyEngine) -> Int {
 }
 
 // 段 4：元认知调控 — 近期 50 步命中率 → explore 参数自适应；返回 hr 给主 fn 算 target_lr
-fn consolidate_meta_cognition(self : ProphecyEngine) -> Double {
+fn ProphecyEngine::consolidate_meta_cognition(self : ProphecyEngine) -> Double {
   let recent : Array[Int] = []
   let start = if self.meta_hits.length() > 50 {
     self.meta_hits.length() - 50
@@ -1803,7 +1803,7 @@ fn ProphecyEngine::count_tm(self : ProphecyEngine) -> Int {
 //   核心打分+pack 共享，确保 R15 排序与 score 分量一致。
 
 // 单 TM 打分：低于 threshold 返 None，否则返 (mid, score, sim_tok, sim_ng, sim_ts)
-fn fuzzy_score_one(
+fn ProphecyEngine::fuzzy_score_one(
   self : ProphecyEngine,
   mid : String,
   m : MemoryNode,
@@ -1829,7 +1829,7 @@ fn fuzzy_score_one(
 }
 
 // 对排序后的 cands 抽 Top-K 并 pack JSON（白盒四分量）
-fn fuzzy_pack_top(
+fn ProphecyEngine::fuzzy_pack_top(
   self : ProphecyEngine,
   cands : Array[(String, Double, Double, Double, Double)],
   k : Int,
@@ -1997,7 +1997,14 @@ fn fuzzy_candidate_set(
 }
 
 // 旧版模糊匹配（S1 之前的公式）：0.7·token-cosine + 0.3·char-ratio。
-// 保留用于 A/B 对照与平滑迁移（新公式验证通过后可在下个版本移除）。
+//
+// ⚠️ **A/B 对照基线，长期保留不删除**（2026-08 决策）：
+//   - 新代码请用 `fuzzy_match`（P1 增量：S1 公式 + IDF 倒排剪枝）
+//   - 本函数保留理由：
+//     1) fuzzy_match_full（无剪枝）和 fuzzy_match_legacy（无 IDF 但有剪枝-前一版公式）的回归基线
+//     2) 历史 TM/TB 测试集 (R1-R25 部分) 仍引用它作 expected score 对照
+//     3) 删除会破坏 4 个引用点（engine.mbt + tests/core/{tm,api_coverage} + README）的平滑迁移
+//   - 移除窗口：仅在 fuzzy_match / fuzzy_match_full 完全替代且引用点全部迁移后（≥0.3.0）讨论
 pub fn ProphecyEngine::fuzzy_match_legacy(self : ProphecyEngine, query : String, k : Int, threshold : Double) -> Json {
   let qv = tf_vector(yimai_tokenize(query))
   let cands : Array[(String, Double, Double, Double)] = []
@@ -3083,6 +3090,21 @@ pub fn ProphecyEngine::stats_view(self : ProphecyEngine) -> Json {
 // ---------------------------------------------------------------------------
 // 序列化（状态跨调用 / 持久化）
 // ---------------------------------------------------------------------------
+//
+// to_json / from_json 是状态 schema 的**事实契约**——`tm_store.json` 落盘 + 跨会话恢复
+// 全部依赖它们。改字段名 / 顺序会破坏 backward compat，所以这两个函数保持**显式列出**所有
+// 字段（不抽 helper，不动字段名）。
+//
+// 评估结论（2026-08 评审）：当前 to_json 50 行 + from_json 50 行 + schema 21 字段，
+// 还在可读范围，**不强拆**。拆分触发条件（任一）：
+//   1) schema 字段数 > 30（每段 > 8 字段，逻辑才"自然"分组）
+//   2) 字段分组出现明显语义边界（例如新增 neural 层 / multimodal OCR / 联邦 WAL 时）
+//   3) to_json 或 from_json 任一行数 > 100
+//
+// 短期可改进方向（如果以后真拆）：
+//   - to_json 拆为 to_json_core / to_json_episodes / to_json_meta / to_json_tuning 四段
+//   - from_json 同构四段
+//   - 加 schema_version 字段在 JSON 顶层（目前隐式 v0.1.0，无显式版本号）
 
 pub fn ProphecyEngine::to_json(self : ProphecyEngine) -> Json {
   let mem_map : Map[String, Json] = Map::from_iter(([] : Array[(String, Json)]).iter())
