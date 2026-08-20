@@ -19,3 +19,6 @@ AGENTS.md.mcp.json
 .qoder/
 # gitlink 平台根目录截图 — 个人参考用，不入仓
 gitlink_root*.png
+
+# Mimosa OCR/security scan local state (not source-controlled)
+.mimosa/

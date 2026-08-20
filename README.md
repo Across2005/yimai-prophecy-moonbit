@@ -3,6 +3,8 @@
 > 一套**带预测能力的记忆网络**——让本地智能体记住工作流，并在遇到同类任务时**预测下一步需求**、给出可白盒解释的路径。这是「译脉·先知 2.0 预知记忆网络」引擎的 MoonBit **零依赖**实现（仅 `core/json` + `core/math`）。
 >
 > 在「预测记忆」内核之外，已落地 **#22 翻译记忆（TM）/ 术语库（TB）一等公民**：真正的 fuzzy match（含匹配率%）、concordance 检索、TBX 术语库强制对齐与一致性校验——让引擎从「只预测」走向「预测 + 检索 + 术语守门」。
+>
+> 📜 **变更历史**：[`CHANGELOG.md`](./CHANGELOG.md) 记录每次 P 增量的完整 commit 列表与影响范围；本 README 只描述当前状态。
 
 [![Tests](https://img.shields.io/badge/tests-159%2F159%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Hit@3](https://img.shields.io/badge/Hit%403-0.8246-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
@@ -165,7 +167,7 @@ import {
 
 Clone the repo, then run the one-shot dev workflow (checks env → builds the native
 service → starts it on `127.0.0.1:8787` → seeds sample TM pairs → smoke-tests
-all 26 endpoints + MCP):
+all 27 REST endpoints + 25 MCP tools):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/dev.ps1
@@ -781,68 +783,6 @@ All seven user-scoped extension capabilities are implemented in `engine.mbt` and
 | 7 | Observability & drift | `metrics`, `drift_report` | `metrics` = tm/term counts + term-coverage; `drift_report(before, after)` diffs two `to_json` snapshots by `(type\|is_term\|text\|translation)` key to surface TM/term add/remove. |
 
 > **Boundary principle.** Capabilities #4 (OCR) and any host persistence stay *outside* the zero-dependency engine. The engine speaks JSON at these boundaries, so the host (Node/Python/Agent) supplies OCR, files, and I/O — the MoonBit core stays 100% pure-stdlib and `wasm-gc`-testable.
-
----
-
-## P4 增量 (2026-08-17) — 硬化、重构、质量与文档
-
-P4 增量包含 6 个 commits（a3df919 → 8857bc2 → 09edae8），聚焦代码质量、安全性、可维护性和文档完整性。所有修改均通过 `moon test --target wasm-gc`（151/151 全绿）。
-
-### P4-hardening (a3df919) — 安全加固
-
-| 修复 | 位置 | 影响 |
-|---|---|---|
-| `decode_pct` URL 解码 | `util.mbt` 新增函数 | 防御路径穿越攻击（`serve_static` 检测 `..` 与 `\\` 后再解码） |
-| MCP `notifications/*` 通配符 | `cmd/service/mcp.mbt` dispatch | 符合 JSON-RPC 2.0 spec，支持 `notifications/initialized` 等方法 |
-| `/api/health` 版本同步 | `cmd/service/routes.mbt` | 改用 `@lib.api_version` 单一源，避免硬编码不一致 |
-| `distill_inject ignored` 字段 | `cmd/service/mcp.mbt` distill_inject | 返回 schema 错误时可感知的字段，提升调试体验 |
-| 回归测试 T30–T34 | `yimai_prophecy_moonbit_quality_test.mbt` | 5 个单元测试覆盖 `decode_pct` 边界（空串、无编码、循环、非法 hex、Unicode） |
-
-### P4-quality (0a1ded0) — 代码质量提升
-
-| 优化 | 位置 | 影响 |
-|---|---|---|
-| `fuzzy_match` / `fuzzy_match_full` 抽公共 helper | `engine.mbt` 新增 `fuzzy_score_one` / `fuzzy_pack_top` | 减少 99% 代码重复，R15 排序契约保持 |
-| `is_known_tool` 改用 `Array::contains` | `cmd/service/mcp.mbt` | 消除 25 个硬编码字符串，改用 `known_tool_names` 数组 + `contains` |
-| `drift_report` 新增 `text_chrf_avg` / `text_chrf_n` | `engine.mbt` drift_report | 翻译质量漂移指标（纯本地零依赖） |
-| MQM 严重度数值化 | `engine.mbt` `mqm_severity_to_score` | None=0 / Minor=1 / Major=5 / Critical=10，统一打分标准 |
-| 回归测试 E13b | `yimai_prophecy_moonbit_extension_test.mbt` | `drift_report` chrF 指标回归 |
-
-### P4-refactor (e15142a, bb4b389, 931c011) — 重构与可维护性
-
-| 重构 | 位置 | 影响 |
-|---|---|---|
-| `routes_meta` 单一源 | `cmd/service/routes.mbt` 删除 27 项硬编码 | `lookup_route` 改用根包 `@lib.routes_meta`，端点定义唯一 |
-| `predict` 拆 3 段 | `engine.mbt` 新增 `predict_collect_activations` / `predict_aggregate_transitions` / `predict_rank_and_pack` | 主函数从 269 行降到 41 行，职责清晰 |
-| `consolidate` 拆 4 段 | `engine.mbt` 新增 `consolidate_edge_decay` / `consolidate_trans_decay` / `consolidate_prune_nodes` / `consolidate_meta_cognition` | 主函数从 112 行降到 28 行 |
-| `save_store` 深度守卫 | `cmd/service/tm_store.mbt` 新增 `MAX_SAVE_DEPTH=3` | 防御性递归深度限制 |
-| `routes_test.mbt` 派生 | `yimai_prophecy_moonbit_routes_test.mbt` | `build_known_handlers` 从 `routes_meta` 派生，避免重复维护 |
-
-### P4-docs (8857bc2) — 文档完整性
-
-| 文档 | 新增内容 |
-|---|---|
-| `README.md` | "International Standards & Compliance" 章节（ISO 5060:2024 + EU AI Act + GDPR + MQM Council + MCP 集成） |
-| `README.md` | 测试数字更新 89/101 → 137 → 151 → 159（badge + 门禁段 + roadmap + AGENTS.md） |
-| `docs/skill/SKILL.md` | frontmatter 加 P4 摘要 + 触发词（MQM / drift_report / severity_score） |
-
-### P4-frontier-corpus (09edae8) — 前沿语料库扩展
-
-| 新增 | 位置 | 说明 |
-|---|---|---|
-| `yimai_prophecy_moonbit_frontier_corpus_test.mbt` | 根目录 | 10 个前沿领域（AI Safety×2, Science, Math×2, Philosophy, Digital Humanities, CBT, Aviation, Space），60 句对，14 个测试（T38–T51） |
-| 测试数量 | 137 → 151 → 159 | 新增 14+8=22 个测试，全语料库覆盖 22+1=23 个前沿领域（含商务 ISO 11669 / GB/T 30539-2025） |
-
-### P4 增量统计
-
-| 指标 | 数值 |
-|---|---|
-| Commits | 7 (a3df919 + 0a1ded0 + e15142a + bb4b389 + 931c011 + 8857bc2 + 09edae8) |
-| 文件修改 | 21 files |
-| 代码增删 | +561 / -238 |
-| 新增测试 | 22 (T30–T37 quality/security + T38–T51 frontier corpus) |
-| 测试总数 | 137 → 151 → 159 |
-| 测试通过率 | 159/159 (100%) |
 
 ---
 

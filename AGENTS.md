@@ -7,6 +7,8 @@ this repository immediately after cloning. Read this first.
 > - [`CLAUDE.md`](./CLAUDE.md) — Claude Code (Anthropic CLI)
 > - [`GEMINI.md`](./GEMINI.md) — Gemini CLI (Google)
 > - Both point back to this file for the full multi-harness guide.
+>
+> 📜 **变更历史**：[`CHANGELOG.md`](./CHANGELOG.md) — 每次 P 增量的完整 commit 列表与影响范围。本仓库约定：**所有 P 增量详情只入 CHANGELOG，README / AGENTS.md / CLAUDE.md / GEMINI.md 只描述当前状态**（避免历史段在多处腐烂）。
 
 ## What this project is
 
@@ -20,8 +22,13 @@ Three layers, one language (no bridge code):
 | Layer | Where | What |
 |---|---|---|
 | Layer 0 · engine | `engine.mbt` / `util.mbt` | D1-D8 memory network + #22 TM/TB + #2-#7 extensions + S1 fuzzy-match |
-| Layer 2 · service | `cmd/service/` | 27 REST endpoints (`/api/*`) + `/mcp` MCP server + web workbench |
-| Layer 1 · knowledge | `README.md`, `AGENTS.md`, web workbench | docs + how-to |
+| Layer 1 · service | `cmd/service/` | 27 REST endpoints (`/api/*`) + `/mcp` MCP server + web workbench |
+| Layer 2 · knowledge | `README.md`, `AGENTS.md`, web workbench | docs + how-to |
+
+> 注：原表格把 service 编为 Layer 2、knowledge 编为 Layer 1 是 P5 之前的命名反直觉；
+>   2026-08 重构为 0/1/2 顺序（engine → service → knowledge），与 README 第 422 行的
+>   "cmd/service 是 Layer 2" 旧表述不一致——README 的"Layer 2" 实指测试层编号（E-Layer0~10），
+>   与本架构层无关；如读者混淆，请以本表为准。
 
 ## Fast start (Windows, verified environment)
 
@@ -206,8 +213,6 @@ not numerically comparable; convert via the formula.
 > still need certified linguists, project management, and the surrounding
 > process — yimai gives you the *memory + consistency* primitives those
 > processes rely on.
-
-## Useful entry points
 
 ## Useful entry points
 

@@ -1,97 +1,67 @@
 # GEMINI.md — Gemini CLI Out-of-the-Box Guide
 
-This file is auto-loaded by **Gemini CLI** (Google's coding agent) and gives it
-the same first-class onboarding as `AGENTS.md`. If you use Gemini CLI on this
-repository, you can skip `AGENTS.md` and just read this.
+> Auto-loaded by Gemini CLI (Google's CLI coding agent).
+> **All shared project knowledge lives in [`AGENTS.md`](./AGENTS.md)**
+> ([Code conventions → R15](./AGENTS.md#code-conventions) / MoonBit gotchas / 项目布局).
+> 📜 变更历史：[`CHANGELOG.md`](./CHANGELOG.md) — 每次 P 增量的完整 commit 列表。
+> This file only documents **Gemini CLI specific** onboarding.
 
-> Companion: see [`AGENTS.md`](./AGENTS.md) for the full multi-harness guide
-> (Cursor / Copilot / Codex / Devin / Claude Code / Cline / Continue.dev / Roo Code / Windsurf).
+## Gemini CLI MCP auto-discovery (zero-copy)
 
-## What this project is
+After `scripts/run.ps1` (or `scripts/dev.ps1` for one-shot setup) is running
+on `http://127.0.0.1:8787`, Gemini CLI auto-discovers the MCP server from the
+project-level `.mcp.json` at the repo root — **no manual copy** to
+`~/.gemini/settings.json` needed.
 
-**译脉·先知 2.0** — a deterministic memory-prediction engine written in
-[MoonBit](https://www.moonbitlang.com), zero third-party dependencies
-(`core/json` + `core/math` only). It remembers workflows / translation-memory
-entries and predicts the next step, with white-box explanations.
+If you prefer a global config instead, add the same block to
+`~/.gemini/settings.json`:
 
-Three layers, one language (no bridge code):
-
-| Layer | Where | What |
-|---|---|---|
-| Layer 0 · engine | `engine.mbt` / `util.mbt` | D1-D8 memory network + #22 TM/TB + #2-#7 extensions + S1 fuzzy-match |
-| Layer 2 · service | `cmd/service/` | 27 REST endpoints (`/api/*`) + `/mcp` MCP server + web workbench |
-| Layer 1 · knowledge | `README.md`, `AGENTS.md`, web workbench | docs + how-to |
-
-## Fast start (Windows, verified environment)
-
-```powershell
-# one-shot: env check -> build -> start service -> seed sample TM -> smoke test
-powershell -ExecutionPolicy Bypass -File scripts/dev.ps1
-```
-
-Or step by step:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/setup.ps1   # detect moon/MSVC, validate cl.exe paths
-powershell -ExecutionPolicy Bypass -File scripts/build.ps1   # compile cmd/service (native)
-powershell -ExecutionPolicy Bypass -File scripts/run.ps1     # start http://127.0.0.1:8787
-powershell -ExecutionPolicy Bypass -File scripts/seed.ps1    # load sample TM pairs (optional)
-powershell -ExecutionPolicy Bypass -File scripts/smoke.ps1   # verify endpoints + MCP
-```
-
-Engine tests (no MSVC needed):
-
-```bash
-moon test --target wasm-gc        # 159/159 green
-```
-
-## Consuming the service
-
-- **REST**: 27 个 `/api/*` 端点（多数 `POST` JSON 体，`/api/ping`、`/api/tm_count`、`/api/metrics` 与 `/api/health` 为 GET）
-- **MCP**: `POST /mcp` speaks JSON-RPC 2.0 (spec 2025-11-25). `initialize` → `tools/list` (25 tools) → `tools/call {"name":"fuzzy_match","arguments":{...}}`. Gemini CLI auto-discovers the MCP server from the project-level `.mcp.json` at the repo root — no manual copy to `~/.gemini/settings.json` needed. If you prefer a global config:
-  ```json
-  {
-    "mcpServers": {
-      "yimai": { "url": "http://127.0.0.1:8787/mcp" }
+```json
+{
+  "mcpServers": {
+    "yimai": {
+      "url": "http://127.0.0.1:8787/mcp"
     }
   }
-  ```
-- **Web workbench**: open `http://127.0.0.1:8787/`
-- **Persistence**: writes `tm_store.json` (atomic tmp+rename)
-
-## Determinism contract (read before refactoring)
-
-This project enforces a hard R15 contract: identical input sequences must
-produce **byte-identical** `to_json` output. A logical clock (`self.clock`)
-replaces wall-clock time. Do not introduce `Date::now()`, `Random::new()`, or
-any non-deterministic source into the engine path.
-
-Local pre-commit gate (`.githooks/pre-commit`) already runs
-`moon check && moon test --target wasm-gc` before every commit. After
-cloning, activate it once:
-
-```bash
-git config core.hooksPath .githooks
+}
 ```
 
-## Code conventions
+The service speaks MCP spec `2025-11-25` (Streamable HTTP, JSON-RPC 2.0).
+Full tool list: see [`docs/harness-configs/README.md`](./docs/harness-configs/README.md).
 
-- Engine must stay **zero-dependency** (`core/json` + `core/math` only). All I/O lives in `cmd/service`.
-- Determinism is a hard contract: same input ⇒ byte-identical `to_json` output (R15).
-- `moon fmt` reformats the whole repo (2585-line diffs historically) — avoid unless asked.
-- **Map ≠ HashMap** — `Map[String, T]` (MoonBit) is **ordered by insertion** and is
-  load-bearing for the determinism contract (R15): `predict` scores, `fuzzy_match` ranking,
-  `metrics` JSON field order all depend on iteration order. Do **not** swap in `@hashmap`
-  or any `HashSet/HashMap` from a hypothetical future stdlib — that would break R15 silently.
-- Keep `moon test --target wasm-gc` green on every change.
+## Quick verify
 
-## Useful entry points
+1. Confirm service is up:
+   ```bash
+   curl http://127.0.0.1:8787/api/ping      # → {"status":"ok"}
+   ```
+2. Confirm Gemini CLI sees the server — in the interactive prompt:
+   ```
+   /mcp list                              # → should list "yimai" connected
+   ```
+3. Confirm tools work — invoke directly from the prompt:
+   ```
+   @yimai ping                            # → {"status":"ok"}
+   ```
+   (Gemini CLI uses `@<server> <request>` syntax for direct MCP calls; this
+   is the real equivalent of `mcp__yimai__ping` in Claude Code.)
 
-| File | Purpose |
+## Troubleshooting
+
+If `/mcp list` doesn't show yimai:
+
+- **Service not running**: `curl http://127.0.0.1:8787/api/ping` — if it
+  fails, run `scripts/run.ps1` (or `scripts/dev.ps1`).
+- **Port conflict**: check `127.0.0.1:8787` isn't bound by another service.
+- **Stale config cache**: restart Gemini CLI — `.mcp.json` is reloaded
+  on startup, not per-prompt.
+- **Old binary**: rebuild with `scripts/build.ps1` if `cmd/service` changed.
+
+## See also
+
+| Doc | Purpose |
 |---|---|
-| `engine.mbt` | all engine methods (fuzzy_match L1737, check_terms L2085, predict L954, recall L804, …) |
-| `cmd/service/routes.mbt` | REST handlers + static file serving + `/mcp` branch |
-| `cmd/service/mcp.mbt` | MCP JSON-RPC layer (initialize/tools/list/tools/call) |
-| `cmd/service/tm_store.mbt` | load/save persistence (atomic write) |
-| `cmd/service/web/` | front-end workbench (index.html + app.js, no build step) |
-| `scripts/` | setup / build / run / seed / smoke / dev |
+| [`AGENTS.md`](./AGENTS.md) | **Full** multi-harness guide (source of truth) |
+| `README.md` | API reference + ISO/MQM standards alignment |
+| `docs/harness-configs/README.md` | 13-harness overview + 25-tools list |
+| `docs/harness-configs/gemini-cli.json` | Drop-in sample for `~/.gemini/settings.json` |

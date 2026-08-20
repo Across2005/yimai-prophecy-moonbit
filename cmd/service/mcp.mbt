@@ -393,26 +393,39 @@ async fn handle_tools_call(id : Json, params : Json) -> Json {
   if missing.length() > 0 {
     return rpc_error(id, -32602, "Invalid params: missing '" + missing[0] + "'")
   }
-  let result = try { invoke_tool(name, args) } catch {
-    err => @lib.obj([("error", @lib.str_json(err.to_string()))])
+  // P1 修复：异常路径走 JSON-RPC 标准错误码 -32603 (Internal error)，
+  //   替代原"异常字符串 stringify 塞进 result.content.text"的反模式。
+  //   之前 RPC 层 panic 会被吞成业务错误返回，丢失堆栈与 code。
+  //   现版本：invoke_tool panic 直接走 rpc_error(-32603)，调用方可据此判断
+  //   "服务端崩溃" vs "业务参数错误 (-32602)"，区分明确。
+  let result = try { Ok(invoke_tool(name, args)) } catch {
+    err => Err(err.to_string())
   }
-  // 引擎异常（含 error 字段）标记 isError
-  let is_err = match result {
-    Json::Object(o) =>
-      match o.get("error") {
-        Some(_) => true
-        None => false
+  match result {
+    Ok(r) => {
+      // 引擎返回的业务错误（含 {"error":"..."} 字段）通过 content 包装并标记 isError
+      let is_err = match r {
+        Json::Object(o) =>
+          match o.get("error") {
+            Some(_) => true
+            None => false
+          }
+        _ => false
       }
-    _ => false
+      let content = @lib.arr_json([@lib.obj([
+        ("type", @lib.str_json("text")),
+        ("text", @lib.str_json(r.stringify())),
+      ])])
+      rpc_result(id, @lib.obj([
+        ("content", content),
+        ("isError", is_err.to_json()),
+      ]))
+    }
+    Err(panic_msg) =>
+      // Internal error：invoke_tool 抛异常（引擎 panic / 不可恢复错误）
+      // 错误信息脱敏（不暴露堆栈细节，仅保留错误摘要）
+      rpc_error(id, -32603, "Internal error: tool '" + name + "' execution failed")
   }
-  let content = @lib.arr_json([@lib.obj([
-    ("type", @lib.str_json("text")),
-    ("text", @lib.str_json(result.stringify())),
-  ])])
-  rpc_result(id, @lib.obj([
-    ("content", content),
-    ("isError", is_err.to_json()),
-  ]))
 }
 
 // JSON-RPC 分派（None = 无响应体，如 notifications/initialized）

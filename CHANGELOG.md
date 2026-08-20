@@ -8,6 +8,14 @@ since `0.1.0`.
 > **Pure local, zero cloud dependency** — every change below is verifiable
 > on `127.0.0.1` with `scripts/dev.ps1` and `moon test --target wasm-gc`.
 
+> **Note on `[Unreleased]` multiplicity**: this repo's development style
+> runs multiple parallel "P" increments (P3 / P4 / P5 / P6) against the same
+> unreleased trunk. Per Keep a Changelog 1.1.0 "SHOULD" recommendation, we
+> keep **one canonical `[Unreleased]` at the top** (containing the *latest*
+> active increment) and let earlier parallel increments remain tagged with
+> their own dated headers below. Future 0.2.0 release will fold them into a
+> single dated version.
+
 ## [Unreleased] — P6 hardening, multi-harness compat & repo tidy
 
 ### Fixed
@@ -112,6 +120,59 @@ since `0.1.0`.
   was `~/.config/claude-desktop/mcp.json`); added schema-specific notes
   per harness (`transport = "http"` for Codex ≥ 0.46, `serverUrl` for
   Windsurf, `type: "streamable-http"` for Continue, `url` for Zed ≥ 0.150).
+
+## [Unreleased] — P4 hardening, refactor, quality & docs (2026-08-17)
+
+7 commits (a3df919 + 0a1ded0 + e15142a + bb4b389 + 931c011 + 8857bc2 + 09edae8);
+test count 137 → 151 → 159 (+22). All changes pass `moon test --target wasm-gc`.
+
+### Security
+- `decode_pct` URL decode in `util.mbt` — defends path traversal
+  (`serve_static` detects `..` and `\\` before percent-decode).
+- MCP `notifications/*` wildcard in `cmd/service/mcp.mbt` dispatch —
+  JSON-RPC 2.0 spec compliant; supports `notifications/initialized`.
+- `/api/health` version sync — uses `@lib.api_version` single source.
+
+### Added
+- `distill_inject` `ignored` field — surfaces schema errors for debugging.
+- `drift_report.text_chrf_avg` / `_n` — translation quality drift metric
+  (pure local, zero dependency).
+- MQM severity numeric scoring — None=0 / Minor=1 / Major=5 / Critical=10.
+- `routes_test.mbt` derived — `build_known_handlers` from `routes_meta`.
+- `README.md` "International Standards & Compliance" section (ISO 5060:2024,
+  EU AI Act, GDPR, MQM Council, MCP integration).
+- `yimai_prophecy_moonbit_frontier_corpus_test.mbt` — 10 frontier domains
+  (AI Safety×2, Science, Math×2, Philosophy, Digital Humanities, CBT,
+  Aviation, Space), 60 sentence pairs, 14 tests (T38–T51).
+- Regression tests T30–T37 (quality/security) and T38–T51 (frontier corpus).
+
+### Changed
+- `fuzzy_match` / `fuzzy_match_full` shared helpers — `fuzzy_score_one` /
+  `fuzzy_pack_top` remove 99% duplication; R15 sort contract preserved.
+- `is_known_tool` uses `Array::contains` — eliminates 25 hardcoded strings.
+- `routes_meta` single source — `lookup_route` uses `@lib.routes_meta`
+  (no 27 hardcoded entries).
+- `predict` split into 3 — `predict_collect_activations` /
+  `predict_aggregate_transitions` / `predict_rank_and_pack`; main function
+  drops 269 → 41 lines.
+- `consolidate` split into 4 — `consolidate_edge_decay` / `_trans_decay` /
+  `_prune_nodes` / `_meta_cognition`; main drops 112 → 28 lines.
+- `save_store` depth guard — `MAX_SAVE_DEPTH=3` (added in P4; removed in
+  a later cleanup phase as dead defense).
+- Test counts synced 89/101 → 137 → 151 → 159 across badges / gate sections /
+  roadmap / AGENTS.md.
+- `docs/skill/SKILL.md` frontmatter — P4 summary + trigger words (MQM /
+  drift_report / severity_score).
+
+### Stats
+| Indicator | Value |
+|---|---|
+| Commits | 7 |
+| Files | 21 modified |
+| Code change | +561 / -238 lines |
+| New tests | 22 (T30–T37 quality/security + T38–T51 frontier) |
+| Test total | 137 → 151 → 159 |
+| Pass rate | 159/159 (100%) |
 
 ## [Unreleased] — P5 I18n-Hardening & Multi-Harness Connectivity (2026-08-19)
 
