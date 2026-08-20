@@ -236,30 +236,6 @@ test count 137 → 151 → 159 (+22). All changes pass `moon test --target wasm-
 - Top-level `try/catch` around every handler so an uncaught panic returns
   500 instead of hanging the connection.
 
-## [0.1.0] — 2026-08-15 — P1 hardening
-
-### Added
-- `tools/call` returns `isError: true` when engine reports an `error` field
-  (MCP spec 2025-11-25).
-- `/mcp` parse error returns proper JSON-RPC `-32700` instead of a bare string.
-- `/mcp` unknown-method error returns proper JSON-RPC `-32601` (was `-32600`).
-- `tool_def` declares `additionalProperties: false` on every tool's
-  `inputSchema` (JSON Schema 2020-12; mcp-lint / OpenAI Agents SDK strict mode).
-- `routes_meta` synced to 26 REST endpoints; routes table is single-sourced.
-- `send_error` / `read_json_or_400` helpers consolidate the 4xx responses;
-  every handler routes invalid JSON to a uniform 400 with stable `code`.
-- `/api/health` reports `degraded` when the last `save_store` failed, and
-  `uptime_seconds` from a one-shot `start_time_ms` (avoids drift on each call).
-- `docs/skill/SKILL.md` frontmatter for agent skill registries.
-
-### Fixed
-- JSON injection: replaced string-concatenated responses in `/api/add_tm`,
-  `/api/ping`, panic handler with `@lib.obj` builders.
-- CJK comment with reversed direction note (`最大字节数 1 MiB`) corrected
-  (`char-count` is in fact looser; defence-in-depth guard still retained).
-- Top-level `try/catch` around every handler so an uncaught panic returns
-  500 instead of hanging the connection.
-
 ## [0.0.x] — initial public drops
 
 - D1–D8 prediction engine (`engine.mbt` 121 KB, ~3.3 K LOC) + deterministic

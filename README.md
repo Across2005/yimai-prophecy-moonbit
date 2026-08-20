@@ -6,10 +6,10 @@
 >
 > 📜 **变更历史**：[`CHANGELOG.md`](./CHANGELOG.md) 记录每次 P 增量的完整 commit 列表与影响范围；本 README 只描述当前状态。
 
-[![Tests](https://img.shields.io/badge/tests-159%2F159%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
+[![Tests](https://img.shields.io/badge/tests-175%2F175%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Hit@3](https://img.shields.io/badge/Hit%403-0.8246-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
-[![Modern Corpus](https://img.shields.io/badge/modern_corpus-22%2F22%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
-[![Service API](https://img.shields.io/badge/HTTP%20API-26%20endpoints%20%2B%20MCP-9cf)](https://github.com/Across2005/yimai_prophecy_moonbit)
+[![Modern Corpus](https://img.shields.io/badge/corpus-54%2F54%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
+[![Service API](https://img.shields.io/badge/HTTP%20API-27%20endpoints%20%2B%20MCP-9cf)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![MoonBit](https://img.shields.io/badge/MoonBit-0.1.2026-9cf)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
@@ -80,7 +80,7 @@ yimai_prophecy_moonbit/
 ├── util.mbt                    # 编码/TF-IDF/对齐/URL解码工具函数（P4 decode_pct 新增）
 ├── yimai_prophecy_moonbit.mbt  # Lib 主入口（routes_meta 单一源 + lib 共享 helper 文档化）
 ├── tests/                      # P5 仓库整理：18 个测试按主题分到 3 个 sub-package
-│   ├── core/                   #   核心/经典测试（53 测试）
+│   ├── core/                   #   核心/经典测试（69 测试）
 │   │   ├── moon.pkg            #   sub-package（独立 wasm-gc 测试目标）
 │   │   ├── _test_helpers.mbt   #   跨子包共享 helper（canon/topics + 6 fn，pub）
 │   │   ├── yimai_prophecy_moonbit_test.mbt          # 主测试（L1–L2 批量 Hit@3）
@@ -127,7 +127,7 @@ yimai_prophecy_moonbit/
 │   ├── plans/                 # 项目级 plan / note（按日期 YYYY-MM-DD-<topic>.md 命名）
 │   └── roadmap.md             # 项目路线图（中文转英文，仓库国际友好）
 ├── AGENTS.md                  # AI agent 集成指南（含 Project layout 段：未来 _test.mbt 必须在子目录）
-├── README.md                  # 项目说明（badge 159/159 + P5 增量说明 + International Standards）
+├── README.md                  # 项目说明（badge 175/175 + P6 hardening + International Standards）
 ├── CHANGELOG.md               # 版本变更记录
 └── LICENSE                    # MIT License
 ```
@@ -138,9 +138,9 @@ yimai_prophecy_moonbit/
 - **Layer2（知识层）**：`docs/*` + `AGENTS.md` + `SKILL.md` —— 文档 + 技能编排 + 集成指南
 
 **测试策略**：
-- **契约回归**：4 个定量验收 + 3 个语料库文件（modern + extended + frontier）25 测试 + 25 个 roadmap 回归（R1–R25）+ 18 个扩展能力回归（E1–E18）+ 22 个 P4 质量/安全测试（T30–T51）
-- **门禁**：`scripts/dev.ps1` + `.githooks/pre-commit` —— 构建/提交前自动运行 `moon test --target wasm-gc`
-- **目标**：159/159 全绿（wasm-gc 目标，可复现）
+- **契约回归**：175 个 test 跨 19 个文件（3 sub-package：`core` 69 / `corpus` 54 / `feature` 52）
+- **门禁**：`scripts/dev.ps1` + `.githooks/pre-commit` + `.github/workflows/ci.yml` —— 构建/提交前自动运行 `moon test --target wasm-gc`
+- **目标**：175/175 全绿（wasm-gc 目标，可复现）
 
 ---
 
@@ -177,7 +177,7 @@ Or step by step: `scripts/setup.ps1` (env check) → `build.ps1` (compile, needs
 `run.ps1` (start) → `seed.ps1` (sample data) → `smoke.ps1` (verify).
 
 > **确定性回归门禁（纯本地，零云端依赖）**: `scripts/dev.ps1` 在构建前自动运行
-> `moon test --target wasm-gc`（159/159 契约回归，P5 增量后），任何一项失败即中止。
+> `moon test --target wasm-gc`（175/175 契约回归，P6 hardening 后），任何一项失败即中止。
 > 此外，仓库自带本地 `pre-commit` hook（`.githooks/pre-commit`，`moon check` +
 > `moon test --target wasm-gc`），已通过 `git config core.hooksPath .githooks`
 > 接入本仓库——每个 commit 前自动挡住破坏确定性契约的改动。
@@ -599,7 +599,7 @@ All public interfaces are methods of `ProphecyEngine` (encoding helpers in `util
 |--------|-----------|-------------|
 | `add_tm` | `(src, tgt : String) -> String` | Add a translation-memory entry (source→target), build the TF index, return the node id. |
 | `fuzzy_match` | `(query : String, k : Int, threshold : Double) -> Json` | TM fuzzy match Top-K. **S1 升级评分** = `0.55·idf_dice + 0.20·char-2gram-dice + 0.15·token-set-dice + 0.10·position`（IDF 加权让罕见术语优先、2-gram 捕捉形态变体、token-set Dice 容忍词序重排）；returns `match_pct` / `sim_token` / `sim_tfidf` / `sim_char` / `sim_ngram` / `sim_tokenset`. (建议阈值 `threshold = 0.70`；MoonBit 无默认参数，调用方需显式传入。) |
-| `fuzzy_match_legacy` | `(query : String, k : Int, threshold : Double) -> Json` | 旧公式保留（`0.7·token-cosine + 0.3·char-ratio`），供 A/B 对照与平滑迁移（S1 前行为）。 |
+| `fuzzy_match_legacy` | `(query : String, k : Int, threshold : Double) -> Json` | **A/B 对照基线，长期保留不删除**（≥0.3.0 讨论移除）：旧公式 `0.7·token-cosine + 0.3·char-ratio`，4 处引用（`engine.mbt` + 2 test + 本 README）。新代码请用 `fuzzy_match`（S1 公式 + IDF 倒排剪枝）。 |
 | `concordance` | `(term : String, k : Int) -> Json` | Concordance search: returns all TM segments containing the query term, scored by term occurrence count (distinct from the `fuzzy_match` similarity score). |
 | `load_tbx` | `(xml : String, src_lang~ : String = "en-US", tgt_lang~ : String = "zh-CN") -> Int` | Parse a TBX (ISO 30042) termbase. Resolves source/target by each `langSet`'s `xml:lang` (default en-US→zh-CN; falls back to document order when absent). Returns the number of concept entries loaded. |
 | `enforce_terms` | `(text : String) -> Json` | Term enforcement: scan text for known terms (Latin terms require word boundaries, so `log` won't false-match `logical`), return hits with translation. |
@@ -726,8 +726,8 @@ All six methods are covered by regression tests **R16–R22** (see [Evaluation](
 
 All numbers below are produced by `moon test --target wasm-gc` and are reproducible.
 
-**Summary: `Total tests: 159, passed: 159, failed: 0`**
-(4 quantitative acceptance + 3 corpus evaluation files (modern + extended + frontier) [Layer 0–10: 25 tests] + 25 roadmap regression [R1–R25] + 18 extension-capability regression [E1–E18] + 14 P4 quality/security tests [T30–T37, T38–T51] + 5 frontier corpus tests [T38–T51]).
+**Summary: `Total tests: 175, passed: 175, failed: 0`**
+(3 sub-packages: `tests/core/` 69 + `tests/corpus/` 54 + `tests/feature/` 52; 4 quantitative acceptance + 16 API coverage + 6 benchmark + 7 golden + 12 long-text + 10 TM + 6 v2 + 3 whitebox + 1 main; 11 modern corpus + 11 extended corpus + 14 frontier corpus + 3 business corpus + 15 roadmap regression; 19 extension E1–E19 + 16 P4 quality T1–T37 + 12 routes_meta + 5 mqm_re_annotate).
 
 | Layer | Check | Result | Evidence |
 |-------|-------|--------|----------|
@@ -760,7 +760,7 @@ Reproduce:
 
 ```bash
 cd yimai_prophecy_moonbit
-moon test --target wasm-gc      # all 159 tests (P5 hardened)
+moon test --target wasm-gc      # all 175 tests (P6 hardened)
 moon test --target wasm-gc --filter Layer*   # modern + extended + frontier corpus (25 tests)
 moon test --target wasm-gc --filter T*       # P4 quality/security tests (T30–T51, 22 tests)
 moon build --target wasm-gc     # library only
@@ -825,7 +825,7 @@ From the "translation-born skill" brainstorm — what's built vs. pending:
 
 | # | Capability | Status | Notes |
 |---|-----------|--------|-------|
-| 1 | **TM / TermBase first-class** (fuzzy match %, concordance, TBX enforcement) | ✅ Done | `moon test` 137/137 (P4 增量后); reviewed + hardened (word-boundary, `xml:lang`); S1 fuzzy-match upgrade (IDF + 2-gram + word-order, R23–R25); open-code-review + MoA fixes for `parse_tmx` cross-language/`</tu>` split + `mqm_tags` cross-language false positives + empty-target/language-variant robustness; P0 长文 + 数字守门加固（MAX_TOKENS 截断 / numeric_consistency MQM 维度 / fuzzy_match 长 query 不崩 / L1–L12 长文回归）; P4 fuzzy_match 抽公共 helper + drift_report.text_chrf_avg + MQM 严重度数值化。 |
+| 1 | **TM / TermBase first-class** (fuzzy match %, concordance, TBX enforcement) | ✅ Done | `moon test` 175/175 (P6 hardening 后); reviewed + hardened (word-boundary, `xml:lang`); S1 fuzzy-match upgrade (IDF + 2-gram + word-order, R23–R25); open-code-review + MoA fixes for `parse_tmx` cross-language/`</tu>` split + `mqm_tags` cross-language false positives + empty-target/language-variant robustness; P0 长文 + 数字守门加固（MAX_TOKENS 截断 / numeric_consistency MQM 维度 / fuzzy_match 长 query 不崩 / L1–L12 长文回归）; P4 fuzzy_match 抽公共 helper + drift_report.text_chrf_avg + MQM 严重度数值化; P6 last_body_oversize→Result enum 消 TOCTOU + NaN/Inf API 修正 + validate.mbt 同包。 |
 | 2 | **Quality estimation + MQM auto-eval** | ✅ Done | `qe_score` (0.55·match + 0.30·term + 0.15·char) + `mqm_tags` (terminology/accuracy/fluency/omission w/ severity). Tested E1–E3. |
 | 3 | **Format-fidelity round-trip** | ✅ Done | `check_format_fidelity` (missing/extra tag detection) + `protect_tags` (mask tags to `__TAG__`). Tested E4–E5. |
 | 4 | **Multimodal / screenshot translation** | ✅ Done (OCR external stub) | `ocr_image` (external boundary) + `align_regions` (region ↔ TM align). Zero-dep engine speaks JSON at the OCR boundary; real OCR injected by host. Tested E6–E7. |
@@ -872,6 +872,12 @@ yimai 采用 MQM Core 严重度数值化。**业界主流 MQM 评分器使用三
 中 Critical 已自动触发 `mqm_re_annotate` 二次标注流程（Google 2025-10-28 论文对齐），
 二次审后再被采纳的 Critical 段会被消费方拦截，因此 penalty 10 已足够震慑。
 Phrase 走纯人工 review 路径，故用更重的 25 防止漏审。
+
+> ⚠️ **`mqm_re_annotate` 当前实现是 deterministic 自重审**：因 qe_auto 算法本身确定性，
+> `re_severity == original_severity` 恒成立，`consistent: true`。
+> 端点接口与 JSON schema（`re_annotated` / `critical_count` / `re_annotations` 三段式）已
+> 按 Google 2025-10-28 论文语义设计；多标注员模型（multi-rater / Cohen's κ / Krippendorff's α）
+> 只需替换 `mqm_re_annotate` 内部循环即可，外部契约不变。
 
 **yimai vs Lokalise 差异**：Lokalise 走 `100 - sum(penalties)` 评分模式（满分 100），
 yimai 走 `severity_score` 原始累计 + `qe_auto` 综合公式（`0.50·match_rate + 0.25·term_ok + 0.10·char + 0.15·bleu`）。
