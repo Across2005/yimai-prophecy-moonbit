@@ -1,26 +1,32 @@
 ---
 name: yimai-prophecy
-agent_created: true
+language: MoonBit
 description: >-
-  译脉·先知 2.0 翻译记忆预测引擎（确定性记忆网络 + TM/术语库 + 下一步预测）。当用户需要翻译记忆检索、
-  术语一致性校验、下一步预测、记忆闭环反馈、MT 质量评测（BLEU/chrF++）、风格检查、风格一致报告、回译对齐、术语冲突检测，
-  或把翻译记忆注入 LLM prompt（TMPlm）时使用。服务形态：本地 HTTP 服务（27 REST 端点（25 业务 + metrics/health）
-  + /mcp MCP Server spec 2025-11-25 + 前端工作台；纯本地、零云端依赖；13 个 harness 已有 drop-in 配置）。
-  P4 增量（2026-08）：decode_pct 路径安全加固 + MCP notifications/* 通配 + fuzzy_match 抽公共 helper
-  + drift_report.text_chrf_avg 翻译质量漂移指标 + MQM 严重度数值化（None=0/Minor=1/Major=5/Critical=10）
-  + predict/consolidate 拆 5/4 段 fn + routes_meta 单一源化。
-  P4 frontier corpus (2026-08 后续)：新增 10 个跨域双语专业语料（前沿科技 × 2 / 科学 / 数学 × 2 / 哲学 / 文学 / 心理学 / 民航 / 航天），共 60 句 (text, mtype) 对；测试从 137/137 → 151/151。
-  P5 增量（2026-08）：MQM severity 三方对齐（yimai vs Phrase vs Lokalise）+ /api/mqm_re_annotate 端点（Google 2025-10-28 re-annotation 论文对齐）
-  + 商务领域 8 句语料（ISO 11669 / GB/T 30539-2025）+ 仓库结构整理（18 个测试 *_test.mbt 从根目录移到 tests/{core,corpus,feature}/ sub-package；
-  MoonBit 0.1.20260724 不支持 sub-package 跨包 import，跨子包共享 helper 改为 inline `_test_helpers.mbt` + 多子包各复制）；
-  测试 151/151 → 159/159（核心 53 + 语料 54 + 扩展 52）。所有新增文件必须落到 tests/、docs/、cmd/ 等有组织目录，**禁止再散落根目录**。
+  译脉·先知 2.0：一个用 MoonBit 写的本地化记忆与预测引擎，帮你把「翻过的句子」和「学过的术语」变成下一次可复用的资产。
+  适合译员、本地化工程师、翻译项目管理者使用。零云端依赖、零第三方依赖，同一输入始终同一输出。
+
+  它能做什么：
+  - 翻译记忆（TM）：存双语对、按白盒分数（词/词频/字符/N元/词集）检索相似句
+  - 术语库（TB）：加载 TBX 术语表，守门术语不一致（支持多语言）
+  - 下一步预测：记住你最近做的几个步骤，推荐下一个合理的动作，并给出证据链
+  - MT 评分：内置 BLEU-4 与 chrF++，零依赖可复现
+  - 风格检查与报告：检测句长/正式度偏离、术语变体、生成一致报告
+  - 回译对齐：帮你看译稿是否准确，定位不匹配点
+  - 主动学习：推荐高不确定性句子供你优先审核
+  - MQM 二次标注：自动跑两轮 MQM 质检
+
+  服务形态：本地 HTTP 服务（27 个 REST 接口 + /mcp 端的 MCP 服务 + 前端工作台），
+  同时为 Claude Desktop、Cursor、Continue.dev、Cline、Windsurf、Roo Code、Zed、
+  GitHub Copilot、Codex CLI、Gemini CLI、Aider、Cody 提供 drop-in 配置（13 种 harness）。
+
+  只需起一次服务（scripts/dev.ps1），就能在任何 MCP 工具里直接调。
+
 tips: >-
-  触发词：翻译记忆、TM 检索、术语校验、check_terms、下一步预测、predict、记忆闭环、reward、consolidate、
-  BLEU 评测、chrF 评测、风格检查、回译验证、术语冲突、TMPlm、retrieve_prompt、MQM、drift_report、
-  漂移报告、翻译质量、严重度、severity_score、severity_scale、Phrase、Lokalise、ISO 11669、
-  GB/T 30539、商务领域、re_annotate、二次标注、Claude Code、Cursor、Gemini CLI、MCP。
-  先用 scripts/dev.ps1 起服务（或确认 127.0.0.1:8787 已运行），再按「API 手册」调用端点；
-  读结果时优先看白盒分数（sim_* 分量）与证据链。
+  触发场景：翻译记忆、TM 检索、术语校验、术语一致性、下一步预测、记忆闭环、反馈学习、
+  MT 质量评测、BLEU、chrF、chrF++、风格检查、风格一致、回译对齐、术语冲突、
+  把 TM 灌给 LLM、主动学习、MQM、漂移报告、翻译质量评估、严重度评分、
+  二次标注、re_annotate；本地服务、MCP、http://127.0.0.1:8787。
+  详细 endpoint 列表见下方 API 手册。
 ---
 
 # 译脉·先知 2.0 —— 翻译记忆预测引擎
