@@ -1,5 +1,5 @@
 # CI — moon check + test (wasm-gc)
-# Runs on every push/PR to main. Verifies:
+# Runs on every push/PR to master. Verifies:
 #   1. moon check passes (core lib, no native — native needs MSVC on Windows)
 #   2. moon test --target wasm-gc: 175/175 green
 #
@@ -11,9 +11,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 jobs:
   test:
