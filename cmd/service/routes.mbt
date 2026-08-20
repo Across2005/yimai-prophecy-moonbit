@@ -298,49 +298,41 @@ fn json_num(j : Json, key : String, default : Double) -> Double {
 
 // POST /api/fuzzy_match  {"query":"..","k":3,"threshold":0.5}
 async fn handle_fuzzy_match(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_or_400(conn, body)
-  match parsed {
-    Some(Json::Object(o)) => {
-      // P1 加固：字段级范围校验（k ∈ [0,100], threshold ∈ [0,1]）
-      if not(validate_text_field_or_send(conn, o, "query")) { return }
-      if not(validate_int_field_or_send(conn, o, "k", 3)) { return }
-      if not(validate_num_field_or_send(conn, o, "threshold", 0.70, 0.0, 1.0)) { return }
-      let query = json_str(o, "query")
-      let k = match o.get("k") {
-        Some(Json::Number(n, ..)) => n.to_int()
-        _ => 3
-      }
-      let thr = match o.get("threshold") {
-        Some(Json::Number(n, ..)) => n
-        _ => 0.70
-      }
-      let result = engine_ref.val.fuzzy_match(query, k, thr)
-      send_json(conn, 200, result.stringify())
+  with_json_object(body, conn, async fn(o, conn) {
+    // P1 加固：字段级范围校验（k ∈ [0,100], threshold ∈ [0,1]）
+    if not(validate_text_field_or_send(conn, o, "query")) { return }
+    if not(validate_int_field_or_send(conn, o, "k", 3)) { return }
+    if not(validate_num_field_or_send(conn, o, "threshold", 0.70, 0.0, 1.0)) { return }
+    let query = json_str(o, "query")
+    let k = match o.get("k") {
+      Some(Json::Number(n, ..)) => n.to_int()
+      _ => 3
     }
-    _ => ()  // read_json_or_400 已发 4xx 响应
-  }
+    let thr = match o.get("threshold") {
+      Some(Json::Number(n, ..)) => n
+      _ => 0.70
+    }
+    let result = engine_ref.val.fuzzy_match(query, k, thr)
+    send_json(conn, 200, result.stringify())
+  })
 }
 
 // POST /api/add_tm  {"src":"..","tgt":".."}
 async fn handle_add_tm(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_or_400(conn, body)
-  match parsed {
-    Some(Json::Object(o)) => {
-      // P1 加固：字段级长度校验（防 DoS：src 单字段 ≤ MAX_TEXT_CHARS）
-      if not(validate_text_field_or_send(conn, o, "src")) { return }
-      let src = json_str(o, "src")
-      let tgt = json_str(o, "tgt")
-      let id = engine_ref.val.add_tm(src, tgt)
-      let saved = save_store()
-      if !saved { println("save_store: 落盘失败但内存态已更新") }
-      // P1: 用 @lib.obj 替代字符串拼接（防 JSON 注入：id 若含 " 会破坏响应）
-      send_json(conn, 200, @lib.obj([
-        ("id", @lib.str_json(id)),
-        ("status", @lib.str_json("stored")),
-      ]).stringify())
-    }
-    _ => ()  // read_json_or_400 已发 4xx 响应
-  }
+  with_json_object(body, conn, async fn(o, conn) {
+    // P1 加固：字段级长度校验（防 DoS：src 单字段 ≤ MAX_TEXT_CHARS）
+    if not(validate_text_field_or_send(conn, o, "src")) { return }
+    let src = json_str(o, "src")
+    let tgt = json_str(o, "tgt")
+    let id = engine_ref.val.add_tm(src, tgt)
+    let saved = save_store()
+    if !saved { println("save_store: 落盘失败但内存态已更新") }
+    // P1: 用 @lib.obj 替代字符串拼接（防 JSON 注入：id 若含 " 会破坏响应）
+    send_json(conn, 200, @lib.obj([
+      ("id", @lib.str_json(id)),
+      ("status", @lib.str_json("stored")),
+    ]).stringify())
+  })
 }
 
 // GET /api/tm_count
@@ -594,20 +586,16 @@ async fn handle_retrieve_prompt(body : &@io.Reader, conn : @http.ServerConnectio
 
 // POST /api/bleu  {"ref","hyp"}  BLEU-4 评测
 async fn handle_bleu(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_or_400(conn, body)
-  match parsed {
-    Some(Json::Object(o)) => {
-      // P1 加固：ref/hyp ≤ MAX_TEXT_CHARS（句子级评测，超长请分句）
-      if not(validate_text_field_or_send(conn, o, "ref")) { return }
-      if not(validate_text_field_or_send(conn, o, "hyp")) { return }
-      let ref_str = json_str(o, "ref")
-      let hyp_str = json_str(o, "hyp")
-      let score = @lib.bleu_score(ref_str, hyp_str)
-      // P1: 用 @lib.obj 替代字符串拼接（防止 score.to_string() 边界行为差异）
-      send_json(conn, 200, @lib.obj([("bleu", @lib.num_json(score))]).stringify())
-    }
-    _ => ()  // read_json_or_400 已发 4xx 响应
-  }
+  with_json_object(body, conn, async fn(o, conn) {
+    // P1 加固：ref/hyp ≤ MAX_TEXT_CHARS（句子级评测，超长请分句）
+    if not(validate_text_field_or_send(conn, o, "ref")) { return }
+    if not(validate_text_field_or_send(conn, o, "hyp")) { return }
+    let ref_str = json_str(o, "ref")
+    let hyp_str = json_str(o, "hyp")
+    let score = @lib.bleu_score(ref_str, hyp_str)
+    // P1: 用 @lib.obj 替代字符串拼接（防止 score.to_string() 边界行为差异）
+    send_json(conn, 200, @lib.obj([("bleu", @lib.num_json(score))]).stringify())
+  })
 }
 
 // POST /api/chrf  {"ref","hyp"}  chrF++ 评测
@@ -765,7 +753,7 @@ async fn handle_distill_inject(body : &@io.Reader, conn : @http.ServerConnection
           for k, v in t.iter2() {
             match v {
               Json::Number(n) =>
-                if not(@math.is_nan(n)) && not(@math.is_inf(n)) {
+                if not(n.is_nan()) && not(n.is_inf()) {
                   table.set(k, n)
                 }
               _ => ()

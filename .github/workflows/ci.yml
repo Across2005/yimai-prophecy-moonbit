@@ -1,0 +1,51 @@
+# CI — moon check + test (wasm-gc)
+# Runs on every push/PR to main. Verifies:
+#   1. moon check passes (core lib, no native — native needs MSVC on Windows)
+#   2. moon test --target wasm-gc: 175/175 green
+#
+# Note: cmd/service (native HTTP) is Windows-only (MSVC); CI only guards the
+# portable wasm-gc target. Native build is verified by scripts/build.ps1
+# on developer workstations.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: moon check + test (wasm-gc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MoonBit
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Verify MoonBit version
+        run: moon version
+
+      - name: Fetch dependencies
+        run: moon update && moon install
+
+      - name: moon check (core lib)
+        run: moon check
+
+      - name: moon test --target wasm-gc
+        run: moon test --target wasm-gc
+
+      - name: Verify test count (expect 175)
+        run: |
+          output=$(moon test --target wasm-gc 2>&1)
+          echo "$output"
+          if echo "$output" | grep -q "passed: 175"; then
+            echo "✅ 175/175 tests passed"
+          else
+            echo "❌ Test count mismatch — expected 175 passed"
+            exit 1
+          fi

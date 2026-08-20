@@ -10,7 +10,7 @@
 //   3. 最小侵入：handler 调 validate_text_field(o, "src") 即可，签名类似 json_str
 
 /// 字段级输入错误（替代原裸 Option/裸字符串错误）
-///   路径：cmd/service/util/validate.mbt（Phase 1.2 抽离）
+///   路径：cmd/service/validate.mbt（Phase 1.2 抽离；P6 移回同包）
 pub enum BodyFieldError {
   /// 字符串字段超长（超过 max_chars）
   TextTooLong(String, Int)    // (字段名, 实际长度)
@@ -159,5 +159,46 @@ async fn validate_num_field_or_send(
       send_error(conn, code, ec, msg)
       false
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 高阶封装：with_json_object —— 消除 22 个 POST handler 的 read_json_or_400 + match Object 样板
+// ---------------------------------------------------------------------------
+//
+// 原本每个 handler 都得写：
+//   let parsed = read_json_or_400(conn, body)
+//   match parsed {
+//     Some(Json::Object(o)) => {
+//       if not(validate_text_field_or_send(conn, o, "xxx")) { return }
+//       ...
+//       send_json(conn, 200, result.stringify())
+//     }
+//     _ => ()  // read_json_or_400 已发 4xx 响应
+//   }
+//
+// 改用：
+//   with_json_object(body, conn, async fn(o, conn) {
+//     if not(validate_text_field_or_send(conn, o, "xxx")) { return }
+//     ...
+//     send_json(conn, 200, result.stringify())
+//   })
+//
+// 收益：
+//   1. handler 缩 5-8 行（消除样板）
+//   2. read_json_or_400 → Object 派发集中在一处，未来要加 tracing/logging 只改这里
+//   3. 闭包内仍可直接调 validate_*_field_or_send + send_json（async 闭包支持）
+
+/// 高阶封装：读 body 并在解析为 Object 时调用闭包；非 Object 已由 read_json_or_400 发 4xx。
+///   注：MoonBit async fn 可接受 async 闭包作为参数，编译器沿 async 调用链自动调度。
+async fn with_json_object(
+  body : &@io.Reader,
+  conn : @http.ServerConnection,
+  f : async (Map[String, Json], @http.ServerConnection) -> Unit,
+) -> Unit {
+  let parsed = read_json_or_400(conn, body)
+  match parsed {
+    Some(Json::Object(o)) => f(o, conn)
+    _ => ()  // read_json_or_400 已发 4xx 响应
   }
 }

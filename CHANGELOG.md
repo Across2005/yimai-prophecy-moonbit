@@ -19,6 +19,9 @@ since `0.1.0`.
 ## [Unreleased] — P6 hardening, multi-harness compat & repo tidy
 
 ### Fixed
+- **`cmd/service/mcp.mbt` `/mcp` JSON-RPC body parse** — `read_json_body` returns `Result[Json, BodyError]`; replaced stale `Some`/`None` pattern (Option) with `Ok`/`Err(TooLarge)`/`Err(InvalidJson)` (Result). Removed reference to deleted `last_body_oversize` global ref. Oversized requests now correctly return HTTP 413 (was incorrectly lumped into 400).
+- **`cmd/service/routes.mbt` NaN/Inf guard** — `@math.is_nan(n)` / `@math.is_inf(n)` replaced with `n.is_nan()` / `n.is_inf()` (Double built-in methods; `core/math` package-level functions don't exist). Removed invalid `core/math` import from `cmd/service/moon.pkg`.
+- **`cmd/service/validate.mbt` package visibility** — moved from `cmd/service/util/` (orphan sub-directory without `moon.pkg`) to `cmd/service/` same-package, making `validate_*_field_or_send` functions visible to `routes.mbt`.
 - **`cmd/service/routes.mbt` `MAX_BODY_BYTES` → `MAX_BODY_CHARS`** — renamed and clarified char-count limit; added `Content-Length` pre-check for non-MCP POST requests and hardened JSON body error handling.
 - **`cmd/service/mcp.mbt` `/mcp` body size protection** — added `Content-Length` pre-rejection and JSON-RPC `-32700` error response for oversized bodies; switched unknown tool error from `-32601` to `-32602`.
 - **`cmd/service/mcp.mbt` `tools/call` required-field validation** — added `check_required_fields` for all tools with required args, returning `-32602 Invalid params` on missing fields.
@@ -34,6 +37,8 @@ since `0.1.0`.
 - **`moon.mod`** — corrected `readme` from deleted `README.mbt.md` to `README.md`.
 
 ### Added
+- **`cmd/service/validate.mbt` `with_json_object`** — higher-order helper eliminating `read_json_or_400 + match Object` boilerplate across POST handlers; 3 handlers refactored as proof-of-concept (`fuzzy_match`, `add_tm`, `bleu`).
+- **`.github/workflows/ci.yml`** — GitHub Actions CI: `moon check` + `moon test --target wasm-gc` with 175/175 count gate on push/PR to `main`.
 - **`docs/plans/2026-08-19-full-audit-and-hardening.md`** — plan marker and baseline record for the P6 audit.
 - **`docs/plans/2026-08-19-security-audit.md`** — security audit report (Critical/High/Medium/Low findings).
 - **`docs/plans/2026-08-19-quality-audit.md`** — code quality audit report.
