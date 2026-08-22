@@ -16,6 +16,31 @@ since `0.1.0`.
 > their own dated headers below. Future 0.2.0 release will fold them into a
 > single dated version.
 
+## [Unreleased] — P9 安全硬化（DNS 重绑定防护 + 启动韧性）
+
+### Added
+- **Origin 头校验（DNS 重绑定防护）** — `cmd/service/routes.mbt` 新增 `is_safe_origin`，在
+  `handle_request` 入口对所有请求（REST + `/mcp`）校验 `Origin`：放行无 Origin（curl/CLI/
+  PowerShell `Invoke-RestMethod`）、`null`、以及回环 host（`127.0.0.1` / `localhost` / `[::1]`），
+  其余（如 `https://evil.com`）一律 `403 Forbidden`。对齐 MCP 2025-11-25 Streamable HTTP 安全
+  强制要求（本地 server 必须防 DNS 重绑定）。
+
+### Changed
+- **`load_store` 启动韧性** — `tm_store.json` 结构损坏时 `ProphecyEngine::from_json` 不再
+  panic 崩溃启动，降级为空引擎并告警（包裹 try/catch）。
+
+### Security
+- 纯本地、零云依赖不变；服务仍仅绑定 `127.0.0.1:8787`。
+
+### Docs
+- AGENTS.md / README 增补 **2025–2026 前沿更新**：MQM 2025 评分模型（Linear Calibrated +
+  Non-Linear，2025-04；Multi-Range Theory，2025-06）、EU AI Act Article 50 机器翻译标注
+  （2026-08-02 生效）、MCP `2026-07-28` 稳定版与「停留 2025-11-25」决策；新增
+  Local-server security 小节；澄清根 lib package 因 MoonBit 限制有意保留于根目录。
+
+### Test & Build
+- `moon check --target native` 0 警告 0 错误；`moon test --target wasm-gc` 维持 **175/175** 全绿。
+
 ## [Unreleased] — P8 告警清零（moon check 双 target 0 警告）
 
 ### Changed

@@ -137,9 +137,32 @@ auto-discover the 25 tools via `tools/list`.
   or any `HashSet/HashMap` from a hypothetical future stdlib — that would break R15 silently.
 - Keep `moon test --target wasm-gc` green on every change.
 
+### Local-server security (P9)
+
+The service binds **only `127.0.0.1:8787`** (never `0.0.0.0`) and is **pure local, zero cloud
+dependency** — there are no outbound network calls anywhere in the codebase. Two hardening
+rules apply:
+
+- **Origin validation (DNS-rebinding protection)**: every HTTP/MCP request passes
+  `is_safe_origin` (`cmd/service/routes.mbt`). Non-loopback Origins (e.g. `https://evil.com`)
+  are rejected with `403 Forbidden`. This is mandated by the MCP 2025-11-25 Streamable HTTP
+  security warning and shields a local server from cross-site requests via DNS rebinding.
+- **Startup resilience**: `load_store` wraps `ProphecyEngine::from_json` in a guard — a corrupt
+  `tm_store.json` degrades to an empty engine with a warning instead of panic-crashing startup.
+
 ## Project layout (where new files go)
 
 P5 仓库整理（2026-08）：所有新增文件必须落到合适目录，**禁止再散落在根目录**。
+
+> **Root 大文件为何留在根目录（MoonBit 限制）** — `engine.mbt` / `util.mbt` /
+> `yimai_prophecy_moonbit.mbt` 是**根 package（lib）**的源文件。MoonBit 的 `moon.pkg`
+> 把所在目录声明为一个 package，根目录的 `moon.pkg` 即根 package，`@lib` 别名指向它；
+> 全代码库的 `@lib.X` 调用点与 wasm-gc 测试均依赖此别名。若把这些文件挪进 `src/` 子目录，
+> 它们会变成独立 sub-package，跨包 import 受 MoonBit 限制（sub-package 间不能互相 import
+> 主包符号），需改动每一个调用点与测试 import，风险高、收益低。
+> **因此：根 lib package 有意保留在根目录；新功能优先落到 sub-package**
+> （`cmd/<name>/`、`tests/<sub>/`、以及按领域新建的功能 sub-package），而非继续往根目录堆文件。
+> 这正是「尽量以代码打包进文件夹的形式编程」在 MoonBit 下的正确落地方式。
 
 | 文件类型 | 落点 | 命名规范 |
 |---|---|---|
@@ -197,7 +220,18 @@ weight Phrase uses as a manual-review deterrent isn't needed.
 a weighted blend (`0.50·match_rate + 0.25·term_ok + 0.10·char + 0.15·bleu`). They are
 not numerically comparable; convert via the formula.
 | **W3C ITS 2.0** (Internationalization Tag Set) | Markup-level metadata for translation, terminology, language identification | Out of scope for the engine itself; consume from the host CMS/app, push translated strings through `add_tm` |
-| **Model Context Protocol `2025-11-25`** (Anthropic / OpenAI / community) | Streamable HTTP + JSON-RPC 2.0 standard for tool-calling. **Note**: 2026-07-28 RC introduced breaking changes (initialize handshake removal, `Mcp-Method`/`Mcp-Name` headers, JSON Schema 2020-12, error code `-32602`); we are on `2025-11-25` and will migrate in 0.2.0. | `POST /mcp` is the spec-compliant MCP server; see [`docs/harness-configs/`](./docs/harness-configs/README.md) for client config |
+| **Model Context Protocol `2025-11-25`** (Anthropic / OpenAI / community) | Streamable HTTP + JSON-RPC 2.0 standard for tool-calling. **Note**: spec 演进见下方「2025–2026 前沿更新」；我们停留在 `2025-11-25`（纯本地、无鉴权、广 harness 兼容），迁移 0.2.0 再议。 | `POST /mcp` is the spec-compliant MCP server; see [`docs/harness-configs/`](./docs/harness-configs/README.md) for client config |
+
+### 2025–2026 前沿更新（联网核查，2026-08 增补）
+
+> 下列为 2025–2026 年国际翻译/协议生态的关键演进，已据此校准 yimai 的对齐姿态。
+> yimai 仍是技术构建块（library + local service），以下为「adopter 集成指南」而非认证声明。
+
+- **MQM 评分模型正式化（2025）** — MQM Council 于 **2025-04** 发布 **Linear Calibrated Scoring Model** 与 **Non-Linear Scoring Model**（此前仅公布原始评分模型）；**2025-06**《Multi-Range Theory of Translation Quality Measurement》提出跨三档样本量（含单句级）的通用测量法，并主张极小样本用 **Statistical Quality Control**。MQM Core 现含 **39 种 error type**（MQM Full 更多）。yimai 的 `severity_score`（None=0/Minor=1/Major=5/Critical=10）保持与 MQM Core 一致；adopter 若需接入上述新评分模型，建议在 `qe_auto` 外层做分数换算。
+- **EU AI Act Article 50 机器翻译标注（2026-08-02 生效）** — 法规要求对 AI 生成内容作来源标注；但 Commission 指南将**机器翻译排除在 provider 标注义务之外**，而**面向公共利益的文本**的 deployer 标注义务另有不同规则，且译文不自动继承源文编辑清关。yimai 作为本地引擎不代行标注，但 adopter 在欧盟公利益场景部署时应自行补标注层。
+- **MCP `2026-07-28` 稳定版（2026-07-28 发布）** — 史上最大重构：**无状态核心**，`initialize` 握手 + `Mcp-Session-Id` **移除**，改每请求 `_meta` 自描述；新增 `server/discover`；`Mcp-Method`/`Mcp-Name` 头成为路由强制项；`tools/list` 等结果可缓存（`ttlMs`+`cacheScope`）；Authorization 向 OAuth 2.1 靠拢（RFC 9207 issuer 校验，弃用 DCR）；Roots/Sampling/Logging 进入 **Deprecated**（≥12 个月窗口，最早 ~2027-07-28 才可考虑移除）。
+  - **yimai 决策：停留在 `2025-11-25`**。理由：① 纯本地、绑定 `127.0.0.1`、无鉴权，stateless/多实例横向扩容诉求不成立；② 当前 13 个 harness（Claude Desktop / Cursor / Codex / Cline / 等）均基于 `2025-11-25` 的 `initialize` 握手消费，贸然切 `2026-07-28` 会断开现有客户端；③ 规范明确「仅本机 stdio / 无远程扩容 / 无复杂网关」场景可暂不升级。迁移将在 0.2.0 视 adopter 需求评估（dual-era 兼容优先）。
+  - **但已落实 `2025-11-25` 的本地安全要求**：`cmd/service` 全链路（REST + `/mcp`）新增 **Origin 头校验（DNS 重绑定防护）**——拒绝非回环 Origin（如 `https://evil.com`），放行无 Origin（curl/CLI）、`null`、以及 `127.0.0.1`/`localhost`/`[::1]`。详见「Code conventions → Local-server security」。
 
 ### Roadmap (not implemented in 0.1.0; declared for adopters)
 

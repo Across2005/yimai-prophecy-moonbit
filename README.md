@@ -854,7 +854,7 @@ From the "translation-born skill" brainstorm — what's built vs. pending:
 | **ISO 5060:2024** (Translation services — Evaluation of translation output) | `qe_auto` / `mqm_tags` / `drift_report.text_chrf_avg` 三层指标覆盖 | 与 MQM Council 强对齐（MQM 官网声明 "Aligned with ISO 5060"） |
 | **MQM Core** (Lommel et al., 2014–present) | `mqm_tags` 7 维度标签 + 严重度数值（`severity_score`: None=0 / Minor=1 / Major=5 / Critical=10） | 权威背书：https://www.themqm.org/ |
 | **W3C ITS 2.0** (Internationalization Tag Set) | 由宿主 CMS/应用注入；`protect_tags` / `mark_term` 消费 in-text metadata | 不在引擎内；consume 边界由 adopter 决定 |
-| **MCP 2025-11-25** (Model Context Protocol) | `/mcp` 端点（Streamable HTTP + JSON-RPC 2.0） | 25 tools；2026-07-28 RC breaking change 已 defer 到 0.2.0 |
+| **MCP 2025-11-25** (Model Context Protocol) | `/mcp` 端点（Streamable HTTP + JSON-RPC 2.0） | 25 tools；`2026-07-28` 已发**稳定版**（无状态核心 / 移除 `initialize` 握手 / `server/discover`），但因纯本地无鉴权、现有 13 harness 均基于 `2025-11-25` 握手，yimai **停留在 2025-11-25**（迁移 0.2.0 再议）；已落实该版本的 Origin 头校验（DNS 重绑定防护） |
 
 #### MQM 严重度尺度（与业界三方对齐，P5 增量）
 

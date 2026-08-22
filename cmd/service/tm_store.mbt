@@ -42,8 +42,16 @@ async fn load_store() -> Unit {
     match parsed {
       None => println("警告: TM 存储解析失败，使用空引擎")
       Some(j) => {
-        engine_ref.val = @lib.ProphecyEngine::from_json(j)
-        println("已加载 TM 存储: " + TM_STORE_PATH)
+        // P9 韧性：from_json 对结构损坏的 JSON 可能 panic；包裹后降级为空引擎而非崩溃启动。
+        //   tm_store.json 由本服务原子写入，正常必为良构；仅磁盘损坏/手改异常时会触发此兜底。
+        let loaded = try { Some(@lib.ProphecyEngine::from_json(j)) } catch { _ => None }
+        match loaded {
+          Some(e) => {
+            engine_ref.val = e
+            println("已加载 TM 存储: " + TM_STORE_PATH)
+          }
+          None => println("警告: TM 存储结构损坏，使用空引擎")
+        }
       }
     }
   } else {

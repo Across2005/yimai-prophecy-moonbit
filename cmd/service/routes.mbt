@@ -118,6 +118,12 @@ async fn read_json_or_400(conn : @http.ServerConnection, body : &@io.Reader) -> 
 //   避免连接悬挂 / 客户端超时。/mcp 与 REST 两条路径都覆盖。
 async fn handle_request(req : @http.Request, body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
   let path = extract_base_path(req.path)
+  // P9：DNS 重绑定防护——拒绝非回环 Origin（本地 MCP/REST 服务安全要求，覆盖 REST 与 /mcp 两条路径）
+  if !(is_safe_origin(req)) {
+    conn.send_response(403, "Forbidden")
+    conn.end_response()
+    return
+  }
   // MCP Server 变体（spec 2025-11-25，Streamable HTTP；实现见 mcp.mbt）独立分支
   //   /mcp 使用 JSON-RPC 错误格式，由 handle_mcp 自行做大小校验。
   if path == "/mcp" {
@@ -219,6 +225,29 @@ fn is_safe_static_path(rel : String) -> Bool {
   // 拒绝空字节：URL 解码后不应出现控制字符
   if @lib.str_contains(rel, "\u0000") { return false }
   true
+}
+
+// P9 安全加固：DNS 重绑定防护（MCP 2025-11-25 Streamable HTTP 安全要求）
+//   本地 MCP/REST server 必须校验 Origin，防止恶意网页借 DNS 重绑定访问 127.0.0.1:8787。
+//   放行：无 Origin（curl / CLI / PowerShell Invoke-RestMethod 不发送）、null origin、
+//   以及 host ∈ {127.0.0.1, localhost, [::1]} 的回环地址；其余一律拒绝（含 https://evil.com）。
+//   注意：浏览器按真实页面 origin 发送 Origin，攻击者的跨站请求无法伪造为回环 origin，
+//   故“回环 host 白名单”即可阻断 DNS 重绑定；端口对环路判定无关，不限制。
+fn is_safe_origin(req : @http.Request) -> Bool {
+  match req.headers.get("Origin") {
+    None => true  // 无 Origin：本地 CLI / curl，放行
+    Some(origin) => {
+      if origin == "null" { true }  // 部分 fetch 上下文 origin 为 null，放行
+      else {
+        let lower = origin.to_lower()
+        if !(lower.has_prefix("http://") || lower.has_prefix("https://")) { return false }
+        let rest = if lower.has_prefix("https://") { lower[8:] } else { lower[7:] }
+        let hostport = rest.split("/").to_array()[0]  // 剥离 path
+        let host = hostport.split(":").to_array()[0]  // 取 host（port 对环路判定无关）
+        host == "127.0.0.1" || host == "localhost" || host.has_prefix("[::1]")
+      }
+    }
+  }
 }
 
 // 服务 web/ 目录下静态文件（防路径穿越：拒绝 .. 与反斜杠；先 percent-decode 防 %2e%2e 绕过）
