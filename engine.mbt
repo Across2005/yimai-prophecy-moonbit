@@ -59,8 +59,9 @@ pub struct MemoryNode {
   mut is_term : Bool                     // 术语节点（美：高初始激活 + 命中高亮，mark_term 置位）
   translation : String                   // TM 译文 / TB 目标术语（#22 TM/TB 一等公民）
   // ---- TM 特征缓存（内部派生态，不进 to_json；add_tm 构建 / from_json 后重建）----
-  mut tm_toks : Array[String]           // yimai_tokenize(text)（未去重，供 fuzzy token 集合 + concordance 计数）
-  mut tm_ngrams : Array[String]         // char_ngrams(text, 2)（供 fuzzy 字符 2-gram 分项）
+  mut tm_toks : Array[String]                // yimai_tokenize(text)（未去重，供 concordance 计数 + idf 重建复用）
+  mut tm_ngrams : Map[String, Bool]          // char 2-gram 去重集合（P1 Map 化：fuzzy 字符 2-gram 分项零分配）
+  mut tm_toks_set : Map[String, Bool]        // unique(tm_toks) 去重集合（P1 Map 化：fuzzy token 集合分项零分配）
 }
 
 // 预测价值分解（D4）的命名返回值：供 _recompute_values 与 explain_card 共用，避免 8 元组位置歧义
@@ -110,7 +111,8 @@ pub struct ProphecyEngine {
   // ---- S1 检索强化：TM IDF 表（内部态，不进 to_json；from_json 后重建）----
   mut tm_df : Map[String, Int]                     // TM 文档频率：token -> 含该 token 的 TM 数
   mut tm_idf : Map[String, Double]                 // 预计算 IDF：ln((N+1)/(df+1)) + 1
-  mut tm_idf_dirty : Bool                          // add_tm/剪枝后置真，fuzzy_match 惰性重算
+  mut tm_idf_dirty : Bool                          // add_tm/剪枝/restore 后置真，fuzzy_match 惰性重算
+  mut tm_count : Int                               // TM 节点数缓存（rebuild_tm_idf 顺带刷新；count_tm O(1) 读）
   // ---- P1 倒排剪枝：TM token -> mids 倒排（内部态，不进 to_json；与 tm_idf 同源）----
   mut tm_postings : Map[String, Array[String]]    // TM 倒排：token -> 含该 token 的 TM mid 列表（fuzzy_match 候选剪枝）
   // ---- P4-2 术语首字符倒排（内部态，不进 to_json；from_json 后重建）----
@@ -363,7 +365,8 @@ fn node_from_json(j : Json) -> MemoryNode {
     is_term: get_num(j, "is_term") != 0.0,
     translation: get_str(j, "translation"),
     tm_toks: [],
-    tm_ngrams: [],
+    tm_toks_set: Map([]),
+    tm_ngrams: Map([]),
   }
 }
 
@@ -435,6 +438,7 @@ pub fn ProphecyEngine::make() -> ProphecyEngine {
     tm_df: Map::from_iter(([] : Array[(String, Int)]).iter()),
     tm_idf: Map::from_iter(([] : Array[(String, Double)]).iter()),
     tm_idf_dirty: false,
+    tm_count: 0,
     tm_postings: Map::from_iter(([] : Array[(String, Array[String])]).iter()),
     term_idx: Map::from_iter(([] : Array[(String, Array[String])]).iter()),
     term_idx_dirty: false,
@@ -448,9 +452,11 @@ fn ProphecyEngine::_new_id(self : ProphecyEngine) -> String {
 
 // ---- S1 检索强化：TM IDF 表（确定性重建，逻辑时钟无关）----
 
-// 全量重建 TM 文档频率 / IDF / 倒排（幂等；add_tm/consolidate-prune/from_json 后调用）。
+// 全量重建 TM 文档频率 / IDF / 倒排（幂等；add_tm/consolidate-prune/restore/from_json 后触发）。
 // P1：同一遍 O(N·|Q|) 扫描顺手把 token -> mids 倒排也建好，给 fuzzy_match 候选剪枝用，
 // 避免二次扫描（成本约为 N·|Q| token 遍历，本就绕不开）。
+// P1：复用节点缓存的 m.tm_toks（调用前须保证特征缓存新鲜——from_json 先 features 后 idf，
+//   其余写路径均在置脏前已同步 tm_toks）；顺带刷新 tm_count 供 count_tm O(1) 读。
 fn ProphecyEngine::rebuild_tm_idf(self : ProphecyEngine) -> Unit {
   let df : Map[String, Int] = Map::from_iter(([] : Array[(String, Int)]).iter())
   let postings : Map[String, Array[String]] =
@@ -462,7 +468,7 @@ fn ProphecyEngine::rebuild_tm_idf(self : ProphecyEngine) -> Unit {
     }
     n = n + 1
     let seen : Map[String, Bool] = Map::from_iter(([] : Array[(String, Bool)]).iter())
-    for t in yimai_tokenize(m.text) {
+    for t in m.tm_toks {
       if seen.contains(t) {
         continue
       }
@@ -493,6 +499,7 @@ fn ProphecyEngine::rebuild_tm_idf(self : ProphecyEngine) -> Unit {
   }
   self.tm_idf = idf
   self.tm_postings = postings
+  self.tm_count = n
   self.tm_idf_dirty = false
 }
 
@@ -515,7 +522,8 @@ fn ProphecyEngine::rebuild_tm_features(self : ProphecyEngine) -> Unit {
     }
     let m2 = m
     m2.tm_toks = yimai_tokenize(m.text)
-    m2.tm_ngrams = char_ngrams(m.text, 2)
+    m2.tm_toks_set = to_set(m2.tm_toks)
+    m2.tm_ngrams = char_ngram_set(m.text, 2)
     self.memories.set(mid, m2)
   }
 }
@@ -674,7 +682,9 @@ pub fn ProphecyEngine::remember(
   ctx : Array[String],
 ) -> String {
   self.clock = self.clock + 1.0
-  let vec = tf_vector(yimai_tokenize(text))
+  // P0 性能：分词一次，vec / tm_toks / tm_toks_set 共用（原版 new/merge 分支各自再分词）
+  let toks = yimai_tokenize(text)
+  let vec = tf_vector(toks)
   let mut best = ""
   let mut best_sim = 0.0
   for mid, m in self.memories.iter2() {
@@ -690,8 +700,9 @@ pub fn ProphecyEngine::remember(
     m.vec = vec
     // 若合并目标是 TM 节点，text 已改写，须同步重建特征缓存并刷新 IDF（P2-2）
     if m.mtype == "tm" {
-      m.tm_toks = yimai_tokenize(m.text)
-      m.tm_ngrams = char_ngrams(m.text, 2)
+      m.tm_toks = toks
+      m.tm_toks_set = to_set(toks)
+      m.tm_ngrams = char_ngram_set(m.text, 2)
       self.mark_tm_idf_dirty()
     }
     if m.is_term {
@@ -733,8 +744,9 @@ pub fn ProphecyEngine::remember(
     predict_count: 0,
     is_term: false,
     translation: "",
-    tm_toks: if mtype == "tm" { yimai_tokenize(text) } else { [] },
-    tm_ngrams: if mtype == "tm" { char_ngrams(text, 2) } else { [] },
+    tm_toks: if mtype == "tm" { toks } else { [] },
+    tm_toks_set: if mtype == "tm" { to_set(toks) } else { Map([]) },
+    tm_ngrams: if mtype == "tm" { char_ngram_set(text, 2) } else { Map([]) },
   }
   if mtype == "tm" {
     self.mark_tm_idf_dirty()
@@ -1568,6 +1580,9 @@ pub fn ProphecyEngine::restore(self : ProphecyEngine) -> Json {
       self.rebuild_role_members()
       self.rebuild_tm_features()
       self.rebuild_term_index()   // P4-2：回滚后重建术语首字符索引（幂等）
+      // P1：restore 可能回滚掉 snapshot 之后的 TM 增删；若期间发生过 rebuild（脏标记已清），
+      // IDF/postings/tm_count 仍是回滚前口径 → 置脏强制下次 fuzzy_match 重建（幂等，输出确定性不变）
+      self.mark_tm_idf_dirty()
       obj([("ok", true.to_json()), ("nodes", num_json(self.memories.length().to_double()))])
     }
     None => obj([("ok", false.to_json()), ("reason", str_json("no snapshot"))])
@@ -1742,7 +1757,9 @@ pub fn ProphecyEngine::explain_card(self : ProphecyEngine, mid : String) -> Json
 // 加入一条翻译记忆（源 -> 译文），复用 tokenize/tf_vector 建索引
 pub fn ProphecyEngine::add_tm(self : ProphecyEngine, src : String, tgt : String) -> String {
   let mid = self._new_id()
-  let vec = tf_vector(yimai_tokenize(src))
+  // P0 性能：分词一次，vec / tm_toks / tm_toks_set 共用（原版 vec 与 tm_toks 各分词一次）
+  let toks = yimai_tokenize(src)
+  let vec = tf_vector(toks)
   let node : MemoryNode = {
     id: mid,
     text: src,
@@ -1759,8 +1776,9 @@ pub fn ProphecyEngine::add_tm(self : ProphecyEngine, src : String, tgt : String)
     predict_count: 0,
     is_term: false,
     translation: tgt,
-    tm_toks: yimai_tokenize(src),
-    tm_ngrams: char_ngrams(src, 2),
+    tm_toks: toks,
+    tm_toks_set: to_set(toks),
+    tm_ngrams: char_ngram_set(src, 2),
   }
   self.memories.set(mid, node)
   self.invalidate_pred_cache()
@@ -1785,15 +1803,13 @@ pub fn ProphecyEngine::add_tm(self : ProphecyEngine, src : String, tgt : String)
 //
 // P1 准确性：weights 可参数化（默认 0.55/0.20/0.15/0.10），配合 ardot 工作台做 A/B 调参。
 
-// 计数 TM 节点（O(N) 单遍；只用于 fuzzy_match 决定是否走剪枝，1K+ 才需要）
+// 计数 TM 节点（只用于 fuzzy_match 决定是否走剪枝，1K+ 才需要）
+// P1 性能：折入 tm_idf 脏标记生命周期——rebuild_tm_idf 重建时顺带刷新缓存，此处 O(1) 读；
+//   dirty 时 ensure 触发重建后读（最坏与原 O(N) 扫描同级，稳态零扫描）。
+//   所有 TM 集变更点（add_tm/remember/consolidate-prune/restore/from_json）均置脏或全量重建，缓存不失真。
 fn ProphecyEngine::count_tm(self : ProphecyEngine) -> Int {
-  let mut n = 0
-  for _, m in self.memories.iter2() {
-    if m.mtype == "tm" {
-      n = n + 1
-    }
-  }
-  n
+  self.ensure_tm_idf()
+  self.tm_count
 }
 
 // P4 重构：抽出 fuzzy_match / fuzzy_match_full 公共打分+pack 逻辑到私有 helper
@@ -1803,13 +1819,15 @@ fn ProphecyEngine::count_tm(self : ProphecyEngine) -> Int {
 //   核心打分+pack 共享，确保 R15 排序与 score 分量一致。
 
 // 单 TM 打分：低于 threshold 返 None，否则返 (mid, score, sim_tok, sim_ng, sim_ts)
+// P1：q2m/qtokm 为调用方预建的查询侧集合（每 query 一次），节点侧 tm_ngrams/tm_toks_set
+//   已是 Map 缓存 → dice_mm 全程零 Map 分配。
 fn ProphecyEngine::fuzzy_score_one(
   self : ProphecyEngine,
   mid : String,
   m : MemoryNode,
   qv : Map[String, Double],
-  q2 : Array[String],
-  qtok : Array[String],
+  q2m : Map[String, Bool],
+  qtokm : Map[String, Bool],
   anchor : String,
   weights : (Double, Double, Double, Double),
   threshold : Double,
@@ -1817,8 +1835,8 @@ fn ProphecyEngine::fuzzy_score_one(
   if m.mtype != "tm" { return None }
   let (w_tok, w_ng, w_ts, w_pos) = weights
   let sim_tok = idf_dice(qv, m.vec, self.tm_idf)
-  let sim_ng = dice_coeff(q2, m.tm_ngrams)
-  let sim_ts = dice_coeff(qtok, unique(m.tm_toks))
+  let sim_ng = dice_mm(q2m, m.tm_ngrams)
+  let sim_ts = dice_mm(qtokm, m.tm_toks_set)
   let sim_pos = if anchor != "" && term_hit(m.text, anchor) { 1.0 } else { 0.0 }
   let score = w_tok * sim_tok + w_ng * sim_ng + w_ts * sim_ts + w_pos * sim_pos
   if score >= threshold {
@@ -1865,10 +1883,13 @@ pub fn ProphecyEngine::fuzzy_match(
   weights? : (Double, Double, Double, Double) = (0.55, 0.20, 0.15, 0.10),
 ) -> Json {
   self.ensure_tm_idf()
-  let qv = tf_vector(yimai_tokenize(query))
-  let q2 = char_ngrams(query, 2)
-  let qtok = unique(yimai_tokenize(query))
-  let anchor = first_anchor(query)
+  // P0 性能：query 只分词一次（原版 tf_vector / unique / first_anchor 各分词一次，共 3 次）
+  // P1 性能：查询侧集合（q2m/qtokm）预建一次，打分循环内 dice_mm 零分配
+  let qtoks = yimai_tokenize(query)
+  let qv = tf_vector(qtoks)
+  let q2m = char_ngram_set(query, 2)
+  let qtokm = to_set(qtoks)
+  let anchor = first_anchor(qtoks)
   let cands : Array[(String, Double, Double, Double, Double)] = []
   // P1 倒排剪枝策略：
   //   1) TM 总量 < PRUNE_MIN_TM：直接全图（IDF 在小语料上区分度低，top-K 容易把全图缩成一个 TM）
@@ -1877,7 +1898,7 @@ pub fn ProphecyEngine::fuzzy_match(
   let tm_total = self.count_tm()
   let use_prune = tm_total >= PRUNE_MIN_TM
   let cand_set = if use_prune {
-    fuzzy_candidate_set(self, qtok, self.tm_idf, 3)
+    fuzzy_candidate_set(self, qtokm, self.tm_idf, 3)
   } else {
     Map::from_iter(([] : Array[(String, Bool)]).iter())
   }
@@ -1891,7 +1912,7 @@ pub fn ProphecyEngine::fuzzy_match(
       for mid, _ in set.iter2() {
         match self.memories.get(mid) {
           Some(m) =>
-            match self.fuzzy_score_one(mid, m, qv, q2, qtok, anchor, weights, threshold) {
+            match self.fuzzy_score_one(mid, m, qv, q2m, qtokm, anchor, weights, threshold) {
               Some(c) => cands.push(c)
               None => ()
             }
@@ -1900,7 +1921,7 @@ pub fn ProphecyEngine::fuzzy_match(
       }
     None =>
       for mid, m in self.memories.iter2() {
-        match self.fuzzy_score_one(mid, m, qv, q2, qtok, anchor, weights, threshold) {
+        match self.fuzzy_score_one(mid, m, qv, q2m, qtokm, anchor, weights, threshold) {
           Some(c) => cands.push(c)
           None => ()
         }
@@ -1915,13 +1936,16 @@ pub fn ProphecyEngine::fuzzy_match(
 // 唯一差异是不走 IDF 倒排剪枝路径。
 pub fn ProphecyEngine::fuzzy_match_full(self : ProphecyEngine, query : String, k : Int, threshold : Double) -> Json {
   self.ensure_tm_idf()
-  let qv = tf_vector(yimai_tokenize(query))
-  let q2 = char_ngrams(query, 2)
-  let qtok = unique(yimai_tokenize(query))
-  let anchor = first_anchor(query)
+  // P0 性能：query 只分词一次（原版 tf_vector / unique / first_anchor 各分词一次，共 3 次）
+  // P1 性能：查询侧集合（q2m/qtokm）预建一次，打分循环内 dice_mm 零分配
+  let qtoks = yimai_tokenize(query)
+  let qv = tf_vector(qtoks)
+  let q2m = char_ngram_set(query, 2)
+  let qtokm = to_set(qtoks)
+  let anchor = first_anchor(qtoks)
   let cands : Array[(String, Double, Double, Double, Double)] = []
   for mid, m in self.memories.iter2() {
-    match self.fuzzy_score_one(mid, m, qv, q2, qtok, anchor, (0.55, 0.20, 0.15, 0.10), threshold) {
+    match self.fuzzy_score_one(mid, m, qv, q2m, qtokm, anchor, (0.55, 0.20, 0.15, 0.10), threshold) {
       Some(c) => cands.push(c)
       None => ()
     }
@@ -1933,9 +1957,10 @@ pub fn ProphecyEngine::fuzzy_match_full(self : ProphecyEngine, query : String, k
 // P1 候选集构造：取 query 唯一 token 按 IDF 降序的前 top_k 个，合并其 postings 得候选 mid 集合。
 // 返回 Map[mid, true] 形式，便于 O(1) 查；去重由 map 自然完成。
 // 退化路径：qtok 为空 / 所有 IDF 缺失 / postings 全空 → 返回空 Map（caller 检测后走全图）。
+// P1：qtok 改传 Map 集合（Map 插入序 = 首现序，与原 unique 数组序一致，选择结果逐位等价）。
 fn fuzzy_candidate_set(
   e : ProphecyEngine,
-  qtok : Array[String],
+  qtok : Map[String, Bool],
   idf : Map[String, Double],
   top_k : Int,
 ) -> Map[String, Bool] {
@@ -1944,7 +1969,7 @@ fn fuzzy_candidate_set(
   }
   // 取 IDF top-k（部分选择法；k 远小于 |qtok|，O(n·k) 已足）
   let picked : Array[String] = []
-  for t in qtok {
+  for t, _ in qtok.iter2() {
     // 仅考虑 postings 中存在的 token（无 postings 的 token 投出去也无效）
     if e.tm_postings.contains(t) {
       let id = match idf.get(t) {
@@ -2122,7 +2147,8 @@ pub fn ProphecyEngine::load_tbx(
         is_term: true,
         translation: tgt_term,
         tm_toks: [],
-        tm_ngrams: [],
+        tm_toks_set: Map([]),
+        tm_ngrams: Map([]),
       }
       self.memories.set(mid, node)
       self.invalidate_pred_cache()
@@ -3234,8 +3260,8 @@ pub fn ProphecyEngine::from_json(data : Json) -> ProphecyEngine {
   e.attn_beta = get_num(data, "attn_beta")
   e.wal_log = get_str_arr(data, "wal_log")
   e.rebuild_role_members()
-  e.rebuild_tm_idf()   // S1：内部态不进 to_json，恢复后重建 IDF 表（幂等）
-  e.rebuild_tm_features()   // P2-2：恢复后重建 TM 特征缓存（幂等）
+  e.rebuild_tm_features()   // P2-2：恢复后重建 TM 特征缓存（幂等；P1 须先于 idf——rebuild 复用 tm_toks）
+  e.rebuild_tm_idf()   // S1：内部态不进 to_json，恢复后重建 IDF 表（幂等；P1 复用 tm_toks 并刷新 tm_count）
   e.rebuild_term_index()   // P4-2：恢复后重建术语首字符索引（幂等）
   e
 }

@@ -16,6 +16,20 @@ since `0.1.0`.
 > their own dated headers below. Future 0.2.0 release will fold them into a
 > single dated version.
 
+## [Unreleased] — P0/P1 性能硬化（fuzzy_match 热路径）
+
+### Changed
+- **`util.mbt` 分词/集合算子 Map 化** — `is_stop` 由数组线性扫描改为 `stop_map` O(1) 查找；`unique` 由 O(n²) `arr_contains` 去重改为 `to_set`（Map 去重）；`char_ngrams` 数组版改为 `char_ngram_set`（直接产出 Map）；`dice_coeff` 由每候选×每分项各建 2 个 Map 改为 `dice_mm`（双 Map 直传，打分循环内零分配）。
+- **`engine.mbt` fuzzy_match 打分热路径去分配** — `MemoryNode` 新增 `tm_toks_set`（unique token 去重集合）与 `tm_ngrams`（char 2-gram 去重集合）字段，`add_tm`/`remember`/`restore` 时随节点预建缓存；`fuzzy_score_one` 改为消费调用方预建的查询侧集合（`q2m`/`qtokm`），打分循环内 `dice_mm` 零 Map 分配。
+- **`engine.mbt` `count_tm` O(1) 化** — 新增 `tm_count` 缓存字段，折入 `tm_idf_dirty` 生命周期：`rebuild_tm_idf` 重建时顺带刷新；`count_tm` 由 O(N) 扫描改为 O(1) 读缓存。所有 TM 集变更点（`add_tm`/`remember`/`consolidate` 剪枝/`restore`/`from_json`）均置脏或全量重建，缓存不失真。
+- **R15 确定性零影响** — 所有新算子仅做 `contains` / `length` 查询，不依赖 Map 迭代顺序；`pruned_acc == full_acc == 1600` 证明剪枝结果与全量一致（幂等）。
+
+### Performance
+- `fuzzy_match` 基准（wasm-gc，tests/core/yimai_prophecy_moonbit_bench_p1.mbt）由基线 **9.04s → 4.63s（-48%）**，结果正确性不变（acc=1600）。
+
+### Test & Build
+- `moon test --target wasm-gc` 维持 **175/175** 全绿；`moon check --target native` 0 错误。
+
 ## [Unreleased] — P6 hardening, multi-harness compat & repo tidy
 
 ### Fixed

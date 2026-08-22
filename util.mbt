@@ -10,21 +10,23 @@
 const MAX_TOKENS : Int = 20000
 
 // 停用词：中文功能词 + 英文停用词（按 D1–D8 分词规范设定）
-let stop_words : Array[String] = [
-  "的", "了", "和", "是", "在", "我", "你", "他", "她", "它", "们", "这", "那", "有",
-  "就", "不", "也", "都", "一个", "上", "下", "中", "与", "及", "或", "把", "被", "给",
-  "对", "从", "到", "等", "用", "将", "要", "会", "能", "可以", "通过", "根据", "按照",
-  "关于", "进行", "以及", "a", "an", "the", "of", "to", "and", "or", "in", "on", "for",
-  "with", "is", "are", "be",
-]
+// P0 性能：数组线性扫描 → Map 集合 O(1) 查询（yimai_tokenize 对每个 token 调一次，
+//   58 词 × 每 token 一次字符串比较是分词热点）。R15：仅 contains 查询、不迭代，顺序无关。
+let stop_map : Map[String, Bool] = Map([
+  ("的", true), ("了", true), ("和", true), ("是", true), ("在", true), ("我", true),
+  ("你", true), ("他", true), ("她", true), ("它", true), ("们", true), ("这", true),
+  ("那", true), ("有", true), ("就", true), ("不", true), ("也", true), ("都", true),
+  ("一个", true), ("上", true), ("下", true), ("中", true), ("与", true), ("及", true),
+  ("或", true), ("把", true), ("被", true), ("给", true), ("对", true), ("从", true),
+  ("到", true), ("等", true), ("用", true), ("将", true), ("要", true), ("会", true),
+  ("能", true), ("可以", true), ("通过", true), ("根据", true), ("按照", true), ("关于", true),
+  ("进行", true), ("以及", true), ("a", true), ("an", true), ("the", true), ("of", true),
+  ("to", true), ("and", true), ("or", true), ("in", true), ("on", true), ("for", true),
+  ("with", true), ("is", true), ("are", true), ("be", true),
+])
 
 fn is_stop(t : String) -> Bool {
-  for s in stop_words {
-    if s == t {
-      return true
-    }
-  }
-  false
+  stop_map.contains(t)
 }
 
 // ---------------------------------------------------------------------------
@@ -581,63 +583,55 @@ pub fn char_ratio(a : String, b : String) -> Double {
 // 用于 fuzzy_match 升级：2-gram 捕捉形态变体，Dice 对短文本比对 Jaccard 更宽容。
 // ---------------------------------------------------------------------------
 
-// 字符 n-gram（不足 n 长度返回空数组；MoonBit 字符串按 UTF-16 码元索引，中文 BMP 一字符一码元）
-fn char_ngrams(s : String, n : Int) -> Array[String] {
-  let out : Array[String] = []
+// 字符 n-gram 去重集合（不足 n 长度返回空集合；MoonBit 字符串按 UTF-16 码元索引，中文 BMP 一字符一码元）
+// P1 性能：直接产出 Map（原 Array 版仅供 dice_coeff 内部去重用；现节点侧缓存 Map，
+//   打分循环零分配）。key 首现顺序与原数组扫描顺序一致，仅做 contains 查询，R15 无关。
+fn char_ngram_set(s : String, n : Int) -> Map[String, Bool] {
+  let m : Map[String, Bool] = Map([])
   let len = s.length()
   if n <= 0 || len < n {
-    return out
+    return m
   }
   let mut i = 0
   while i + n <= len {
-    out.push(s[i:i + n].to_owned())
+    m.set(s[i:i + n].to_owned(), true)
     i = i + 1
   }
-  out
+  m
 }
 
-// 保持顺序去重
-fn unique(arr : Array[String]) -> Array[String] {
-  let out : Array[String] = []
+// token 去重集合（保持首现顺序；Map 插入序 = 首现序，与原 unique 数组序一致）
+// P1 性能：直接产出 Map 供 dice_mm O(1) 集合运算；替代原 unique 数组（调用方均改为集合消费）。
+fn to_set(arr : Array[String]) -> Map[String, Bool] {
+  let m : Map[String, Bool] = Map([])
   for x in arr {
-    if !arr_contains(out, x) {
-      out.push(x)
-    }
+    m.set(x, true)
   }
-  out
+  m
 }
 
 // 集合 Dice 系数 = 2|A∩B| / (|A|+|B|)，∈ [0,1]；短文本下比 Jaccard 更宽容
-// P2 优化：用 Map[String, Bool] 一次性去重 + 算交集，O(n+m) 而非 O((n+m)²)。
-//   原版本调 unique(a) + unique(b) + 嵌套 arr_contains，对 n=m=100 token 的 TM 做模糊匹配时
-//   实测 ~10^4 ops；新版 ~2*10^2 ops，加速约 50×。
-//   R15 合约：Map 在 MoonBit 是有序插入，但本函数只用 length 与 contains，
-//   不依赖迭代顺序，故对确定性输出零影响。
-fn dice_coeff(a : Array[String], b : Array[String]) -> Double {
-  let amap : Map[String, Bool] = Map::from_iter(([] : Array[(String, Bool)]).iter())
-  for x in a {
-    amap.set(x, true)
-  }
-  let bmap : Map[String, Bool] = Map::from_iter(([] : Array[(String, Bool)]).iter())
-  for x in b {
-    bmap.set(x, true)
-  }
-  if amap.length() == 0 || bmap.length() == 0 {
+// P1 优化：双 Map 直传（查询侧每次 fuzzy_match 预建一次 + 节点侧 add_tm 时缓存），
+//   打分循环内零 Map 分配（原 dice_coeff 每候选×每分项各建 2 个 Map）。
+//   与旧版逐字节等价：交集计数只做 contains、长度取去重基数，不依赖迭代顺序，R15 零影响。
+fn dice_mm(am : Map[String, Bool], bm : Map[String, Bool]) -> Double {
+  if am.length() == 0 || bm.length() == 0 {
     return 0.0
   }
   let mut inter = 0
-  for k, _ in amap.iter2() {
-    if bmap.contains(k) {
+  for k, _ in am.iter2() {
+    if bm.contains(k) {
       inter = inter + 1
     }
   }
-  2.0 * inter.to_double() / (amap.length().to_double() + bmap.length().to_double())
+  2.0 * inter.to_double() / (am.length().to_double() + bm.length().to_double())
 }
 
 // 查询首锚 token：取首个长度≥2 的 token（中文 bigram 或英文整词）；无则取首 token。
 // 用于位置惩罚：锚 token 命中 TM 源文则加分（句首对齐权重）。
-fn first_anchor(query : String) -> String {
-  let toks = yimai_tokenize(query)
+// P0 性能：接受调用方已分词的 toks（fuzzy_match 原先对同一 query 分词 3 次——
+//   tf_vector / unique / first_anchor 各一次，现收敛为 1 次由调用方传入）。
+fn first_anchor(toks : Array[String]) -> String {
   if toks.length() == 0 {
     return ""
   }
@@ -947,38 +941,38 @@ fn json_to_smap(j : Json) -> Map[String, String] {
 
 // ===== S4 评测：BLEU / chrF++（零依赖自实现，确定性）=====
 
-// 生成 n-gram 列表（token 级）
-fn ngrams(toks : Array[String], n : Int) -> Array[Array[String]] {
-  let out : Array[Array[String]] = []
-  let len = toks.length()
-  let mut i = 0
-  while i + n <= len {
-    let g : Array[String] = []
-    let mut j = 0
-    while j < n {
-      g.push(toks[i + j])
-      j = j + 1
-    }
-    out.push(g)
-    i = i + 1
+// n-gram 总数（滑动窗口计数 = len-n+1；不足 n 为 0）。
+// P0 性能：与「物化整个 n-gram 列表再取 length」等价的 O(1) 算术式，去掉中间分配。
+fn ngram_total(len : Int, n : Int) -> Int {
+  if len >= n {
+    len - n + 1
+  } else {
+    0
   }
-  out
 }
 
 // n-gram 计数（key = join with unit separator）
+// P0 性能：直接滑动窗口 + StringBuilder 拼 key（原版先物化 Array[Array[String]]
+//   再 O(n²) 字符串拼接）；key 逐字节等价、首现顺序不变，R15 确定性零影响。
 fn ngram_counts(toks : Array[String], n : Int) -> Map[String, Int] {
   let counts : Map[String, Int] = Map([])
-  let gs = ngrams(toks, n)
-  for g in gs {
-    let mut key = ""
-    for t in g {
-      key = key + t + "\u001F"
+  let len = toks.length()
+  let mut i = 0
+  while i + n <= len {
+    let b = StringBuilder()
+    let mut j = 0
+    while j < n {
+      b.write_string(toks[i + j])
+      b.write_string("\u001F")
+      j = j + 1
     }
+    let key = b.to_string()
     let cur = match counts.get(key) {
       Some(v) => v
       None => 0
     }
     counts.set(key, cur + 1)
+    i = i + 1
   }
   counts
 }
@@ -1008,7 +1002,7 @@ pub fn bleu_score(ref_text : String, hyp_text : String) -> Double {
       let m = if hyp_c < ref_c { hyp_c } else { ref_c }
       clipped = clipped + m.to_double()
     }
-    let total = ngrams(hyp_toks, n).length().to_double()
+    let total = ngram_total(c_len, n).to_double()
     let p_n = if total > 0.0 { (clipped + 1.0) / (total + 1.0) } else { 1.0 }
     log_sum = log_sum + @math.ln(p_n)
     orders = orders + 1.0
@@ -1030,17 +1024,19 @@ fn chars_of(s : String) -> Array[String] {
 }
 
 // 字符 n-gram 计数
+// P0 性能：StringBuilder 拼 key（原版 O(n²) 字符串复制拼接）；key 逐字节等价、首现顺序不变。
 fn char_ngram_counts(chars : Array[String], n : Int) -> Map[String, Int] {
   let counts : Map[String, Int] = Map([])
   let len = chars.length()
   let mut i = 0
   while i + n <= len {
-    let mut key = ""
+    let b = StringBuilder()
     let mut j = 0
     while j < n {
-      key = key + chars[i + j]
+      b.write_string(chars[i + j])
       j = j + 1
     }
+    let key = b.to_string()
     let cur = match counts.get(key) {
       Some(v) => v
       None => 0
@@ -1079,8 +1075,8 @@ pub fn chrf_score(ref_text : String, hyp_text : String) -> Double {
       let m = if h < r { h } else { r }
       match_n = match_n + m.to_double()
     }
-    let hyp_total = ngrams(hyp_chars, n).length().to_double()
-    let ref_total = ngrams(ref_chars, n).length().to_double()
+    let hyp_total = ngram_total(hyp_chars.length(), n).to_double()
+    let ref_total = ngram_total(ref_chars.length(), n).to_double()
     sum_p = sum_p + (if hyp_total > 0.0 { match_n / hyp_total } else { 0.0 })
     sum_r = sum_r + (if ref_total > 0.0 { match_n / ref_total } else { 0.0 })
     orders = orders + 1.0
@@ -1099,8 +1095,8 @@ pub fn chrf_score(ref_text : String, hyp_text : String) -> Double {
       let m = if h < r { h } else { r }
       match_n = match_n + m.to_double()
     }
-    let hyp_total = ngrams(hyp_words, w).length().to_double()
-    let ref_total = ngrams(ref_words, w).length().to_double()
+    let hyp_total = ngram_total(hyp_words.length(), w).to_double()
+    let ref_total = ngram_total(ref_words.length(), w).to_double()
     sum_p = sum_p + (if hyp_total > 0.0 { match_n / hyp_total } else { 0.0 })
     sum_r = sum_r + (if ref_total > 0.0 { match_n / ref_total } else { 0.0 })
     orders = orders + 1.0

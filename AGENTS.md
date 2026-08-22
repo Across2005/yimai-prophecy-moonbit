@@ -218,7 +218,7 @@ not numerically comparable; convert via the formula.
 
 | File | Purpose |
 |---|---|
-| `engine.mbt` | all engine methods (fuzzy_match L1503, check_terms L1702, predict, recall, …) |
+| `engine.mbt` | all engine methods (fuzzy_match L1878, check_terms L2184, predict, recall, …) |
 | `cmd/service/routes.mbt` | REST handlers + static file serving + `/mcp` branch |
 | `cmd/service/mcp.mbt` | MCP JSON-RPC layer (initialize/tools/list/tools/call) |
 | `cmd/service/tm_store.mbt` | load/save persistence (atomic write) |
