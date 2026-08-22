@@ -12,27 +12,6 @@
 //   5. Solid-State Battery & Next-Gen Energy Storage
 //   6. Protein Design & AI-Driven Drug Discovery
 
-// ---- Helper: four-decimal rounding ----
-fn r4_e(x : Double) -> Double {
-  (x * 10000.0).to_int().to_double() / 10000.0
-}
-
-// ---- Helper: recall texts (extended version) ----
-fn er_recall_texts(rec : Array[Json]) -> Array[String] {
-  let out : Array[String] = []
-  for x in rec {
-    match x {
-      Json::Object(m) =>
-        match m.get("text") {
-          Some(Json::String(s)) => out.push(s)
-          _ => ()
-        }
-      _ => ()
-    }
-  }
-  out
-}
-
 // ---- Helper: generic training loop ----
 fn train_extended_corpus(eng : @lib.ProphecyEngine, corpus : Array[(String, String)], reps : Int) -> Unit {
   for _r = 0; _r < reps; _r = _r + 1 {

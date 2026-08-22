@@ -85,13 +85,12 @@ fn arg_num(args : Json, key : String, default : Double) -> Double {
 }
 
 fn arg_bool(args : Json, key : String, default : Bool) -> Bool {
+  // P8：as_bool() 已废弃；本版本 Json 的 Bool 构造器已拆为 True/False 单例，
+  // 按官方建议用 is True / is False 判别（等价：仅 bool 命中，其余走 default）。
   match args {
     Json::Object(o) =>
       match o.get(key) {
-        Some(v) => match v.as_bool() {
-          Some(b) => b
-          None => default
-        }
+        Some(v) => if v is True { true } else if v is False { false } else { default }
         None => default
       }
     _ => default
@@ -321,7 +320,7 @@ async fn invoke_tool(name : String, args : Json) -> Json {
     let _ = save_store()  // save_store 已返回 Bool 不再抛（P0 路由加固一致化）
     @lib.obj([("status", @lib.str_json("imported"))])
   } else if name == "distill_inject" {
-    let table : Map[String, Double] = Map::new()
+    let table : Map[String, Double] = Map([])
     let mut ignored = 0
     let tbl = args
     match tbl {
@@ -343,7 +342,7 @@ async fn invoke_tool(name : String, args : Json) -> Json {
     let _ = save_store()  // save_store 已返回 Bool 不再抛（P0 路由加固一致化）
     @lib.obj([
       ("status", @lib.str_json("injected")),
-      ("keys", @lib.num_json(table.size().to_double())),
+      ("keys", @lib.num_json(table.length().to_double())),
       ("ignored", @lib.num_json(ignored.to_double())),
     ])
   } else if name == "active_learning" {
@@ -384,7 +383,7 @@ async fn handle_tools_call(id : Json, params : Json) -> Json {
       }
     _ => @lib.obj([])
   }
-  if not(is_known_tool(name)) {
+  if !(is_known_tool(name)) {
     // P6 修正：tool name 是 tools/call 的参数，不存在时应返回 -32602 (Invalid params)。
     return rpc_error(id, -32602, "Unknown tool: " + name)
   }
@@ -421,36 +420,38 @@ async fn handle_tools_call(id : Json, params : Json) -> Json {
         ("isError", is_err.to_json()),
       ]))
     }
-    Err(panic_msg) =>
+    Err(_) =>
       // Internal error：invoke_tool 抛异常（引擎 panic / 不可恢复错误）
-      // 错误信息脱敏（不暴露堆栈细节，仅保留错误摘要）
+      // 错误信息脱敏（不暴露堆栈细节，仅保留错误摘要）；P8：panic_msg 本就未使用，改 `_` 消 unused 告警
       rpc_error(id, -32603, "Internal error: tool '" + name + "' execution failed")
   }
 }
 
 // JSON-RPC 分派（None = 无响应体，如 notifications/initialized）
-async fn dispatch(method : String, id : Json, params : Json) -> Option[Json] {
+//   P8：`method` 是 MoonBit 保留字（11 条 reserved_keyword 告警），参数改名 meth
+//   （与 @http.Request.meth 命名一致）；JSON-RPC 线上的 "method" 字段名不受影响。
+async fn dispatch(meth : String, id : Json, params : Json) -> Option[Json] {
   // P1: 框架级校验 — 缺 method 应回 -32600 (Invalid Request) 而非 -32601 (Method not found)
-  if method == "" {
+  if meth == "" {
     return Some(rpc_error(id, -32600, "Invalid Request: missing method"))
   }
-  if method == "initialize" {
+  if meth == "initialize" {
     Some(handle_initialize(id))
-  } else if method == "tools/list" {
+  } else if meth == "tools/list" {
     Some(handle_tools_list(id))
-  } else if method == "tools/call" {
+  } else if meth == "tools/call" {
     Some(handle_tools_call(id, params))
-  } else if method == "ping" {
+  } else if meth == "ping" {
     Some(rpc_result(id, @lib.obj([])))
-  } else if method == "notifications/initialized" {
+  } else if meth == "notifications/initialized" {
     None
-  } else if method.has_prefix("notifications/") {
+  } else if meth.has_prefix("notifications/") {
     // P4：JSON-RPC 2.0 规范 — notification 类（无 id）一律不回包。任意外发 notifications/cancelled、
     //   notifications/progress 等不应触发 -32601。原代码只显式豁免 notifications/initialized，
     //   其余走 -32601 违反 spec。客户端可能据此重连或退避，造成不稳。
     None
   } else {
-    Some(rpc_error(id, -32601, "Method not found: " + method))
+    Some(rpc_error(id, -32601, "Method not found: " + meth))
   }
 }
 
@@ -476,10 +477,10 @@ async fn handle_mcp(req : @http.Request, body : &@io.Reader, conn : @http.Server
   let parsed = read_json_body(body)
   match parsed {
     Ok(req_json) => {
-      let method = extract_method(req_json)
+      let meth = extract_method(req_json)
       let id = extract_id(req_json)
       let params = extract_params(req_json)
-      match dispatch(method, id, params) {
+      match dispatch(meth, id, params) {
         Some(resp) => send_json(conn, 200, resp.stringify())
         None => {
           // notification：无响应体，回 202

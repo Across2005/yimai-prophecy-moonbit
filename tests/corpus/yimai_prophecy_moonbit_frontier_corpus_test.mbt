@@ -28,11 +28,6 @@
 //   - 民航: UK CAA CAP 632 / BCAR Section L / Boeing CMO 2026
 //   - 航天: CNSA ILRS 国际合作 / 国际月球科研站路线图 2035
 
-// ---- Helper: four-decimal rounding ----
-fn r4f(x : Double) -> Double {
-  (x * 10000.0).to_int().to_double() / 10000.0
-}
-
 // ---- Helper: recall texts (frontier corpus version) ----
 fn fc_recall_texts(rec : Array[Json]) -> Array[String] {
   let out : Array[String] = []
@@ -177,20 +172,6 @@ fn fc_train_all(eng : @lib.ProphecyEngine, reps : Int) -> Unit {
   fc_train(eng, fc_civil_aviation, reps)
   fc_train(eng, fc_ilrs, reps)
 }
-
-// ---- All 10 corpora as an array for cross-corpus tests ----
-let fc_all_corpora : Array[Array[(String, String)]] = [
-  fc_ai_safety, fc_agent_edge, fc_majorana, fc_bsd, fc_higher_cat,
-  fc_phenomenology, fc_digital_humanities, fc_cbt, fc_civil_aviation, fc_ilrs,
-]
-
-// ---- Per-corpus name map for diagnostic messages ----
-let fc_corpus_names : Array[String] = [
-  "AI Safety / AGI 评估", "Agent 时代 / 端云协同",
-  "凝聚态物理 (Majorana)", "算术几何 (BSD)", "拓扑与高维范畴",
-  "现象学与心智哲学", "数字人文 (CLS)", "临床心理学 (CBT)",
-  "民航 (RNP AR)", "航天 (ILRS)",
-]
 
 // ===========================================================================
 // T38..T47: Per-corpus prediction + recall tests

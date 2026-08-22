@@ -76,7 +76,8 @@ test "R12 预测输出含不确定性(F3 熵可量化)" {
 test "R2 多粒度角色抽象(前二/前四/前后各二)" {
   let rs = @lib.roles_of("新能源汽车白皮书")
   // 实际: ["新能"(前二), "新能源汽"(前四), "新能皮书"(前后各二)]
-  println(">>> R2 roles_of=" + rs.to_string())
+  // P8：Array[String].to_string() 走 Show 已废弃，改 join（输出格式不变 [a, b, c]）
+  println(">>> R2 roles_of=[" + rs.join(", ") + "]")
   inspect(rs.length() == 3, content="true")
   inspect(rs[0] == "新能", content="true") // 前二粒度
 }

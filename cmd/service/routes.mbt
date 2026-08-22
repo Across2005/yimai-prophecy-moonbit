@@ -67,9 +67,10 @@ fn content_length_too_large(req : @http.Request) -> Bool {
 }
 
 // 从 path 提取 ? 之前的 base path（async 的 Request.path 含完整 query string）
+//   P8：StringView.to_string() 已废弃，改 to_owned()
 fn extract_base_path(path : String) -> String {
   let parts = path.split("?").to_array()
-  parts[0].to_string()
+  parts[0].to_owned()
 }
 
 async fn send_json(conn : @http.ServerConnection, code : Int, body : String) -> Unit {
@@ -211,7 +212,7 @@ const WEB_ROOT : String = "cmd/service/web/"
 fn is_safe_static_path(rel : String) -> Bool {
   if rel == "" { return false }
   // 拒绝绝对路径 / 驱动器前缀 / 前导 slash，防止越出 WEB_ROOT
-  if rel.starts_with("/") || rel.starts_with("\\") { return false }
+  if rel.has_prefix("/") || rel.has_prefix("\\") { return false }
   if @lib.str_contains(rel, ":") { return false }
   // 拒绝父目录引用与反斜杠（反斜杠在某些 FS 上等价于斜杠）
   if @lib.str_contains(rel, "..") || @lib.str_contains(rel, "\\") { return false }
@@ -225,12 +226,13 @@ async fn serve_static(path : String, conn : @http.ServerConnection) -> Unit {
   let rel_raw = if path == "/" || path == "/index.html" {
     "index.html"
   } else {
-    path.substring(start=1, end=path.length())
+    // P8：substring 已废弃，改切片 + to_owned
+    path[1:].to_owned()
   }
   // P4 安全加固：先 URL 解码再做".." / "\" 检查，阻止 %2e%2e%2f 等编码形式绕过。
   // decode_pct 仅做 %XX 单字节解码，不解析 '+' 也不做路径规范化，保守可控。
   let rel = @lib.decode_pct(rel_raw)
-  if not(is_safe_static_path(rel)) {
+  if !(is_safe_static_path(rel)) {
     conn.send_response(403, "Forbidden")
     conn.end_response()
     return
@@ -300,9 +302,9 @@ fn json_num(j : Json, key : String, default : Double) -> Double {
 async fn handle_fuzzy_match(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
   with_json_object(body, conn, async fn(o, conn) {
     // P1 加固：字段级范围校验（k ∈ [0,100], threshold ∈ [0,1]）
-    if not(validate_text_field_or_send(conn, o, "query")) { return }
-    if not(validate_int_field_or_send(conn, o, "k", 3)) { return }
-    if not(validate_num_field_or_send(conn, o, "threshold", 0.70, 0.0, 1.0)) { return }
+    if !(validate_text_field_or_send(conn, o, "query")) { return }
+    if !(validate_int_field_or_send(conn, o, "k", 3)) { return }
+    if !(validate_num_field_or_send(conn, o, "threshold", 0.70, 0.0, 1.0)) { return }
     let query = json_str(o, "query")
     let k = match o.get("k") {
       Some(Json::Number(n, ..)) => n.to_int()
@@ -321,7 +323,7 @@ async fn handle_fuzzy_match(body : &@io.Reader, conn : @http.ServerConnection) -
 async fn handle_add_tm(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
   with_json_object(body, conn, async fn(o, conn) {
     // P1 加固：字段级长度校验（防 DoS：src 单字段 ≤ MAX_TEXT_CHARS）
-    if not(validate_text_field_or_send(conn, o, "src")) { return }
+    if !(validate_text_field_or_send(conn, o, "src")) { return }
     let src = json_str(o, "src")
     let tgt = json_str(o, "tgt")
     let id = engine_ref.val.add_tm(src, tgt)
@@ -348,8 +350,8 @@ async fn handle_check_terms(body : &@io.Reader, conn : @http.ServerConnection) -
   match parsed {
     Some(Json::Object(o)) => {
       // P1 加固：source/target ≤ MAX_TEXT_CHARS（check_terms 对两个翻译段做白盒校验）
-      if not(validate_text_field_or_send(conn, o, "source")) { return }
-      if not(validate_text_field_or_send(conn, o, "target")) { return }
+      if !(validate_text_field_or_send(conn, o, "source")) { return }
+      if !(validate_text_field_or_send(conn, o, "target")) { return }
       let source = json_str(o, "source")
       let target = json_str(o, "target")
       let result = engine_ref.val.check_terms(source, target)
@@ -365,8 +367,8 @@ async fn handle_concordance(body : &@io.Reader, conn : @http.ServerConnection) -
   match parsed {
     Some(Json::Object(o)) => {
       // P1 加固：term ≤ MAX_TEXT_CHARS；k ∈ [0,100]
-      if not(validate_text_field_or_send(conn, o, "term")) { return }
-      if not(validate_int_field_or_send(conn, o, "k", 3)) { return }
+      if !(validate_text_field_or_send(conn, o, "term")) { return }
+      if !(validate_int_field_or_send(conn, o, "k", 3)) { return }
       let term = json_str(o, "term")
       let k = match o.get("k") {
         Some(Json::Number(n, ..)) => n.to_int()
@@ -385,9 +387,9 @@ async fn handle_qe_auto(body : &@io.Reader, conn : @http.ServerConnection) -> Un
   match parsed {
     Some(Json::Object(o)) => {
       // P1 加固：source/target ≤ MAX_TEXT_CHARS；match_rate ∈ [0,1]（NaN/负数会污染 QE）
-      if not(validate_text_field_or_send(conn, o, "source")) { return }
-      if not(validate_text_field_or_send(conn, o, "target")) { return }
-      if not(validate_num_field_or_send(conn, o, "match_rate", 0.0, 0.0, 1.0)) { return }
+      if !(validate_text_field_or_send(conn, o, "source")) { return }
+      if !(validate_text_field_or_send(conn, o, "target")) { return }
+      if !(validate_num_field_or_send(conn, o, "match_rate", 0.0, 0.0, 1.0)) { return }
       let source = json_str(o, "source")
       let target = json_str(o, "target")
       let mr = match o.get("match_rate") {
@@ -407,7 +409,7 @@ async fn handle_predict(body : &@io.Reader, conn : @http.ServerConnection) -> Un
   match parsed {
     Some(Json::Object(o)) => {
       // P1 加固：k ∈ [0,100]（防 DoS：k=1e9 让排序浪费大量 CPU）
-      if not(validate_int_field_or_send(conn, o, "k", 3)) { return }
+      if !(validate_int_field_or_send(conn, o, "k", 3)) { return }
       let k = match o.get("k") {
         Some(Json::Number(n, ..)) => n.to_int()
         _ => 3
@@ -429,9 +431,9 @@ async fn handle_mqm_re_annotate(body : &@io.Reader, conn : @http.ServerConnectio
   match parsed {
     Some(Json::Object(o)) => {
       // P1 加固：source/target ≤ MAX_TEXT_CHARS；match_rate ∈ [0,1]
-      if not(validate_text_field_or_send(conn, o, "source")) { return }
-      if not(validate_text_field_or_send(conn, o, "target")) { return }
-      if not(validate_num_field_or_send(conn, o, "match_rate", 0.0, 0.0, 1.0)) { return }
+      if !(validate_text_field_or_send(conn, o, "source")) { return }
+      if !(validate_text_field_or_send(conn, o, "target")) { return }
+      if !(validate_num_field_or_send(conn, o, "match_rate", 0.0, 0.0, 1.0)) { return }
       let source = json_str(o, "source")
       let target = json_str(o, "target")
       let mr = match o.get("match_rate") {
@@ -451,7 +453,7 @@ async fn handle_observe(body : &@io.Reader, conn : @http.ServerConnection) -> Un
   match parsed {
     Some(Json::Object(o)) => {
       // P1 加固：text 必填 + ≤ MAX_TEXT_CHARS（防 DoS：超大 text 触发分词卡死）
-      if not(validate_text_field_or_send(conn, o, "text")) { return }
+      if !(validate_text_field_or_send(conn, o, "text")) { return }
       let text = json_str(o, "text")
       let mtype = json_str(o, "mtype")
       let mid = engine_ref.val.observe(text, mtype)
@@ -473,8 +475,8 @@ async fn handle_recall(body : &@io.Reader, conn : @http.ServerConnection) -> Uni
   match parsed {
     Some(Json::Object(o)) => {
       // P1 加固：query ≤ MAX_TEXT_CHARS；k ∈ [0,100]
-      if not(validate_text_field_or_send(conn, o, "query")) { return }
-      if not(validate_int_field_or_send(conn, o, "k", 5)) { return }
+      if !(validate_text_field_or_send(conn, o, "query")) { return }
+      if !(validate_int_field_or_send(conn, o, "k", 5)) { return }
       let query = json_str(o, "query")
       let k = match o.get("k") {
         Some(Json::Number(n, ..)) => n.to_int()
@@ -493,7 +495,7 @@ async fn handle_explain(body : &@io.Reader, conn : @http.ServerConnection) -> Un
   match parsed {
     Some(Json::Object(o)) => {
       // P1 加固：mid 必填 + ≤ 128 chars（mid 格式固定为 m<n>，限制 128 防 DoS）
-      if not(validate_text_field_or_send(conn, o, "mid")) { return }
+      if !(validate_text_field_or_send(conn, o, "mid")) { return }
       let mid = json_str(o, "mid")
       let result = engine_ref.val.explain_card(mid)
       send_json(conn, 200, result.stringify())
@@ -508,8 +510,8 @@ async fn handle_reward(body : &@io.Reader, conn : @http.ServerConnection) -> Uni
   match parsed {
     Some(Json::Object(o)) => {
       // P1 加固：mid 必填 + ≤ MAX_TEXT_CHARS；score ∈ [-1, 1]（引擎内部已 clamp，此处防 NaN/Inf）
-      if not(validate_text_field_or_send(conn, o, "mid")) { return }
-      if not(validate_num_field_or_send(conn, o, "score", 1.0, -1.0, 1.0)) { return }
+      if !(validate_text_field_or_send(conn, o, "mid")) { return }
+      if !(validate_num_field_or_send(conn, o, "score", 1.0, -1.0, 1.0)) { return }
       let mid = json_str(o, "mid")
       let score = match o.get("score") {
         Some(Json::Number(n, ..)) => n
@@ -536,15 +538,18 @@ async fn handle_consolidate(body : &@io.Reader, conn : @http.ServerConnection) -
     Some(Json::Object(o)) => {
       // P1 加固：prune 必须为 bool（拒绝字符串"false"绕过的歧义；原 as_bool 失败时 fallback string == "true"）
       //   严格化：必须是真正的 JSON bool；字符串/null/数字一律 400。
+      //   P8：as_bool() 已废弃；本版本 Json 的 Bool 构造器已拆为 True/False 单例，
+      //   按官方建议用 is True / is False 判别（语义不变：非 bool 一律 400）。
       let prune_field = o.get("prune")
       let prune = match prune_field {
         Some(v) =>
-          match v.as_bool() {
-            Some(b) => b
-            None => {
-              send_error(conn, 400, "field_type", "prune must be bool")
-              return
-            }
+          if v is True {
+            true
+          } else if v is False {
+            false
+          } else {
+            send_error(conn, 400, "field_type", "prune must be bool")
+            return
           }
         None => true
       }
@@ -565,9 +570,9 @@ async fn handle_retrieve_prompt(body : &@io.Reader, conn : @http.ServerConnectio
   match parsed {
     Some(Json::Object(o)) => {
       // P1 加固：query ≤ MAX_TEXT_CHARS；k ∈ [0,100]；threshold ∈ [0,1]
-      if not(validate_text_field_or_send(conn, o, "query")) { return }
-      if not(validate_int_field_or_send(conn, o, "k", 3)) { return }
-      if not(validate_num_field_or_send(conn, o, "threshold", 0.70, 0.0, 1.0)) { return }
+      if !(validate_text_field_or_send(conn, o, "query")) { return }
+      if !(validate_int_field_or_send(conn, o, "k", 3)) { return }
+      if !(validate_num_field_or_send(conn, o, "threshold", 0.70, 0.0, 1.0)) { return }
       let query = json_str(o, "query")
       let k = match o.get("k") {
         Some(Json::Number(n, ..)) => n.to_int()
@@ -588,8 +593,8 @@ async fn handle_retrieve_prompt(body : &@io.Reader, conn : @http.ServerConnectio
 async fn handle_bleu(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
   with_json_object(body, conn, async fn(o, conn) {
     // P1 加固：ref/hyp ≤ MAX_TEXT_CHARS（句子级评测，超长请分句）
-    if not(validate_text_field_or_send(conn, o, "ref")) { return }
-    if not(validate_text_field_or_send(conn, o, "hyp")) { return }
+    if !(validate_text_field_or_send(conn, o, "ref")) { return }
+    if !(validate_text_field_or_send(conn, o, "hyp")) { return }
     let ref_str = json_str(o, "ref")
     let hyp_str = json_str(o, "hyp")
     let score = @lib.bleu_score(ref_str, hyp_str)
@@ -604,8 +609,8 @@ async fn handle_chrf(body : &@io.Reader, conn : @http.ServerConnection) -> Unit 
   match parsed {
     Some(Json::Object(o)) => {
       // P1 加固：ref/hyp ≤ MAX_TEXT_CHARS
-      if not(validate_text_field_or_send(conn, o, "ref")) { return }
-      if not(validate_text_field_or_send(conn, o, "hyp")) { return }
+      if !(validate_text_field_or_send(conn, o, "ref")) { return }
+      if !(validate_text_field_or_send(conn, o, "hyp")) { return }
       let ref_str = json_str(o, "ref")
       let hyp_str = json_str(o, "hyp")
       let score = @lib.chrf_score(ref_str, hyp_str)
@@ -622,7 +627,7 @@ async fn handle_style_check(body : &@io.Reader, conn : @http.ServerConnection) -
   match parsed {
     Some(Json::Object(o)) => {
       // P1 加固：text ≤ MAX_TEXT_CHARS
-      if not(validate_text_field_or_send(conn, o, "text")) { return }
+      if !(validate_text_field_or_send(conn, o, "text")) { return }
       let text = json_str(o, "text")
       let result = engine_ref.val.style_check(text)
       send_json(conn, 200, result.stringify())
@@ -639,7 +644,7 @@ async fn handle_style_report(body : &@io.Reader, conn : @http.ServerConnection) 
       // P1 加固：text 为可选项，有则校验 ≤ MAX_TEXT_CHARS
       match o.get("text") {
         Some(Json::String(_)) =>
-          if not(validate_text_field_or_send(conn, o, "text")) { return }
+          if !(validate_text_field_or_send(conn, o, "text")) { return }
         _ => ()  // 缺省或非字符串均放行（原行为）
       }
       let text = json_str(o, "text")
@@ -656,8 +661,8 @@ async fn handle_back_align(body : &@io.Reader, conn : @http.ServerConnection) ->
   match parsed {
     Some(Json::Object(o)) => {
       // P1 加固：source/target ≤ MAX_TEXT_CHARS（双 LCS 算法 O(n·m)，超长易卡死）
-      if not(validate_text_field_or_send(conn, o, "source")) { return }
-      if not(validate_text_field_or_send(conn, o, "target")) { return }
+      if !(validate_text_field_or_send(conn, o, "source")) { return }
+      if !(validate_text_field_or_send(conn, o, "target")) { return }
       let source = json_str(o, "source")
       let target = json_str(o, "target")
       let result = engine_ref.val.back_align(source, target)
@@ -692,13 +697,13 @@ async fn handle_back_align(body : &@io.Reader, conn : @http.ServerConnection) ->
 }
 
 // POST /api/term_conflicts  {}  术语冲突检测
-async fn handle_term_conflicts(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+async fn handle_term_conflicts(_body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
   let result = engine_ref.val.term_conflicts()
   send_json(conn, 200, result.stringify())
 }
 
 // POST /api/fed_export  {}  联邦增量导出
-async fn handle_fed_export(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
+async fn handle_fed_export(_body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
   let result = engine_ref.val.fed_export()
   send_json(conn, 200, result.stringify())
 }
@@ -709,8 +714,8 @@ async fn handle_fed_import(body : &@io.Reader, conn : @http.ServerConnection) ->
   match parsed {
     Some(Json::Object(o)) => {
       // P1 加固：added/updated ∈ [0, MAX_INT_K]（防 DoS：极大值刷统计）
-      if not(validate_int_field_or_send(conn, o, "added", 0)) { return }
-      if not(validate_int_field_or_send(conn, o, "updated", 0)) { return }
+      if !(validate_int_field_or_send(conn, o, "added", 0)) { return }
+      if !(validate_int_field_or_send(conn, o, "updated", 0)) { return }
       let added = match o.get("added") {
         Some(Json::Number(n, ..)) => n.to_int()
         _ => 0
@@ -746,14 +751,14 @@ async fn handle_distill_inject(body : &@io.Reader, conn : @http.ServerConnection
           return
         }
       }
-      let table : Map[String, Double] = Map::new()
+      let table : Map[String, Double] = Map([])
       match o.get("table") {
         Some(Json::Object(t)) =>
           // P1 加固：单 value 必为有限 Double（拒绝 NaN/Inf 污染领域偏置）
           for k, v in t.iter2() {
             match v {
-              Json::Number(n) =>
-                if not(n.is_nan()) && not(n.is_inf()) {
+              Json::Number(n, ..) =>
+                if !(n.is_nan()) && !(n.is_inf()) {
                   table.set(k, n)
                 }
               _ => ()
@@ -767,7 +772,7 @@ async fn handle_distill_inject(body : &@io.Reader, conn : @http.ServerConnection
       // P1: BUG 修复：原版缺右括号 `}` 导致 JSON 非法；改用 @lib.obj
       send_json(conn, 200, @lib.obj([
         ("status", @lib.str_json("injected")),
-        ("keys", table.size().to_json()),
+        ("keys", table.length().to_json()),
       ]).stringify())
     }
     _ => ()  // read_json_or_400 已发 4xx 响应
@@ -780,7 +785,7 @@ async fn handle_active_learning(body : &@io.Reader, conn : @http.ServerConnectio
   match parsed {
     Some(Json::Object(o)) => {
       // P1 加固：k ∈ [0,100]
-      if not(validate_int_field_or_send(conn, o, "k", 5)) { return }
+      if !(validate_int_field_or_send(conn, o, "k", 5)) { return }
       let k = match o.get("k") {
         Some(Json::Number(n, ..)) => n.to_int()
         _ => 5

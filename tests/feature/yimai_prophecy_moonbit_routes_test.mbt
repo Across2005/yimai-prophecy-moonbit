@@ -80,21 +80,9 @@ test "L20 /mcp 不在 routes_meta（routes.mbt 单独走 MCP 分支）" {
 //   - handler 名无重复
 //   - handler 名非空
 //   - handler 名全部在「已知 handler 集合」内（即 routes.mbt::handle_request 的 match 分支）
+//   P8：build_known_handlers / known_handlers 上移到 _test_helpers.mbt（消除空 lib
+//   构建目标的 unused_package 告警；同包作用域内测试直接引用，行为不变）
 // ---------------------------------------------------------------------------
-
-// routes.mbt::handle_request 的 match 派发全集
-//   P4：从 routes_meta 派生（取每项的 handler_name）消除硬编码 26 字符串，
-//   routes_meta 增删时 known_handlers 自动同步；L21 测试断言两者长度一致兜底。
-fn build_known_handlers() -> Array[String] {
-  let out : Array[String] = []
-  for entry in @lib.routes_meta {
-    let (_, n) = entry
-    out.push(n)
-  }
-  out
-}
-
-let known_handlers : Array[String] = build_known_handlers()
 
 test "L21 routes_meta 中 handler 名无重复" {
   let mut dups = 0

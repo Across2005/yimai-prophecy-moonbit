@@ -3464,7 +3464,8 @@ fn term_root(t : String) -> String {
 }
 
 // ===== M2 回译验证（LCS 对齐质量）=====
-pub fn ProphecyEngine::back_align(self : ProphecyEngine, source : String, target : String) -> Json {
+//   P8：纯函数不读引擎状态；receiver 改 `_self` 消 unused 告警（保持 dot 调用语法不变）
+pub fn ProphecyEngine::back_align(_self : ProphecyEngine, source : String, target : String) -> Json {
   let ops = align_diff(source, target)
   let mut match_n = 0
   let mis : Array[Json] = []
@@ -3516,7 +3517,7 @@ pub fn ProphecyEngine::term_conflicts(self : ProphecyEngine) -> Json {
   // 收集术语节点：text -> translation
   let by_src : Map[String, Array[String]] = Map::from_iter(([] : Array[(String, Array[String])]).iter())
   let by_tgt : Map[String, Array[String]] = Map::from_iter(([] : Array[(String, Array[String])]).iter())
-  for mid, m in self.memories.iter2() {
+  for _, m in self.memories.iter2() {
     if m.is_term && m.translation != "" {
       let s1 = match by_src.get(m.text) {
         Some(v) => v

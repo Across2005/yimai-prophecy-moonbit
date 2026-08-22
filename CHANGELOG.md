@@ -16,6 +16,18 @@ since `0.1.0`.
 > their own dated headers below. Future 0.2.0 release will fold them into a
 > single dated version.
 
+## [Unreleased] — P8 告警清零（moon check 双 target 0 警告）
+
+### Changed
+- **deprecated 51 条全清（cmd/service + tests）** — `not(expr)` → `!expr`（routes.mbt 38 处 + mcp.mbt 1 处）；`Json::as_bool()` → `is True` / `is False` 判别（本版本 Json 的 Bool 构造器已拆为 True/False 单例，`mcp.mbt arg_bool` / `routes.mbt consolidate prune` 语义不变）；`Map::new()` → `Map([])`；`.size()` → `.length()`；`.starts_with()` → `.has_prefix()`；StringView `.to_string()` → `.to_owned()`；`path.substring(start=1, end=len)` → `path[1:].to_owned()`；测试里集合 `to_string()`（Show）→ `join(", ")`。
+- **reserved_keyword 11 条全清** — `dispatch(method : String, ...)` 参数改名 `meth`（与 `@http.Request.meth` 命名一致；JSON-RPC 线上 `"method"` 字段名不受影响）。
+- **missing_pattern_arguments 1 条修复** — distill_inject 循环 `Json::Number(n)` 补齐为 `Json::Number(n, ..)`（与其余 12 处调用点一致）。
+- **unused_value 10 条全清** — engine `back_align` receiver 改 `_self`（纯函数不读引擎状态，dot 调用语法不变）、`term_conflicts` 迭代改 `for _, m`；`handle_term_conflicts`/`handle_fed_export` 未用 body 参数改 `_body`；`Err(panic_msg)` 改 `Err(_)`（脱敏注释保留）；删除 corpus 测试死代码：`r4_e` / `er_recall_texts` / `r4f` / `fc_all_corpora` / `fc_corpus_names`。
+- **unused_package 2 条结构性消除** — 新增 `tests/feature/_test_helpers.mbt`（pub 的 `build_known_handlers` / `known_handlers` 自 routes_test 上移）。feature 包此前只有 `*_test.mbt`（黑盒），lib 构建目标为空导致 moon.pkg 的 @lib import 被判未使用；corpus/core 两包正是靠各自的 `_test_helpers.mbt` 规避同类告警，本次补齐同款结构。
+
+### Test & Build
+- `moon check --target native` **0 警告 0 错误**（原 75）；`moon check --target wasm-gc` **0 警告**（原 11）；`moon test --target wasm-gc` 维持 **175/175** 全绿。
+
 ## [Unreleased] — P0/P1 性能硬化（fuzzy_match 热路径）
 
 ### Changed
