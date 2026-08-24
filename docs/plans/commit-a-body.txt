@@ -1,0 +1,18 @@
+docs(P10)+chore: 2026 标准对齐精修 + 修 P9 over-defensive try
+
+- AGENTS.md: ISO 17100 行加 ISO/AWI 17100 2025-07-22 stage 20.00 注脚
+  (翻译服务要求正在修订, 预期 2026 末或 2027 初新版);
+  EU AI Act Art. 50 段补 Commission Guidelines C(2026) 5054 final
+  (2026-07-20) 引用 + MQM Council RFC-1-20260802 编号
+  (机器翻译明确落入 standard-editing 豁免);
+  Aider harness 行加 2026-06 复核现实注脚
+  (Aider 0.86.x 仍无原生 MCP, 社区桥接, 配置文件 forward-compat 保留)
+- cmd/service/tm_store.mbt: 删 P9 加的 from_json try/catch 包裹
+  (MoonBit 0.1.20260724 的 from_json 不会抛错,
+   编译器在 native target 判 unused_try; 改直调,
+   损坏 JSON 走 from_json 缺省字段路径得空壳引擎, 同 P9 韧性目标)
+
+moon check --target native: 0 warnings
+moon check --target wasm-gc: 0 warnings
+moon test --target wasm-gc: 175/175
+validate-harness-configs: 13/13

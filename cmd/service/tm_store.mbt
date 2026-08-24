@@ -42,16 +42,12 @@ async fn load_store() -> Unit {
     match parsed {
       None => println("警告: TM 存储解析失败，使用空引擎")
       Some(j) => {
-        // P9 韧性：from_json 对结构损坏的 JSON 可能 panic；包裹后降级为空引擎而非崩溃启动。
-        //   tm_store.json 由本服务原子写入，正常必为良构；仅磁盘损坏/手改异常时会触发此兜底。
-        let loaded = try { Some(@lib.ProphecyEngine::from_json(j)) } catch { _ => None }
-        match loaded {
-          Some(e) => {
-            engine_ref.val = e
-            println("已加载 TM 存储: " + TM_STORE_PATH)
-          }
-          None => println("警告: TM 存储结构损坏，使用空引擎")
-        }
+        // P10 修订：MoonBit 0.1.20260724 的 from_json 不会抛错（按字段缺失走默认值，无 panic 路径），
+        //   原 P9 的 try/catch 被编译器判 unused_try（P9 当时是过防御）。保留对良构 JSON 的直调：
+        //   若文件被手改异常，from_json 会用缺省字段构造一个空壳引擎而不是崩溃，效果等同 P9 目标。
+        let e = @lib.ProphecyEngine::from_json(j)
+        engine_ref.val = e
+        println("已加载 TM 存储: " + TM_STORE_PATH)
       }
     }
   } else {

@@ -78,7 +78,7 @@ moon test --target wasm-gc        # 175/175 green (P6 hardening + 子包重组 �
 | **Roo Code** | VS Code → Roo Code → MCP → Add Server (HTTP transport) | `docs/harness-configs/roo-code.json` |
 | **Windsurf / Cascade** | `~/.windsurf/mcp.json` (use `serverUrl` + `type: "http"`) | `docs/harness-configs/windsurf.json` |
 | **OpenAI Codex CLI** (≥ 0.21) | `~/.codex/config.toml` or `<repo>/.codex/config.toml` (≥ 0.46 needs `transport = "http"`) | `docs/harness-configs/codex.toml` |
-| **Aider** (≥ 0.86) | `~/.aider.conf.yml` or `<repo>/.aider.conf.yml` | `docs/harness-configs/aider.conf.yml` |
+| **Aider** (≥ 0.86) | `~/.aider.conf.yml` or `<repo>/.aider.conf.yml` | `docs/harness-configs/aider.conf.yml` (aspirational — see footnote) |
 | **Sourcegraph Cody** | Cody → Settings → MCP Servers — *deprecated 2025-08, use other harness* | `docs/harness-configs/cody.json` |
 | **Zed** | `~/.config/zed/settings.json` under `context_servers` (≥ 0.150 uses `url` field) | `docs/harness-configs/zed.json` |
 | **GitHub Copilot (Coding Agent)** | `.github/workflows/copilot-setup-steps.yml` (snippet, runner caveat) | `docs/harness-configs/github-copilot.yml` |
@@ -86,6 +86,8 @@ moon test --target wasm-gc        # 175/175 green (P6 hardening + 子包重组 �
 All clients use the same MCP shape. The only thing that varies is the config
 file path. After `scripts/run.ps1` is up, all clients should be able to
 `tools/list` and see the 25 tools.
+
+> **Aider 现实注脚（2026-06 复核）**：`docs/harness-configs/aider.conf.yml` 仍按 `mcp_servers` 块保留配置以**追踪 Aider 官方 MCP 提案**。Aider 0.86.x 官方 config reference **未列 MCP 选项**（MCP PRs 已 closed unmerged，per WeAreWarp 2026-06 audit）；社区 `@poai/mcpm-aider` 桥接可用但属 third-party / experimental。当前 yimai 对 Aider 用户的最稳路径是 **aider `--run 'curl ... /mcp'`**（直调 + JSON-RPC）或等待 Aider 合并原生支持。配置保留作 forward-compat；Aider 合并后只需把 `aider.conf.yml` 的 `mcp_servers` 块调整为 Aider 实际接受的 schema 即可。
 
 > 📁 **Full sample set** (one file per harness + per-harness install path
 > table) lives under [`docs/harness-configs/`](./docs/harness-configs/README.md).
@@ -191,7 +193,7 @@ ISO-conformant pipelines:
 
 | Standard | What it covers | How yimai fits |
 |---|---|---|
-| **ISO 17100:2015** (Translation services — Requirements) | Translator competence, project management, technical resources, post-delivery feedback | `observe`/`predict` + `reward` give the post-delivery feedback loop; `retrieve_prompt` injects bilingual context into the LLM step; `consolidate` is the meta-cognitive review that ISO 17100 §5.5 expects for "technical revision" |
+| **ISO 17100:2015** (Translation services — Requirements) | Translator competence, project management, technical resources, post-delivery feedback. **Under revision**: `ISO/AWI 17100` entered TC/SC work programme at **stage 20.00 on 2025-07-22** (new project approved); expected topics include MT/AI integration, second-pair-of-eyes scope, and possible merger with ISO 18587. yimai maps to the 2015 version's structure today and will be re-evaluated when the new edition publishes. | `observe`/`predict` + `reward` give the post-delivery feedback loop; `retrieve_prompt` injects bilingual context into the LLM step; `consolidate` is the meta-cognitive review that ISO 17100 §5.5 expects for "technical revision" |
 | **ISO 18587:2017** (Post-editing of machine translation output) | MTPE workflow, post-editor competence, output quality | `qe_auto` (QE + MQM tagging) and `bleu`/`chrf` measure MT output before/after post-edit; `retrieve_prompt` injects TM hits into the post-edit LLM step |
 | **ISO 30042:2019 / TBX3** (TermBase eXchange, v3 dialect) | TermBase XML schema for terminology exchange (TBX3 v3.0, not TBX2 v2.0 — namespace and structure changed) | `load_tbx` parses ISO 30042-compliant `<martif>/<termEntry>` XML; `add_tm` + `check_terms` enforce term consistency (the "TB" half of TM/TB) |
 | **ISO 11669:2024** (Translation projects — General guidance) | Project lifecycle, deliverables, sign-off — full standard (replaced ISO/TS 11669:2012) | `predict` is the per-step next-action recommender; `consolidate` is the project-completion review |
@@ -222,13 +224,13 @@ not numerically comparable; convert via the formula.
 | **W3C ITS 2.0** (Internationalization Tag Set) | Markup-level metadata for translation, terminology, language identification | Out of scope for the engine itself; consume from the host CMS/app, push translated strings through `add_tm` |
 | **Model Context Protocol `2025-11-25`** (Anthropic / OpenAI / community) | Streamable HTTP + JSON-RPC 2.0 standard for tool-calling. **Note**: spec 演进见下方「2025–2026 前沿更新」；我们停留在 `2025-11-25`（纯本地、无鉴权、广 harness 兼容），迁移 0.2.0 再议。 | `POST /mcp` is the spec-compliant MCP server; see [`docs/harness-configs/`](./docs/harness-configs/README.md) for client config |
 
-### 2025–2026 前沿更新（联网核查，2026-08 增补）
+### 2025–2026 前沿更新（联网核查，2026-08 增补；P10 2026-08-24 增订 ISO 17100 修订立项 + EU AI Act Guidelines 编号 + MQM RFC-1 + Aider MCP 复核）
 
 > 下列为 2025–2026 年国际翻译/协议生态的关键演进，已据此校准 yimai 的对齐姿态。
 > yimai 仍是技术构建块（library + local service），以下为「adopter 集成指南」而非认证声明。
 
 - **MQM 评分模型正式化（2025）** — MQM Council 于 **2025-04** 发布 **Linear Calibrated Scoring Model** 与 **Non-Linear Scoring Model**（此前仅公布原始评分模型）；**2025-06**《Multi-Range Theory of Translation Quality Measurement》提出跨三档样本量（含单句级）的通用测量法，并主张极小样本用 **Statistical Quality Control**。MQM Core 现含 **39 种 error type**（MQM Full 更多）。yimai 的 `severity_score`（None=0/Minor=1/Major=5/Critical=10）保持与 MQM Core 一致；adopter 若需接入上述新评分模型，建议在 `qe_auto` 外层做分数换算。
-- **EU AI Act Article 50 机器翻译标注（2026-08-02 生效）** — 法规要求对 AI 生成内容作来源标注；但 Commission 指南将**机器翻译排除在 provider 标注义务之外**，而**面向公共利益的文本**的 deployer 标注义务另有不同规则，且译文不自动继承源文编辑清关。yimai 作为本地引擎不代行标注，但 adopter 在欧盟公利益场景部署时应自行补标注层。
+- **EU AI Act Article 50 机器翻译标注（2026-08-02 生效）** — 法规要求对 AI 生成内容作来源标注；**Commission Guidelines C(2026) 5054 final（2026-07-20）** 在「standard editing 豁免清单」中**明文列入**「AI-generated translations of text」——机器翻译输出**通常不触发** Article 50(2) 的 provider 端机器可读标注义务。但 Article 50(4) 的 deployer 端披露义务在「公利益文本」场景独立成立（除非有实质性 human review / editorial responsibility）；译文不自动继承源文编辑清关。罚则上限：EUR 15 M 或全球年营业额 3%（取高）。yimai 作为本地引擎不代行标注，但 adopter 在欧盟公利益场景部署时应自行补标注层。**MQM Council 同步发布 *MQM RFC-1-20260802*（DOI 10.5281/zenodo.21765333）**给出详细解读，与 Commission 指南一致。
 - **MCP `2026-07-28` 稳定版（2026-07-28 发布）** — 史上最大重构：**无状态核心**，`initialize` 握手 + `Mcp-Session-Id` **移除**，改每请求 `_meta` 自描述；新增 `server/discover`；`Mcp-Method`/`Mcp-Name` 头成为路由强制项；`tools/list` 等结果可缓存（`ttlMs`+`cacheScope`）；Authorization 向 OAuth 2.1 靠拢（RFC 9207 issuer 校验，弃用 DCR）；Roots/Sampling/Logging 进入 **Deprecated**（≥12 个月窗口，最早 ~2027-07-28 才可考虑移除）。
   - **yimai 决策：停留在 `2025-11-25`**。理由：① 纯本地、绑定 `127.0.0.1`、无鉴权，stateless/多实例横向扩容诉求不成立；② 当前 13 个 harness（Claude Desktop / Cursor / Codex / Cline / 等）均基于 `2025-11-25` 的 `initialize` 握手消费，贸然切 `2026-07-28` 会断开现有客户端；③ 规范明确「仅本机 stdio / 无远程扩容 / 无复杂网关」场景可暂不升级。迁移将在 0.2.0 视 adopter 需求评估（dual-era 兼容优先）。
   - **但已落实 `2025-11-25` 的本地安全要求**：`cmd/service` 全链路（REST + `/mcp`）新增 **Origin 头校验（DNS 重绑定防护）**——拒绝非回环 Origin（如 `https://evil.com`），放行无 Origin（curl/CLI）、`null`、以及 `127.0.0.1`/`localhost`/`[::1]`。详见「Code conventions → Local-server security」。
