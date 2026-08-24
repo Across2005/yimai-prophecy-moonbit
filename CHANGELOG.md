@@ -16,6 +16,68 @@ since `0.1.0`.
 > their own dated headers below. Future 0.2.0 release will fold them into a
 > single dated version.
 
+## [Unreleased] — P10 引擎拆分 + 安全兼容性修复 + 文档精修
+
+### Added
+- **引擎按主题拆分为 8 个根 `.mbt` 文件**（P10 commit B）— 原 3619 行 `engine.mbt`
+  按 D1–D8 + #22 TM/TB + #21 WAL 主题拆为 8 个根 `.mbt` 文件，同 `@lib` 包，调用点
+  零修改：
+
+  | 文件 | 行数 | 主题 |
+  |---|---:|---|
+  | `engine.mbt` | 590 | 常量 + struct + JSON I/O + make + to_json/from_json (schema 契约根) |
+  | `engine_index.mbt` | 226 | TM TF-IDF + term 倒排索引 |
+  | `engine_learn.mbt` | 912 | remember/observe/predict/recall + value + reward (D1–D8) |
+  | `engine_consolidate.mbt` | 237 | consolidate + restore + WAL (D6 + #21) |
+  | `engine_tm.mbt` | 456 | add_tm + fuzzy + concordance + TBX (#22) |
+  | `engine_mqm.mbt` | 501 | MQM/QE + 格式保真 + OCR + batch (#2-#5) |
+  | `engine_io.mbt` | 212 | TMX/XLIFF + metrics + drift (#6-#7) |
+  | `engine_ops.mbt` | 518 | style/back_align + 主动学习/联邦/蒸馏/可观测 |
+
+  复现脚本 `scripts/split_engine.py`（一次性，不入正式 `scripts/`）。
+  AGENTS.md "Project layout" 段加 P10 拆分说明。
+
+- **`is_loopback_hostport` 提取**（P10 commit B）— `cmd/service/routes.mbt` 抽出
+  单独函数显式处理 IPv6 `[host]:port` 形式（P9 隐藏 bug 修复，见下 Fixed）。
+
+- **P10 审计 doc** — `docs/plans/2026-08-24-p10-round.md` 含安全/质量/harness/翻译标准
+  5 维审计 + 验证矩阵。
+
+### Fixed
+- **`is_safe_origin` IPv6 解析 bug（P9 隐藏）** — P9 加的 `host.has_prefix("[::1]")`
+  对 `http://[::1]:8787` 实际永远 false（`host` 经 `split(":")` 后是 `"["`），IPv6 环路
+  origin **被误拒**。P10 抽 `is_loopback_hostport` 显式拆 `[…]:port` 形式，当前
+  `127.0.0.1` 绑定不受影响（请求到不了），但若未来绑 `0.0.0.0` 或启用 IPv6 双栈，
+  本地 `[::1]` 浏览器客户端会工作。属"提高兼容性"修复。
+
+### Changed
+- **`load_store` 删 P9 过防御 try/catch**（P10 commit A）— MoonBit 0.1.20260724 的
+  `from_json` 走字段缺失默认路径不抛错，原 P9 加的 `try { Some(from_json(j)) } catch`
+  在 native target 触发 `unused_try` 警告。改直调，损坏 JSON 走缺省字段得空壳引擎
+  （同 P9 韧性目标，行为等价）。
+
+- **AGENTS.md 文档精修**（P10 commit A）：
+  - ISO 17100 行加 `ISO/AWI 17100` 2025-07-22 stage 20.00 修订立项注脚
+  - EU AI Act Art 50(2) 段补 **Commission Guidelines C(2026) 5054 final** (2026-07-20)
+    引用 + MQM Council **RFC-1-20260802** (DOI 10.5281/zenodo.21765333) — 机器翻译
+    明确列入 standard-editing 豁免清单
+  - Aider harness 行加 2026-06 复核现实注脚（Aider 0.86.x 仍**无原生 MCP**；
+    MCP PRs closed unmerged，配置文件 forward-compat 保留）
+
+### Docs
+- AGENTS.md "Project layout" 段加 P10 引擎拆分 8 文件表
+- AGENTS.md "Useful entry points" 表重写为按 engine*.mbt 主题列
+- `docs/plans/2026-08-24-p10-round.md` P10 增量审计 doc
+
+### Test & Build
+- `moon check --target native` 0 警告 0 错误
+- `moon check --target wasm-gc` 0 警告
+- `moon test --target wasm-gc` 维持 **175/175** 全绿
+- `moon test --target native` 175/175（含 `cmd/service` 服务测试）
+- `validate-harness-configs.ps1` 维持 **13/13** PASS
+
+## [Unreleased] — P9 安全硬化（DNS 重绑定防护 + 启动韧性）
+
 ## [Unreleased] — P9 安全硬化（DNS 重绑定防护 + 启动韧性）
 
 ### Added

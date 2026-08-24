@@ -166,6 +166,24 @@ P5 仓库整理（2026-08）：所有新增文件必须落到合适目录，**�
 > （`cmd/<name>/`、`tests/<sub>/`、以及按领域新建的功能 sub-package），而非继续往根目录堆文件。
 > 这正是「尽量以代码打包进文件夹的形式编程」在 MoonBit 下的正确落地方式。
 
+> **P10 引擎文件按主题拆分**（同包多文件，MoonBit 0.1.20260724 支持，@lib 别名零变化）—
+> P10 把原 3619 行 `engine.mbt` 按 D1–D8 + #22 TM/TB + #21 WAL 主题拆为 8 个根 `.mbt` 文件：
+>
+> | 文件 | 行数 | 主题 |
+> |---|---:|---|
+> | `engine.mbt` | 590 | 常量 + struct + JSON I/O + make + to_json/from_json (schema 契约根) |
+> | `engine_index.mbt` | 226 | TM TF-IDF + term 倒排索引 |
+> | `engine_learn.mbt` | 912 | remember/observe/predict/recall + value + 偏置/对比学习/attention/reward |
+> | `engine_consolidate.mbt` | 237 | consolidate 4 段 + restore + WAL 增量日志 |
+> | `engine_tm.mbt` | 456 | add_tm + fuzzy 家族 + concordance + load_tbx + enforce/check |
+> | `engine_mqm.mbt` | 501 | MQM/QE + 格式保真 + OCR 桩 + 区域对齐 + batch_apply |
+> | `engine_io.mbt` | 212 | TMX/XLIFF 解析导出 + metrics + drift_report |
+> | `engine_ops.mbt` | 518 | style/back_align/term_conflicts/retrieve_for_prompt + 主动学习/联邦/蒸馏/可观测 |
+>
+> 主题分组降低单文件体积（最大 912 行 vs 原 3619），调用点零修改；to_json/from_json
+> 留在 `engine.mbt` 是因为它是状态 schema 事实契约，跨会话恢复依赖单一事实源。
+> 复现脚本 `scripts/split_engine.py` 一次性使用，已加 CHANGELOG 引用。
+
 | 文件类型 | 落点 | 命名规范 |
 |---|---|---|
 | Lib 源文件（pub 导出） | 根目录 | `engine.mbt` / `util.mbt` / `yimai_prophecy_moonbit.mbt`（按需新建） |
@@ -254,7 +272,14 @@ not numerically comparable; convert via the formula.
 
 | File | Purpose |
 |---|---|
-| `engine.mbt` | all engine methods (fuzzy_match L1878, check_terms L2184, predict, recall, …) |
+| `engine.mbt` (root lib) | constants + struct + JSON I/O + make + to_json/from_json; 8 个 engine*.mbt 各负责一个主题（见上方"Project layout"） |
+| `engine_index.mbt` | TM TF-IDF + term 倒排（fuzzy 倒排剪枝与 enforce/check 加速） |
+| `engine_learn.mbt` | remember/observe/predict/recall + value + 偏置/对比学习/attention/reward (D1–D8) |
+| `engine_consolidate.mbt` | consolidate 4 段 + restore + WAL (D6 + #21) |
+| `engine_tm.mbt` | add_tm + fuzzy 家族 + concordance + load_tbx + enforce/check (#22) |
+| `engine_mqm.mbt` | MQM/QE + 格式保真 + OCR + 区域对齐 + batch_apply (#2-#5) |
+| `engine_io.mbt` | TMX/XLIFF 解析导出 + metrics + drift (#6-#7) |
+| `engine_ops.mbt` | style + back_align + term_conflicts + retrieve_for_prompt + 主动学习/联邦/蒸馏/可观测 |
 | `cmd/service/routes.mbt` | REST handlers + static file serving + `/mcp` branch |
 | `cmd/service/mcp.mbt` | MCP JSON-RPC layer (initialize/tools/list/tools/call) |
 | `cmd/service/tm_store.mbt` | load/save persistence (atomic write) |

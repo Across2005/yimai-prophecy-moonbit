@@ -1,0 +1,37 @@
+refactor(P10): engine.mbt 拆 8 主题文件 + is_safe_origin IPv6 fix
+
+## engine.mbt 拆分
+- 3619 行单文件 → 8 个根 .mbt 文件 (同 @lib 包, 调用点零修改)
+- engine.mbt (590): 常量+struct+JSON I/O+make+to_json/from_json (schema 契约根)
+- engine_index.mbt (226): TM TF-IDF + term 倒排
+- engine_learn.mbt (912): remember/observe/predict/recall + value + reward (D1-D8)
+- engine_consolidate.mbt (237): consolidate + restore + WAL (D6 + #21)
+- engine_tm.mbt (456): add_tm + fuzzy + concordance + load_tbx (#22)
+- engine_mqm.mbt (501): MQM/QE + 格式保真 + OCR + batch (#2-#5)
+- engine_io.mbt (212): TMX/XLIFF + metrics + drift (#6-#7)
+- engine_ops.mbt (518): style/back_align + AL/fed/distill/observability
+
+为什么根目录不挪子目录: MoonBit 0.1.20260724 限制 sub-package 互不 import
+主包符号 (@lib.X), 跨测试/服务/main 大量调用点, 挪子目录会全仓库 import 重写。
+P10 拆分是 MoonBit 限制下"主题内聚"最优解。
+
+复现脚本 scripts/split_engine.py (一次性, 留作审计 trail)
+
+## is_safe_origin IPv6 解析 bug (P9 隐藏)
+- P9 加的 host.has_prefix("[::1]") 对 http://[::1]:8787 永远 false
+  (host 经 split(":") 后是 "[")
+- IPv6 环路 origin 被误拒 (当前 127.0.0.1 绑定不影响, 但若绑 0.0.0.0/启用双栈会触发)
+- P10 抽 is_loopback_hostport 显式处理 [host]:port 形式
+
+## docs/AGENTS.md
+- 加 P10 拆分 8 文件表 (Project layout 段)
+- 重写 Useful entry points 表按主题列
+- docs/plans/2026-08-24-p10-round.md P10 增量审计 doc
+- CHANGELOG.md P10 段
+
+## 验证
+- moon check --target native: 0 warnings
+- moon check --target wasm-gc: 0 warnings
+- moon test --target wasm-gc: 175/175
+- moon test --target native: 175/175 (含 cmd/service)
+- validate-harness-configs: 13/13

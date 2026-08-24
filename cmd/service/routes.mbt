@@ -227,12 +227,17 @@ fn is_safe_static_path(rel : String) -> Bool {
   true
 }
 
-// P9 安全加固：DNS 重绑定防护（MCP 2025-11-25 Streamable HTTP 安全要求）
+// P9 安全加固 + P10 修订：DNS 重绑定防护（MCP 2025-11-25 Streamable HTTP 安全要求）
 //   本地 MCP/REST server 必须校验 Origin，防止恶意网页借 DNS 重绑定访问 127.0.0.1:8787。
 //   放行：无 Origin（curl / CLI / PowerShell Invoke-RestMethod 不发送）、null origin、
 //   以及 host ∈ {127.0.0.1, localhost, [::1]} 的回环地址；其余一律拒绝（含 https://evil.com）。
 //   注意：浏览器按真实页面 origin 发送 Origin，攻击者的跨站请求无法伪造为回环 origin，
-//   故“回环 host 白名单”即可阻断 DNS 重绑定；端口对环路判定无关，不限制。
+//   故"回环 host 白名单"即可阻断 DNS 重绑定；端口对环路判定无关，不限制。
+//
+//   P10 修订：原版 IPv6 解析有 bug — 对 `http://[::1]:8787`：
+//     `hostport.split(":")` 得 `["[", "", "1]", "8787"]`，`host = "["`，
+//     `host.has_prefix("[::1]")` 恒 false，IPv6 回环被误拒。
+//   修复：用 is_loopback_hostport 解析 IPv6 [host]:port 与 IPv4/hostname:port 两种格式。
 fn is_safe_origin(req : @http.Request) -> Bool {
   match req.headers.get("Origin") {
     None => true  // 无 Origin：本地 CLI / curl，放行
@@ -241,12 +246,34 @@ fn is_safe_origin(req : @http.Request) -> Bool {
       else {
         let lower = origin.to_lower()
         if !(lower.has_prefix("http://") || lower.has_prefix("https://")) { return false }
-        let rest = if lower.has_prefix("https://") { lower[8:] } else { lower[7:] }
-        let hostport = rest.split("/").to_array()[0]  // 剥离 path
-        let host = hostport.split(":").to_array()[0]  // 取 host（port 对环路判定无关）
-        host == "127.0.0.1" || host == "localhost" || host.has_prefix("[::1]")
+        let rest = if lower.has_prefix("https://") { lower[8:].to_owned() } else { lower[7:].to_owned() }
+        let hostport = rest.split("/").to_array()[0].to_owned()  // 剥离 path
+        is_loopback_hostport(hostport)
       }
     }
+  }
+}
+
+// P10: 判定 hostport 是否回环
+//   IPv6 形式 [host]:port  → 拆 [ 与 ] 取内部 host 比 "::1"
+//   IPv4 / 主机名 :port  →  split(":") 第一个段比 "127.0.0.1" / "localhost"
+//   空 / 仅端口 / 畸形 [xxx → false
+fn is_loopback_hostport(hostport : String) -> Bool {
+  if hostport.length() == 0 { return false }
+  if hostport[0] == '[' {
+    // IPv6 形式 — 找配对的 ']'，取内部内容
+    let chars = hostport.iter().to_array()
+    let mut end = -1
+    for i = 0; i < chars.length(); i = i + 1 {
+      if chars[i] == ']' { end = i; break }
+    }
+    if end <= 0 { return false }  // 缺 ']' 或 '[]' 空内容
+    let inner = hostport[1:end].to_owned()
+    inner == "::1"
+  } else {
+    // IPv4 / 主机名 :port
+    let host = hostport.split(":").to_array()[0]
+    host == "127.0.0.1" || host == "localhost"
   }
 }
 
