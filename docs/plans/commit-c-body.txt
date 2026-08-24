@@ -1,0 +1,13 @@
+docs(P10): 仓库根目录组织说明 (后置整理, 推后落地)
+
+- 解释根目录每类文件"留 / 挪 / 屏蔽"的设计决策:
+  - 源码 (engine*.mbt) 留根: MoonBit sub-package 互不 import 主包符号
+  - IDE 配置目录 (.cursor/.cline/.codex/.roo/.windsurf/.github/.githooks)
+    留根: 各 IDE 按固定路径扫描 MCP 配置
+  - 工具链产物 (_build/ *.mbti .mooncakes/ .qoder*/.mimosa/ tm_store.json
+    .git-credentials .DS_Store 等) 全部 gitignore
+- P10 前 vs 后噪音对比: engine.mbt 3619 -> 590 行 (-84%),
+  最大单文件 3619 -> 912 行 (-75%), 总 .mbt 行 -26%
+- 明确未来 ≥0.2.0 优化方向: engine_learn 进一步拆 / TMX XLIFF 暴露到 /api/*
+  / TBX3 DCA DCT / Project Spec (ISO 11669:2024)
+- 决策记录表 (CR): 5 项关键决策的"原因 / 替代方案"
