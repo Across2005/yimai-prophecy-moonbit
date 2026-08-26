@@ -184,6 +184,24 @@ P5 仓库整理（2026-08）：所有新增文件必须落到合适目录，**�
 > 留在 `engine.mbt` 是因为它是状态 schema 事实契约，跨会话恢复依赖单一事实源。
 > 复现脚本 `scripts/split_engine.py` 一次性使用，已加 CHANGELOG 引用。
 
+> **P11 cmd/service 同包多文件拆分**（同模式，验证 27 REST + 25 MCP 行为零变化）—
+> P11 把 `cmd/service/mcp.mbt` (440) 与 `cmd/service/routes.mbt` (747) 拆为多文件：
+>
+> | 文件 | 行数 | 主题 |
+> |---|---:|---|
+> | `cmd/service/mcp.mbt` | ~280 | 入口：JSON-RPC 构造 + id/method/params + known_tool_names + 5 个 method 处理 + handle_mcp |
+> | `cmd/service/mcp_args.mbt` | ~50 | JSON 字段提取（arg_str/int/num/bool）+ schema_prop |
+> | `cmd/service/mcp_schemas.mbt` | ~110 | 25 个 tool_def 物理隔离 + all_tools |
+> | `cmd/service/mcp_dispatch.mbt` | ~120 | 25 个 invoke_tool 派发物理隔离 |
+> | `cmd/service/routes.mbt` | ~270 | 入口：handle_request dispatch + handle_panic + lookup_route + send_json/error + read_json_or_400/body + serve_static + content_type |
+> | `cmd/service/routes_security.mbt` | ~95 | 5 个 P9 收紧安全 helper（is_safe_origin / is_loopback_hostport / is_safe_static_path / parse_nonnegative_int / content_length_too_large） |
+> | `cmd/service/routes_handlers_query.mbt` | ~250 | 12 个查询/记忆类 handler（fuzzy_match / add_tm / tm_count / check_terms / concordance / qe_auto / mqm_re_annotate / predict / observe / recall / explain / retrieve_prompt） |
+> | `cmd/service/routes_handlers_metrics.mbt` | ~190 | 8 个度量/风格/对齐类 handler（bleu / chrf / style_check / style_report / back_align / term_conflicts / metrics / health）+ 3 json helper |
+> | `cmd/service/routes_handlers_ops.mbt` | ~165 | 6 个运维类 handler（reward / consolidate / fed_export / fed_import / distill_inject / active_learning） |
+>
+> 单文件最大行数从 747 → 270（-64%）；按 REST 端点语义层次（query / mutation / metrics / ops）拆，让 diff 范围最小（加 1 个端点改 query/metrics/ops 中一处，不影响入口）。
+> 评审报告：`docs/plans/2026-08-26-p11-architecture-review.md`。
+
 | 文件类型 | 落点 | 命名规范 |
 |---|---|---|
 | Lib 源文件（pub 导出） | 根目录 | `engine.mbt` / `util.mbt` / `yimai_prophecy_moonbit.mbt`（按需新建） |
@@ -280,8 +298,15 @@ not numerically comparable; convert via the formula.
 | `engine_mqm.mbt` | MQM/QE + 格式保真 + OCR + 区域对齐 + batch_apply (#2-#5) |
 | `engine_io.mbt` | TMX/XLIFF 解析导出 + metrics + drift (#6-#7) |
 | `engine_ops.mbt` | style + back_align + term_conflicts + retrieve_for_prompt + 主动学习/联邦/蒸馏/可观测 |
-| `cmd/service/routes.mbt` | REST handlers + static file serving + `/mcp` branch |
-| `cmd/service/mcp.mbt` | MCP JSON-RPC layer (initialize/tools/list/tools/call) |
+| `cmd/service/routes.mbt` | REST 入口 + dispatch + I/O helper + 静态文件服务（27 endpoint 派发） |
+| `cmd/service/routes_security.mbt` | 5 个 P9 收紧安全 helper（is_safe_origin / is_loopback_hostport / ...） |
+| `cmd/service/routes_handlers_query.mbt` | 12 个查询/记忆类 REST handler |
+| `cmd/service/routes_handlers_metrics.mbt` | 8 个度量/风格/对齐类 REST handler |
+| `cmd/service/routes_handlers_ops.mbt` | 6 个运维类 REST handler |
+| `cmd/service/mcp.mbt` | MCP JSON-RPC 入口（initialize/tools/list/tools/call/dispatch） |
+| `cmd/service/mcp_args.mbt` | JSON 字段提取 + schema_prop |
+| `cmd/service/mcp_schemas.mbt` | 25 个 tool_def + all_tools |
+| `cmd/service/mcp_dispatch.mbt` | 25 个 invoke_tool 派发 |
 | `cmd/service/tm_store.mbt` | load/save persistence (atomic write) |
 | `cmd/service/web/` | front-end workbench (index.html + app.js, no build step) |
 | `scripts/` | setup / build / run / seed / smoke / dev |

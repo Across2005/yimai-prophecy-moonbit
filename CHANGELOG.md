@@ -16,6 +16,96 @@ since `0.1.0`.
 > their own dated headers below. Future 0.2.0 release will fold them into a
 > single dated version.
 
+## [Unreleased] — P11 架构扫描 + 深度评审 + cmd/service 多文件拆分
+
+### Changed
+- **cmd/service/mcp.mbt 拆 4 文件**（P11-B commit B）— 440 行单文件按
+  JSON-RPC 入口 / JSON 提取 / 25 tool schema / 25 tool 派发 4 个职责分离：
+  - `cmd/service/mcp.mbt` (280 行) — 入口：JSON-RPC 构造 + id/method/params
+    提取 + known_tool_names + is_known_tool + check_required_fields + 5 个
+    method 处理（handle_initialize / handle_tools_list / handle_tools_call
+    / dispatch / handle_mcp）
+  - `cmd/service/mcp_args.mbt` (50 行) — 5 个 JSON 提取 helper（arg_str /
+    arg_int / arg_num / arg_bool / schema_prop）
+  - `cmd/service/mcp_schemas.mbt` (110 行) — tool_def + all_tools（25 个
+    `tool_def(...)` 调用物理隔离）
+  - `cmd/service/mcp_dispatch.mbt` (120 行) — invoke_tool（25 个
+    `else if name ==` 分支物理隔离）
+  - 单文件最大行数 440 → 280（-36%），未来加 tool 改 mcp_schemas.mbt 一处
+  - 同包 cmd/service 零 import 改动，沿用 P10 同包多文件模式
+- **cmd/service/routes.mbt 拆 5 文件**（P11-C commit C）— 747 行单文件按
+  HTTP 入口 / 安全 / 12 查询 handler / 8 度量 handler / 6 运维 handler 5
+  个职责分离：
+  - `cmd/service/routes.mbt` (270 行) — 入口：handle_request dispatch
+    + handle_panic + lookup_route + extract_base_path + send_json +
+    send_error + read_json_or_400 + read_json_body + serve_static +
+    content_type
+  - `cmd/service/routes_security.mbt` (95 行) — 5 个 P9 收紧安全 helper
+    （is_safe_origin + is_loopback_hostport + is_safe_static_path +
+    parse_nonnegative_int + content_length_too_large）
+  - `cmd/service/routes_handlers_query.mbt` (250 行, 12 handler) —
+    fuzzy_match / add_tm / tm_count / check_terms / concordance /
+    qe_auto / mqm_re_annotate / predict / observe / recall / explain /
+    retrieve_prompt
+  - `cmd/service/routes_handlers_metrics.mbt` (190 行, 8 handler + 3
+    json helper) — bleu / chrf / style_check / style_report /
+    back_align / term_conflicts / metrics / health + json_str / json_int
+    / json_num
+  - `cmd/service/routes_handlers_ops.mbt` (165 行, 6 handler) — reward /
+    consolidate / fed_export / fed_import / distill_inject /
+    active_learning
+  - 单文件最大行数 747 → 270（-64%），按 REST 端点语义层次（query /
+    mutation / metrics / ops）拆，让 diff 范围最小
+  - 27 REST 端点 + 25 MCP tools 行为零变化（smoke test 全通验证）
+- **util.mbt 4 个 helper 升 pub**（P11-A commit A）— `get_str` / `get_num`
+  / `get_obj` / `get_field` 从 fn 升为 pub fn。`get_field` 是新升 pub
+  （原为私有），是 `get_obj` 的「不过滤类型」版本——`get_obj` 只对 Object
+  字段有效，对 Array 字段会返回空 obj，`get_field` 保留原始 Json 类型
+- **cmd/main/main.mbt 复用 @lib helper**（P11-A commit A）— 删 jstr /
+  jnum（与 @lib.get_str / @lib.get_num 完全等价），保留 3 行 jarr
+  包装（基于 @lib.get_field + Json::Array 拆解）。共改 11 个调用点
+- **_test_helpers.mbt 漂移主动防御**（P11-D commit D）—
+  - `scripts/ci-check-test-helpers.ps1` (53 行) — 用 SHA256 校验
+    `tests/core/_test_helpers.mbt == tests/corpus/_test_helpers.mbt`
+    强制相等；feature 是子集不强制但提示手动验证
+  - `.githooks/pre-commit` 末尾追加 ci-check 阶段（pwsh 缺时 WARN
+    不阻断 commit，提示安装 PowerShell）
+  - `_test_helpers.mbt` 顶部注释加 CI 校验说明
+  - 顺手修了 core/corpus 真实漂移（2 处 1 空行差异）
+
+### Added
+- **P11 评审报告** `docs/plans/2026-08-26-p11-architecture-review.md` — 6 条
+  Finding（4 实施 / 1 不实施 / 1 范围外）+ 4 个 P11 commit 落地细节 + 经验
+  教训 + 0.2.0/0.3.0 路线图
+- **R15 字节验证方法**（P11-A）— `cmd_main.before.txt` 与 `cmd_main.after.txt`
+  字节对比验证 `moon run cmd/main` 输出与改动前**完全相同**（2007 bytes,
+  `fc.exe /B` 0 差异）
+
+### Non-goals（评审中明确不实施）
+- **engine_ops.mbt 主题混杂**（"style" + "运维" 4 个语义层次）— P10 commit B
+  已审视，`engine_ops.mbt` 名字本身是「其他/杂」占位符；进一步拆分引入
+  「剩余杂项层」违反命名一致性。CHANGELOG P10 段已记录，0.3.0 重新评估
+- **0.2.0 路线图项**（parse_tmx / parse_xliff / export_tmx 端点暴露 +
+  load_tbx SAX 重构 + export_tbx TBX3 DCA+DCT + Project Spec ISO
+  11669:2024）— 全部在范围外，AGENTS.md "Roadmap" 段已声明
+
+### Docs
+- AGENTS.md "Project layout" 段增 P11 cmd/service 多文件拆分表
+  （mcp 4 文件 + routes 5 文件）
+- AGENTS.md "Useful entry points" 表增 7 个新文件行
+- CHANGELOG.md（本段）记录 P11 全部 commit
+- `docs/plans/2026-08-26-p11-architecture-review.md` 完整评审报告
+
+### Test & Build
+- `moon check --target native` 0 警告
+- `moon check --target wasm-gc` 0 警告
+- `moon test --target wasm-gc` 维持 **175/175** 全绿
+- `moon test --target native` 175/175（含 `cmd/service` 服务测试）
+- `pwsh -File scripts/ci-check-test-helpers.ps1` exit 0
+- 27 REST 端点 smoke test 全通（11 返 200，16 必填校验返 400 符合设计）
+- 25 MCP tools `tools/list` + `tools/call ping` 验证通过
+- `validate-harness-configs.ps1` 维持 **13/13** PASS
+
 ## [Unreleased] — P10 引擎拆分 + 安全兼容性修复 + 文档精修
 
 ### Added
