@@ -9,6 +9,11 @@
 //
 // DRY 缺口：与 tests/core/yimai_prophecy_moonbit_accept_test.mbt
 // 顶层 helper 同步修改。已加注释提醒。
+//
+// P11-D CI 防御：scripts/ci-check-test-helpers.ps1 在 pre-commit 阶段
+// 强制 core == corpus 哈希一致（feature 是子集不强制相等）。修改本文件
+// 时必须同步 tests/corpus/_test_helpers.mbt；否则 commit 会被 .githooks/pre-commit
+// 拒收。已加注释提醒。
 // ---------------------------------------------------------------
 
 
@@ -21,7 +26,6 @@ pub let canon : Array[(String, String)] = [
   ("质检术语与风格一致性", "instruction"),
   ("导出中英双语交付物", "instruction"),
 ]
-
 // 8 个真实项目主题（用于批量训练 / 冷启动泛化）
 pub let topics : Array[String] = [
   "新能源汽车白皮书",
@@ -33,6 +37,7 @@ pub let topics : Array[String] = [
   "储能系统规范",
   "智能驾驶标准",
 ]
+
 
 // @json.parse 在本版本返回 `Json raise ParseError`（抛异常，非 Result）。
 // 我们只在 JSON 往返场景解析自身 to_json 产出，必然合法；此处用 try/catch

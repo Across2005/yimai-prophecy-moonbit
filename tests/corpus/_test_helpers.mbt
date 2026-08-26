@@ -9,6 +9,11 @@
 //
 // DRY 缺口：与 tests/core/yimai_prophecy_moonbit_accept_test.mbt
 // 顶层 helper 同步修改。已加注释提醒。
+//
+// P11-D CI 防御：scripts/ci-check-test-helpers.ps1 在 pre-commit 阶段
+// 强制 core == corpus 哈希一致（feature 是子集不强制相等）。修改本文件
+// 时必须同步 tests/corpus/_test_helpers.mbt；否则 commit 会被 .githooks/pre-commit
+// 拒收。已加注释提醒。
 // ---------------------------------------------------------------
 
 

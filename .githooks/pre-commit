@@ -22,4 +22,13 @@ echo "== [pre-commit] moon check =="
 echo "== [pre-commit] moon test --target wasm-gc =="
 "$MOON" test --target wasm-gc || { echo "[FAIL] moon test" 1>&2; exit 1; }
 
+# P11-D 增量：_test_helpers.mbt 漂移主动防御（MoonBit sub-package 跨包 import 不支持，
+#   helper 必须在每个子包内 inline 一份，根因无法在 MoonBit 限制下根除；CI 校验拦截）
+echo "== [pre-commit] ci-check-test-helpers =="
+if command -v pwsh >/dev/null 2>&1; then
+  pwsh -NoProfile -NonInteractive -File scripts/ci-check-test-helpers.ps1 || { echo "[FAIL] ci-check-test-helpers" 1>&2; exit 1; }
+else
+  echo "[WARN] pwsh not found; skipping ci-check-test-helpers (consider installing PowerShell)" 1>&2
+fi
+
 echo "== [pre-commit] regressive gate passed =="

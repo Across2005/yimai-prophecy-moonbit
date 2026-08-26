@@ -4,6 +4,10 @@
 // 被判 unused_package 告警；corpus/core 两包正是靠各自的 _test_helpers.mbt 消除同类告警。
 // 现把 routes_test 的 build_known_handlers / known_handlers 上移至此，
 // @lib 在 lib 目标有真实使用，告警消除且行为零变化。
+//
+// P11-D CI 防御：本文件是 core/corpus 的子集（feature 包 helper 需求较少），
+// scripts/ci-check-test-helpers.ps1 校验 core == corpus（强制相等），
+// feature 不强制相等但需手动验证子集关系。
 
 // routes.mbt::handle_request 的 match 派发全集
 //   P4：从 routes_meta 派生（取每项的 handler_name）消除硬编码 26 字符串，
