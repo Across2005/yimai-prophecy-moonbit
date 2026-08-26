@@ -811,7 +811,8 @@ pub fn obj(pairs : Array[(String, Json)]) -> Json {
 }
 
 // 取对象字段为字符串，缺省 ""
-fn get_str(j : Json, key : String) -> String {
+//   P11-A 升 pub：cmd/main/main.mbt 复用替换自含 jstr，减少跨包 helper 漂移
+pub fn get_str(j : Json, key : String) -> String {
   match j {
     Json::Object(m) =>
       match m.get(key) {
@@ -823,7 +824,8 @@ fn get_str(j : Json, key : String) -> String {
 }
 
 // 取对象字段为数字，缺省 0.0
-fn get_num(j : Json, key : String) -> Double {
+//   P11-A 升 pub：cmd/main/main.mbt 复用替换自含 jnum
+pub fn get_num(j : Json, key : String) -> Double {
   match j {
     Json::Object(m) =>
       match m.get(key) {
@@ -835,7 +837,8 @@ fn get_num(j : Json, key : String) -> Double {
 }
 
 // 取对象字段为对象（Json 对象），缺省空对象
-fn get_obj(j : Json, key : String) -> Json {
+//   P11-A 升 pub：cmd/main/main.mbt 复用替换自含 jarr
+pub fn get_obj(j : Json, key : String) -> Json {
   match j {
     Json::Object(m) =>
       match m.get(key) {
@@ -869,7 +872,10 @@ fn get_str_arr(j : Json, key : String) -> Array[String] {
 }
 
 // 取对象任意字段为原始 Json（缺省空对象），用于原样透传数组/嵌套结构
-fn get_field(j : Json, key : String) -> Json {
+// 取对象字段为原始 Json（任意类型：Object/Array/Number/String 均可）
+//   P11-A 升 pub：cmd/main/main.mbt 的 jarr 包装用它（@lib.get_obj 只对 Object 字段有效，
+//   对 Array 字段会丢成空 obj，get_field 不做类型筛选）
+pub fn get_field(j : Json, key : String) -> Json {
   match j {
     Json::Object(m) =>
       match m.get(key) {

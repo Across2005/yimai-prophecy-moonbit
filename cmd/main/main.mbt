@@ -5,39 +5,15 @@
 
 // ---------------------------------------------------------------------------
 // 演示本地 JSON 访问辅助（仅读取引擎返回的 Json）
+//   P11-A 整理：jstr/jnum 已与 @lib.get_str/get_num 完全等价，删除并复用
+//   @lib 版本避免跨包 helper 漂移。jarr 因为需要把 Json 拆成 Array[Json]
+//   的二次 match 拆解，保留为 3 行本地包装（@lib.get_obj + Json::Array 展开）。
 // ---------------------------------------------------------------------------
 
-fn jstr(j : Json, key : String) -> String {
-  match j {
-    Json::Object(m) =>
-      match m.get(key) {
-        Some(Json::String(s)) => s
-        _ => ""
-      }
-    _ => ""
-  }
-}
-
-fn jnum(j : Json, key : String) -> Double {
-  match j {
-    Json::Object(m) =>
-      match m.get(key) {
-        Some(Json::Number(n, ..)) => n
-        _ => 0.0
-      }
-    _ => 0.0
-  }
-}
-
+// 取对象字段为 Json 数组，缺省空数组
+//   P11-A：基于 @lib.get_field（不过滤类型，保留原始 Json）做 Json::Array 拆解
 fn jarr(j : Json, key : String) -> Array[Json] {
-  match j {
-    Json::Object(m) =>
-      match m.get(key) {
-        Some(Json::Array(a)) => a
-        _ => []
-      }
-    _ => []
-  }
+  match @lib.get_field(j, key) { Json::Array(a) => a; _ => [] }
 }
 
 fn join_texts(arr : Array[String]) -> String {
@@ -57,22 +33,22 @@ fn paths_text(arr : Array[Json]) -> String {
     if i > 0 {
       b.write_string(", ")
     }
-    b.write_string(jstr(arr[i], "from"))
-    b.write_string("(p=" + jnum(arr[i], "p").to_string() + ")")
+    b.write_string(@lib.get_str(arr[i], "from"))
+    b.write_string("(p=" + @lib.get_num(arr[i], "p").to_string() + ")")
   }
   b.to_string()
 }
 
 fn print_preds(p : Json) -> Unit {
-  println("  confidence=" + jnum(p, "confidence").to_string() + "  uncertainty=" + jnum(p, "uncertainty").to_string())
+  println("  confidence=" + @lib.get_num(p, "confidence").to_string() + "  uncertainty=" + @lib.get_num(p, "uncertainty").to_string())
   for x in jarr(p, "predictions") {
-    println("  - prob=" + jnum(x, "prob").to_string() + "  " + jstr(x, "text") + "  | path: " + paths_text(jarr(x, "path")))
+    println("  - prob=" + @lib.get_num(x, "prob").to_string() + "  " + @lib.get_str(x, "text") + "  | path: " + paths_text(jarr(x, "path")))
   }
 }
 
 fn print_recalls(arr : Array[Json]) -> Unit {
   for x in arr {
-    println("  - " + jstr(x, "text") + "  (type=" + jstr(x, "type") + ", score=" + jnum(x, "score").to_string() + ", activation=" + jnum(x, "activation").to_string() + ")")
+    println("  - " + @lib.get_str(x, "text") + "  (type=" + @lib.get_str(x, "type") + ", score=" + @lib.get_num(x, "score").to_string() + ", activation=" + @lib.get_num(x, "activation").to_string() + ")")
   }
 }
 
@@ -118,7 +94,7 @@ fn main {
   }
 
   println("=== 预测命中率 (Hit@3)：预测项在随后被实际观察到的比例 ===")
-  println("predict calls : " + jnum(eng.stats_view(), "predict_calls").to_string())
+  println("predict calls : " + @lib.get_num(eng.stats_view(), "predict_calls").to_string())
   println("hit rate      : " + eng.hit_rate().to_string())
   println("\n=== 固化重放前 stats ===")
   println(eng.stats_view().stringify(indent=2))
@@ -145,9 +121,9 @@ fn main {
   // 进化引擎·感知器：对一条记忆给正反馈，验证其预测价值上升
   println("\n=== reward 反馈机制验证 ===")
   let target = eng.last_context_id()
-  let before = jnum(eng.explain(target), "predictive_value")
+  let before = @lib.get_num(eng.explain(target), "predictive_value")
   let _ = eng.reward(target, 1.0)
-  let after = jnum(eng.explain(target), "predictive_value")
+  let after = @lib.get_num(eng.explain(target), "predictive_value")
   println("反馈前预测价值: " + before.to_string() + " -> 反馈+1.0后: " + after.to_string() + (if after >= before { " | 上升" } else { " | 下降" }))
 
   // 约束契约·回滚验证
