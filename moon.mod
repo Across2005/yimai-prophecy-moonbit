@@ -11,7 +11,7 @@
 
 name = "Across2005/yimai_prophecy_moonbit"
 
-version = "0.1.0"
+version = "0.1.1"
 
 import {
   "moonbitlang/async@0.20.1",
