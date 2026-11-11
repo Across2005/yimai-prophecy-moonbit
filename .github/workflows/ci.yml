@@ -7,14 +7,14 @@
 # on a Windows workstation.
 #
 # Notes:
-#   - `moon check` resolves and downloads dependencies by itself (verified:
-#     removing .mooncakes still resolves moonbitlang/async), so no explicit
-#     fetch step is needed. Do NOT add `moon install` — it requires a SOURCE
-#     argument and always fails without one.
-#   - The toolchain installs `latest`, because versioned artifacts are not
-#     publicly downloadable. If upstream drifts, pin with
-#     MOONBIT_INSTALL_VERSION only after confirming that version's tarball
-#     is reachable.
+#   - `moon check` resolves and downloads dependencies by itself, so no
+#     explicit fetch step is needed. Do NOT add `moon install` — it now means
+#     "install a binary package globally" and requires a <SOURCE> argument.
+#   - Failures are re-emitted as workflow annotations so the diagnostic is
+#     readable from the Checks UI / API without expanding raw logs.
+#   - The toolchain installs `latest` (versioned artifacts are not publicly
+#     downloadable). Pin with MOONBIT_INSTALL_VERSION only after confirming
+#     that version's tarball is reachable.
 #   - Bump EXPECTED_TESTS together with the suite in the same commit.
 
 name: CI
@@ -42,22 +42,45 @@ jobs:
           echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
 
       - name: Show toolchain
-        run: moon version --all
+        run: |
+          moon version --all
+          v=$(moon version 2>&1 | head -1 | tr -d '\r' | sed 's/%/%25/g')
+          echo "::notice title=MoonBit toolchain::$v"
 
       - name: moon check
-        run: moon check
+        run: |
+          set +e
+          moon check 2>&1 | tee "$RUNNER_TEMP/check.log"
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            picked=$(grep -nEi 'error|panic|assert|fail|not found|unbound|mismatch' "$RUNNER_TEMP/check.log" | head -10)
+            if [ -z "$picked" ]; then picked=$(tail -10 "$RUNNER_TEMP/check.log" | nl -ba); fi
+            printf '%s\n' "$picked" | tr -d '\r' | cut -c1-300 | sed 's/%/%25/g' | while IFS= read -r l; do
+              [ -n "$l" ] && echo "::error title=moon check::$l"
+            done
+            exit "$code"
+          fi
 
       - name: moon test (wasm-gc)
         run: |
-          set -o pipefail
+          set +e
           moon test --target wasm-gc 2>&1 | tee "$RUNNER_TEMP/moon-test.log"
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            picked=$(grep -nEi 'error|panic|assert|failed|\[FAIL\]' "$RUNNER_TEMP/moon-test.log" | head -10)
+            if [ -z "$picked" ]; then picked=$(tail -10 "$RUNNER_TEMP/moon-test.log" | nl -ba); fi
+            printf '%s\n' "$picked" | tr -d '\r' | cut -c1-300 | sed 's/%/%25/g' | while IFS= read -r l; do
+              [ -n "$l" ] && echo "::error title=moon test::$l"
+            done
+            exit "$code"
+          fi
 
       - name: Verify test count
         run: |
           if grep -q "passed: ${EXPECTED_TESTS}" "$RUNNER_TEMP/moon-test.log"; then
             echo "OK: ${EXPECTED_TESTS} tests passed"
           else
-            echo "FAIL: expected ${EXPECTED_TESTS} passing tests, got:"
-            grep -E "^Total tests:" "$RUNNER_TEMP/moon-test.log" || echo "  (no summary line found)"
+            summary=$(grep -E "^Total tests:" "$RUNNER_TEMP/moon-test.log" | head -1 | tr -d '\r' | sed 's/%/%25/g')
+            echo "::error title=test count::expected ${EXPECTED_TESTS} passing; got: ${summary:-no summary line}"
             exit 1
           fi
