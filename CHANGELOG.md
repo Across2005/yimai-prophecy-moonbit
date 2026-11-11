@@ -31,16 +31,21 @@ since `0.1.0`.
   `warnings = "-test_unqualified_package"`，与 `core/prelude` 的官方做法一致
   （`_test.mbt` 黑盒测试直呼同包 helper 是刻意设计，非隐患）。
 
+- **`scripts/push.ps1` 改为直连 GitHub** — 原配置走 `ghproxy.net` 代理 URL；本机 ghproxy 证书
+  2026-08 已过期、全局 `insteadOf` rewrite 也已移除，改为 `https://github.com/...` 直连。
+  注意：若其他机器仍保留全局 `url.*.insteadOf` 重写，该直连地址会被再次改写。
+
 ### Fixed
 - **`scripts/ci-check-test-helpers.ps1` 在本机 PowerShell 5.1 下解析崩溃** — 脚本是无 BOM 的
   UTF-8 且含中文/长破折号，Windows PowerShell 5.1 按 OEM 码页（936）读取时字符串终止符被吞，
   报 `UnexpectedToken`，会让 pre-commit 门禁误判失败。改为纯 ASCII（与 `smoke.ps1` 既有约定一致），
-  同步把 `0.1.20260724` 的版本化措辞替换为版本无关表述。`powershell 5.1` 与 `pwsh 7` 均实测通过。
+  并去掉脚本内的版本号措辞（该限制与版本无关）。`powershell 5.1` 与 `pwsh 7` 均实测通过。
 - **`/api/style_report` 空文本被误拒（P1 回归）** — handler 注释声明 `text` 可选，但
   `validate_text_field` 强制非空，令 `{"text":""}`（"只出记忆库分布报告"的合法用法）返回
-  400 `field_empty`。新增 `validate_optional_text_field` / `validate_optional_text_field_or_send`
-  （仅拦超长、允许空串），`handle_style_report` 改用 `with_json_object` + 新校验器。
-  `scripts/smoke.ps1` 由此从 24/25 恢复 25/25。
+  400 `field_empty`。新增 `validate_optional_text_field` / `validate_optional_text_field_or_send`：
+  仅对字符串做 `MAX_TEXT_CHARS` 上限校验，空串与"缺省/非字符串"一律按 `""` 放行（与原 handler
+  行为一致，非字符串不会被新校验拒掉）。`handle_style_report` 同时改用 `with_json_object`。
+  回归覆盖由 `scripts/smoke.ps1` 的 `style_report memory distribution` 用例提供（24/25 → 25/25）。
 
 ### Verified (2026-11-11, 该工具链实测)
 | 门禁 | 结果 |
@@ -51,6 +56,9 @@ since `0.1.0`.
 | `moon build cmd/service --target native` | 成功产出 `service.exe` |
 | `scripts/smoke.ps1` | 25 / 25 passed |
 | 关键指标（未漂移） | Hit@3 = 0.8246；Modern Corpus Hit@3 = 0.7773；BENCH 5K/10K `pruned_acc = full_acc = 1600` |
+
+> 说明：上表 "0 warning" 是在按上游惯例抑制 `test_unqualified_package`（纯风格诊断，见 Changed
+> 第 3 条）之后的结果；`warnings` 是包级设置，未来 `tests/**` 新增文件同样被抑制。
 
 ## [2026-08-26] — P11 架构扫描 + 深度评审 + cmd/service 多文件拆分
 

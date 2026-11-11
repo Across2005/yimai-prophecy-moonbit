@@ -53,12 +53,8 @@ Engine tests (no MSVC needed):
 moon test --target wasm-gc        # 175/175 green
 ```
 
-> **Verified toolchain (2026-11-11)** — `moon 0.1.20261104` / `moonc v0.10.20+65efd5b93` /
-> `moonrun 0.1.20261104`, feature flags `rr_moon_mod` + `rr_moon_pkg` (`moon.mod` 新格式).
-> 该工具链下实测：`moon check` 两目标 0 error 0 warning；wasm-gc 175/175；
-> native 构建出 `service.exe`；`scripts/smoke.ps1` 25/25。升级工具链后若 `Json` 构造报
-> `Type X has no method to_json`，是因为 `Json`/`ToJson` 已由 prelude 统一导出，
-> 改用包级函数 `@json.to_json(x)`（不要用 `.to_json()` 方法式）。
+> **Toolchain floor** — `moon` ≥ `0.1.20261104`, `moonc` ≥ `v0.10.20`.
+> 当前版本的实测数字见 `CHANGELOG.md` → 最新 `[Unreleased]` 段的 Verified 表。
 
 ## Consuming the service
 
@@ -135,7 +131,9 @@ auto-discover the 25 tools via `tools/list`.
   - async calls need **no `await`** (`await` is a reserved word).
   - no top-level `let mut` — use `@ref.Ref[T]` (see `cmd/service/main.mbt`).
   - `Json` is an FFI type: **cannot construct values** like `Json::Object`/`Json::Bool`; build them
-    via `@lib.obj/str_json/num_json/arr_json` (util.mbt) or `Int.to_json()/Bool.to_json()` (builtin ToJson).
+    via `@lib.obj/str_json/num_json/arr_json` (util.mbt).
+  - **从 moon 0.1.20261104 起** `Json` / `ToJson` 由 prelude 统一导出，方法式 `x.to_json()`
+    不再解析；统一用包级函数 `@json.to_json(x)`（`@lib` 内部同理）。
   - `Request.path` includes the full query string — strip `?` before routing (see `extract_base_path`).
   - `@fs.write_file` default `create_mode=TruncateExisting` fails when the file is absent — pass
     `create_mode=@fs.CreateMode::CreateOrTruncate` for first writes.
@@ -173,7 +171,7 @@ P5 仓库整理（2026-08）：所有新增文件必须落到合适目录，**�
 > （`cmd/<name>/`、`tests/<sub>/`、以及按领域新建的功能 sub-package），而非继续往根目录堆文件。
 > 这正是「尽量以代码打包进文件夹的形式编程」在 MoonBit 下的正确落地方式。
 
-> **P10 引擎文件按主题拆分**（同包多文件，MoonBit 0.1.20260724 支持，@lib 别名零变化）—
+> **P10 引擎文件按主题拆分**（同包多文件，MoonBit 0.1.20260724 起支持，@lib 别名零变化）—
 > P10 把原 3619 行 `engine.mbt` 按 D1–D8 + #22 TM/TB + #21 WAL 主题拆为 8 个根 `.mbt` 文件：
 >
 > | 文件 | 行数 | 主题 |
@@ -223,7 +221,7 @@ P5 仓库整理（2026-08）：所有新增文件必须落到合适目录，**�
 | 调试脚本 | **不入仓** | 用完即删；只留可复现的正式脚本进 `scripts/` |
 
 **关键约束**：
-- MoonBit 0.1.20260724 不支持 sub-package 跨包 import：每个 `tests/<sub>/` 是独立 package，**helper fn 必须 inline 在子包内**（共享 helper 写到 `_test_helpers.mbt` + 跨子包各复制一份），或者提到 `lib` 主包（污染 API，慎用）。
+- MoonBit 限制：sub-package 不支持跨包 import（每个 `tests/<sub>/` 是独立 package），**helper fn 必须 inline 在子包内**（共享 helper 写到 `_test_helpers.mbt` + 跨子包各复制一份），或者提到 `lib` 主包（污染 API，慎用）。
 - 跨子包 helper 改了要在所有副本同步（已加注释提醒）。
 - 根 `moon.pkg` 范围 = 根目录直系 .mbt，**不含 `tests/**`**。每个子包有自己 moon.pkg。
 

@@ -49,7 +49,7 @@ pub fn validate_text_field(o : Map[String, Json], key : String) -> Result[String
 
 /// 验证可选字符串字段长度（允许空串 + ≤ MAX_TEXT_CHARS）
 ///   与 validate_text_field 的差异：空串是合法语义（如 style_report 的 "只出分布报告"），
-///   仅拦截超长 DoS；字段缺失按 "" 处理。
+///   仅拦截超长 DoS；字段缺失或非字符串都按 "" 处理（保持 style_report 的历史放行行为）。
 pub fn validate_optional_text_field(
   o : Map[String, Json],
   key : String,
@@ -61,8 +61,7 @@ pub fn validate_optional_text_field(
       } else {
         Ok(s)
       }
-    Some(_) => Err(MissingField(key))  // 类型不符按缺失处理（统一 4xx）
-    None => Ok("")
+    _ => Ok("")
   }
 }
 

@@ -4,8 +4,8 @@
 //
 // P5 仓库整理：原本散落在 accept_test.mbt 顶层（私有），
 // 同根 moon.pkg 范围内所有 _test.mbt 互相可见。
-// 改用 sub-package 后跨子包不可见，MoonBit 0.1.20260724 不支持
-// sub-package 跨包 import，故每个需要的子包 inline 一份。
+// 改用 sub-package 后跨子包不可见（MoonBit 限制：sub-package 不支持
+// 跨包 import），故每个需要的子包 inline 一份。
 //
 // DRY 缺口：与 tests/core/yimai_prophecy_moonbit_accept_test.mbt
 // 顶层 helper 同步修改。已加注释提醒。
