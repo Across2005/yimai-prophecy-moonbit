@@ -7,9 +7,14 @@
 # on a Windows workstation.
 #
 # Notes:
-#   - `moon check` resolves and downloads dependencies by itself, so no
-#     explicit fetch step is needed. Do NOT add `moon install` — it now means
-#     "install a binary package globally" and requires a <SOURCE> argument.
+#   - `moon update` IS required: `moonbitlang/async` resolves through the Git
+#     registry, not mooncakes.io, so a clean runner must sync the registry
+#     index first. Without it `moon check` dies with
+#     "Failed to resolve registry dependency `moonbitlang/async` ...
+#     module was not found in the registry" (exit 255).
+#   - Do NOT add `moon install` next to it: in the current CLI it means
+#     "install a binary package globally" and requires a <SOURCE> argument,
+#     so it always fails. (Run 43024528387 failed exactly there.)
 #   - Failures are re-emitted as workflow annotations so the diagnostic is
 #     readable from the Checks UI / API without expanding raw logs.
 #   - The toolchain installs `latest` (versioned artifacts are not publicly
@@ -46,6 +51,19 @@ jobs:
           moon version --all
           v=$(moon version 2>&1 | head -1 | tr -d '\r' | sed 's/%/%25/g')
           echo "::notice title=MoonBit toolchain::$v"
+
+      - name: Fetch dependencies
+        run: |
+          set +e
+          moon update 2>&1 | tee "$RUNNER_TEMP/update.log"
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            printf '%s\n' "$(tail -10 "$RUNNER_TEMP/update.log" | nl -ba)" \
+              | tr -d '\r' | cut -c1-300 | sed 's/%/%25/g' | while IFS= read -r l; do
+              [ -n "$l" ] && echo "::error title=moon update::$l"
+            done
+            exit "$code"
+          fi
 
       - name: moon check
         run: |
