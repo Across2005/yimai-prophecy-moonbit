@@ -22,3 +22,6 @@ gitlink_root*.png
 
 # Mimosa OCR/security scan local state (not source-controlled)
 .mimosa/
+
+# Qoder credits report artifacts (local only)
+.qoder-credits/

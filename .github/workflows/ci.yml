@@ -1,11 +1,21 @@
 # CI — moon check + test (wasm-gc)
-# Runs on every push/PR to master. Verifies:
-#   1. moon check passes (core lib, no native — native needs MSVC on Windows)
-#   2. moon test --target wasm-gc: 175/175 green
+# Runs on every push/PR to master, and manually via workflow_dispatch.
 #
-# Note: cmd/service (native HTTP) is Windows-only (MSVC); CI only guards the
-# portable wasm-gc target. Native build is verified by scripts/build.ps1
-# on developer workstations.
+# Scope: the portable wasm-gc target only. `cmd/service` declares
+# `supported_targets = "+native"` (async HTTP server needs MSVC on Windows),
+# so it is skipped here by design; native is verified by scripts/build.ps1
+# on a Windows workstation.
+#
+# Notes:
+#   - `moon check` resolves and downloads dependencies by itself (verified:
+#     removing .mooncakes still resolves moonbitlang/async), so no explicit
+#     fetch step is needed. Do NOT add `moon install` — it requires a SOURCE
+#     argument and always fails without one.
+#   - The toolchain installs `latest`, because versioned artifacts are not
+#     publicly downloadable. If upstream drifts, pin with
+#     MOONBIT_INSTALL_VERSION only after confirming that version's tarball
+#     is reachable.
+#   - Bump EXPECTED_TESTS together with the suite in the same commit.
 
 name: CI
 
@@ -14,6 +24,10 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  workflow_dispatch:
+
+env:
+  EXPECTED_TESTS: "175"
 
 jobs:
   test:
@@ -27,25 +41,23 @@ jobs:
           curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
           echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
 
-      - name: Verify MoonBit version
-        run: moon version
+      - name: Show toolchain
+        run: moon version --all
 
-      - name: Fetch dependencies
-        run: moon update && moon install
-
-      - name: moon check (core lib)
+      - name: moon check
         run: moon check
 
-      - name: moon test --target wasm-gc
-        run: moon test --target wasm-gc
-
-      - name: Verify test count (expect 175)
+      - name: moon test (wasm-gc)
         run: |
-          output=$(moon test --target wasm-gc 2>&1)
-          echo "$output"
-          if echo "$output" | grep -q "passed: 175"; then
-            echo "✅ 175/175 tests passed"
+          set -o pipefail
+          moon test --target wasm-gc 2>&1 | tee "$RUNNER_TEMP/moon-test.log"
+
+      - name: Verify test count
+        run: |
+          if grep -q "passed: ${EXPECTED_TESTS}" "$RUNNER_TEMP/moon-test.log"; then
+            echo "OK: ${EXPECTED_TESTS} tests passed"
           else
-            echo "❌ Test count mismatch — expected 175 passed"
+            echo "FAIL: expected ${EXPECTED_TESTS} passing tests, got:"
+            grep -E "^Total tests:" "$RUNNER_TEMP/moon-test.log" || echo "  (no summary line found)"
             exit 1
           fi

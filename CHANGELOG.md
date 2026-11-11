@@ -36,6 +36,13 @@ since `0.1.0`.
   注意：若其他机器仍保留全局 `url.*.insteadOf` 重写，该直连地址会被再次改写。
 
 ### Fixed
+- **GitHub Actions `CI` 在 `Fetch dependencies` 步骤失败** — 该步骤执行的 `moon update && moon install`
+  在新版 CLI 下必定失败：`moon install` 已改为"全局安装二进制包"，缺少 `<SOURCE>` 参数会直接报
+  `required arguments were not provided`。实测（删掉 `.mooncakes` 后运行 `moon check` 仍自动解析到
+  `moonbitlang/async@0.20.1`）证明**不需要显式拉依赖**，故整步删除。同时：测试计数门禁改为
+  `set -o pipefail` + `tee` 保留完整日志、失败时打印实际 `Total tests:` 行；新增
+  `workflow_dispatch` 便于手动重跑；`EXPECTED_TESTS` 提为 workflow 级变量。
+  注：上游版本化产物（如 `binaries/0.1.20261104/`）对外返回 403，仅 `latest` 可下载，因此暂不钉版本。
 - **`scripts/ci-check-test-helpers.ps1` 在本机 PowerShell 5.1 下解析崩溃** — 脚本是无 BOM 的
   UTF-8 且含中文/长破折号，Windows PowerShell 5.1 按 OEM 码页（936）读取时字符串终止符被吞，
   报 `UnexpectedToken`，会让 pre-commit 门禁误判失败。改为纯 ASCII（与 `smoke.ps1` 既有约定一致），
