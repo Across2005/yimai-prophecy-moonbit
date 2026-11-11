@@ -182,9 +182,9 @@ pub fn ProphecyEngine::restore(self : ProphecyEngine) -> Json {
       // P1：restore 可能回滚掉 snapshot 之后的 TM 增删；若期间发生过 rebuild（脏标记已清），
       // IDF/postings/tm_count 仍是回滚前口径 → 置脏强制下次 fuzzy_match 重建（幂等，输出确定性不变）
       self.mark_tm_idf_dirty()
-      obj([("ok", true.to_json()), ("nodes", num_json(self.memories.length().to_double()))])
+      obj([("ok", @json.to_json(true)), ("nodes", num_json(self.memories.length().to_double()))])
     }
-    None => obj([("ok", false.to_json()), ("reason", str_json("no snapshot"))])
+    None => obj([("ok", @json.to_json(false)), ("reason", str_json("no snapshot"))])
   }
 }
 

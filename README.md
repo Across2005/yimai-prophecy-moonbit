@@ -10,7 +10,7 @@
 [![Hit@3](https://img.shields.io/badge/Hit%403-0.8246-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Modern Corpus](https://img.shields.io/badge/corpus-54%2F54%20passing-brightgreen)](https://github.com/Across2005/yimai_prophecy_moonbit)
 [![Service API](https://img.shields.io/badge/HTTP%20API-27%20endpoints%20%2B%20MCP-9cf)](https://github.com/Across2005/yimai_prophecy_moonbit)
-[![MoonBit](https://img.shields.io/badge/MoonBit-0.1.2026-9cf)](https://www.moonbitlang.com)
+[![MoonBit](https://img.shields.io/badge/MoonBit-0.1.20261104-9cf)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
 ---
@@ -161,7 +161,7 @@ import {
 }
 ```
 
-> Requires the MoonBit toolchain (`moon`, v0.1.2026+).
+> Requires the MoonBit toolchain (`moon` >= 0.1.20261104, `moonc` >= v0.10.20).
 
 ### Out-of-the-box setup (Windows, AI agents welcome)
 

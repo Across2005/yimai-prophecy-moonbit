@@ -46,7 +46,7 @@ pub fn safe_parse(s : String) -> Json {
   try {
     @json.parse(s)
   } catch {
-    _ => Map::from_iter(([] : Array[(String, Json)]).iter()).to_json()
+    _ => @json.to_json(Map::from_iter(([] : Array[(String, Json)]).iter()))
   }
 }
 

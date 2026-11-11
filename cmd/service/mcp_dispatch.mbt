@@ -34,9 +34,9 @@ async fn invoke_tool(name : String, args : Json) -> Json {
     let ok = engine_ref.val.reward(arg_str(args, "mid"), arg_num(args, "score", 1.0))
     if ok {
       let _ = save_store()  // save_store 已返回 Bool 不再抛（P0 路由加固一致化）
-      @lib.obj([("ok", true.to_json())])
+      @lib.obj([("ok", @json.to_json(true))])
     } else {
-      @lib.obj([("ok", false.to_json()), ("error", @lib.str_json("unknown mid"))])
+      @lib.obj([("ok", @json.to_json(false)), ("error", @lib.str_json("unknown mid"))])
     }
   } else if name == "consolidate" {
     let result = engine_ref.val.consolidate(arg_bool(args, "prune", true))

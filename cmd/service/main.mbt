@@ -8,7 +8,7 @@
 // 注：MoonBit async 调用无需 await 关键字（编译器自动调度）。
 
 // 全局引擎（Ref 可变单元，服务进程生命周期内单例；写操作后落盘）
-let engine_ref : @ref.Ref[@lib.ProphecyEngine] = @ref.new(@lib.ProphecyEngine::make())
+let engine_ref : @ref.Ref[@lib.ProphecyEngine] = Ref(@lib.ProphecyEngine::make())
 
 // TM 持久化文件（相对路径，写于服务启动目录；write_file 需 CreateOrTruncate 见 tm_store.mbt）
 const TM_STORE_PATH : String = "tm_store.json"

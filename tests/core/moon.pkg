@@ -2,3 +2,6 @@ import {
   "Across2005/yimai_prophecy_moonbit" @lib,
   "moonbitlang/core/json" @json,
 }
+
+// 新版工具链：_test.mbt 黑盒测试隐式 import 被测包，helper 同包直呼是刻意设计
+warnings = "-test_unqualified_package"

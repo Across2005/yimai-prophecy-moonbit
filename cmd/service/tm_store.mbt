@@ -7,8 +7,8 @@
 // P1 二次修复：删除了原 save_busy / save_pending / MAX_SAVE_DEPTH / save_depth
 //   防御性代码。注释承认「MoonBit 协作式调度下不会真触发」——纯死代码，
 //   保留之反而是认知负担与并发隐患（全局 Ref 单例同 Phase 1.1 已暴露问题）。
-let last_save_ok : @ref.Ref[Bool] = @ref.new(true)
-let last_save_ts : @ref.Ref[UInt64] = @ref.new(0)
+let last_save_ok : @ref.Ref[Bool] = Ref(true)
+let last_save_ts : @ref.Ref[UInt64] = Ref(0)
 
 // 引擎 TM 条目数（metrics 用）
 fn tm_count() -> Int {

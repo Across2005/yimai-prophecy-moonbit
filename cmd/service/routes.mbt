@@ -43,7 +43,7 @@ priv enum BodyError {
 
 // 进程启动时间戳（ms since epoch，初始化在 main.mbt 启动时一次）
 //   /api/health 据此算 uptime_seconds；不直接用 @env.now() 以避免每次 HTTP 重新采样带来的抖动。
-let start_time_ms : @ref.Ref[UInt64] = @ref.new(0)
+let start_time_ms : @ref.Ref[UInt64] = Ref(0)
 
 // 从 path 提取 ? 之前的 base path（async 的 Request.path 含完整 query string）
 //   P8：StringView.to_string() 已废弃，改 to_owned()

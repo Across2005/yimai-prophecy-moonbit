@@ -278,7 +278,7 @@ pub fn ProphecyEngine::mqm_re_annotate(
   // 性能优化：无 Critical 段 → 直接跳过二次审
   if critical_arr.length() == 0 {
     return obj([
-      ("re_annotated", false.to_json()),
+      ("re_annotated", @json.to_json(false)),
       ("critical_count", num_json(0.0)),
       ("re_annotations", arr_json([])),
     ])
@@ -295,11 +295,11 @@ pub fn ProphecyEngine::mqm_re_annotate(
       ("dimension", str_json(dim)),
       ("original_severity", str_json(orig)),
       ("re_severity", str_json(re_sev)),
-      ("consistent", (orig == re_sev).to_json()),
+      ("consistent", @json.to_json(orig == re_sev)),
     ]))
   }
   obj([
-    ("re_annotated", true.to_json()),
+    ("re_annotated", @json.to_json(true)),
     ("critical_count", num_json(critical_arr.length().to_double())),
     ("re_annotations", arr_json(re_arr)),
   ])

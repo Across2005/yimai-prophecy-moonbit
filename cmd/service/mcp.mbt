@@ -17,7 +17,7 @@ fn rpc_error(id : Json, code : Int, msg : String) -> Json {
   @lib.obj([
     ("jsonrpc", @lib.str_json("2.0")),
     ("id", id),
-    ("error", @lib.obj([("code", code.to_json()), ("message", @lib.str_json(msg))])),
+    ("error", @lib.obj([("code", @json.to_json(code)), ("message", @lib.str_json(msg))])),
   ])
 }
 
@@ -112,7 +112,7 @@ fn check_required_fields(name : String, args : Json) -> Array[String] {
 fn handle_initialize(id : Json) -> Json {
   rpc_result(id, @lib.obj([
     ("protocolVersion", @lib.str_json("2025-11-25")),
-    ("capabilities", @lib.obj([("tools", @lib.obj([("listChanged", false.to_json())]))])),
+    ("capabilities", @lib.obj([("tools", @lib.obj([("listChanged", @json.to_json(false))]))])),
     ("serverInfo", @lib.obj([
       ("name", @lib.str_json("yimai-prophecy")),
       ("version", @lib.str_json(@lib.api_version)),
@@ -168,7 +168,7 @@ async fn handle_tools_call(id : Json, params : Json) -> Json {
       ])])
       rpc_result(id, @lib.obj([
         ("content", content),
-        ("isError", is_err.to_json()),
+        ("isError", @json.to_json(is_err)),
       ]))
     }
     Err(_) =>

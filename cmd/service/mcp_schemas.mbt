@@ -17,7 +17,7 @@ fn tool_def(name : String, desc : String, props : Array[(String, Json)], require
       ("type", @lib.str_json("object")),
       ("properties", @lib.obj(props)),
       ("required", @lib.arr_json(req_json)),
-      ("additionalProperties", false.to_json()),
+      ("additionalProperties", @json.to_json(false)),
     ])),
   ])
 }

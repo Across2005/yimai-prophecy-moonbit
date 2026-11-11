@@ -50,8 +50,15 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke.ps1   # verify endpoints 
 Engine tests (no MSVC needed):
 
 ```bash
-moon test --target wasm-gc        # 175/175 green (P6 hardening + 子包重组 后)
+moon test --target wasm-gc        # 175/175 green
 ```
+
+> **Verified toolchain (2026-11-11)** — `moon 0.1.20261104` / `moonc v0.10.20+65efd5b93` /
+> `moonrun 0.1.20261104`, feature flags `rr_moon_mod` + `rr_moon_pkg` (`moon.mod` 新格式).
+> 该工具链下实测：`moon check` 两目标 0 error 0 warning；wasm-gc 175/175；
+> native 构建出 `service.exe`；`scripts/smoke.ps1` 25/25。升级工具链后若 `Json` 构造报
+> `Type X has no method to_json`，是因为 `Json`/`ToJson` 已由 prelude 统一导出，
+> 改用包级函数 `@json.to_json(x)`（不要用 `.to_json()` 方法式）。
 
 ## Consuming the service
 

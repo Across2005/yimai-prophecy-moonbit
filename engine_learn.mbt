@@ -889,7 +889,7 @@ pub fn ProphecyEngine::explain_card(self : ProphecyEngine, mid : String) -> Json
       obj([
         ("id", str_json(mid)),
         ("text", str_json(m.text)),
-        ("is_term", m.is_term.to_json()),
+        ("is_term", @json.to_json(m.is_term)),
         ("activation_path", arr_json(in_edges)),
         ("prediction_path", arr_json(out_preds)),
         (

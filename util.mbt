@@ -795,19 +795,19 @@ fn term_hit(text : String, term : String) -> Bool {
 // ---------------------------------------------------------------------------
 
 pub fn str_json(s : String) -> Json {
-  s.to_json()
+  @json.to_json(s)
 }
 
 pub fn num_json(d : Double) -> Json {
-  d.to_json()
+  @json.to_json(d)
 }
 
 pub fn arr_json(items : Array[Json]) -> Json {
-  items.to_json()
+  @json.to_json(items)
 }
 
 pub fn obj(pairs : Array[(String, Json)]) -> Json {
-  Map::from_iter(pairs.iter()).to_json()
+  @json.to_json(Map::from_iter(pairs.iter()))
 }
 
 // 取对象字段为字符串，缺省 ""
@@ -892,7 +892,7 @@ fn dmap_to_json(m : Map[String, Double]) -> Json {
   for k, v in m.iter2() {
     o.set(k, num_json(v))
   }
-  o.to_json()
+  @json.to_json(o)
 }
 
 // Map[String, Int] -> Json 对象
@@ -901,7 +901,7 @@ fn imap_to_json(m : Map[String, Int]) -> Json {
   for k, v in m.iter2() {
     o.set(k, num_json(v.to_double()))
   }
-  o.to_json()
+  @json.to_json(o)
 }
 
 // Map[String, String] -> Json 对象
@@ -910,7 +910,7 @@ fn smap_to_json(m : Map[String, String]) -> Json {
   for k, v in m.iter2() {
     o.set(k, str_json(v))
   }
-  o.to_json()
+  @json.to_json(o)
 }
 
 // Json 对象 -> Map[String, Double]

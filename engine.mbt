@@ -362,7 +362,7 @@ fn memories_to_json(m : Map[String, MemoryNode]) -> Json {
   for mid, mn in m.iter2() {
     o.set(mid, node_to_json(mn))
   }
-  o.to_json()
+  @json.to_json(o)
 }
 
 // 转移表序列化（F1 修复补全：快照三元组须随状态持久化，
@@ -372,7 +372,7 @@ fn trans_map_to_json(t : Map[String, Map[String, Double]]) -> Json {
   for a, d in t.iter2() {
     o.set(a, dmap_to_json(d))
   }
-  o.to_json()
+  @json.to_json(o)
 }
 
 fn json_to_trans_map(j : Json) -> Map[String, Map[String, Double]] {
@@ -469,8 +469,8 @@ pub fn ProphecyEngine::to_json(self : ProphecyEngine) -> Json {
     role_map.set(a, dmap_to_json(d))
   }
   obj([
-    ("memories", mem_map.to_json()),
-    ("transitions", trans_map.to_json()),
+    ("memories", @json.to_json(mem_map)),
+    ("transitions", @json.to_json(trans_map)),
     (
       "episodes",
       arr_json(self.episodes.map(fn(ep) { arr_json(ep.map(fn(s) { str_json(s) })) })),
@@ -500,7 +500,7 @@ pub fn ProphecyEngine::to_json(self : ProphecyEngine) -> Json {
     ("attn_alpha", num_json(self.attn_alpha)),
     ("attn_beta", num_json(self.attn_beta)),
     ("wal_log", arr_json(self.wal_log.map(fn(s) { str_json(s) }))),
-    ("role_trans", role_map.to_json()),
+    ("role_trans", @json.to_json(role_map)),
     ("role_index", smap_to_json(self.role_index)),
   ])
 }

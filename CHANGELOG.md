@@ -16,7 +16,43 @@ since `0.1.0`.
 > their own dated headers below. Future 0.2.0 release will fold them into a
 > single dated version.
 
-## [Unreleased] — P11 架构扫描 + 深度评审 + cmd/service 多文件拆分
+## [Unreleased] — 工具链同步至 moon 0.1.20261104
+
+### Changed
+- **MoonBit 工具链升级到 `0.1.20261104` / `moonc v0.10.20+65efd5b93`** — 新版把 `Json` / `ToJson`
+  统一收进 prelude 导出，`Map[String, Json]` / `Bool` / `Int` / `Double` / `Array[Json]` 上的
+  `.to_json()` 方法式调用全部失效（根包 18 处 + `cmd/service` 23 处编译错误）。统一改为包级函数
+  `@json.to_json(x)`，覆盖 `engine.mbt` / `engine_consolidate.mbt` / `engine_learn.mbt` /
+  `engine_mqm.mbt` / `util.mbt` / `cmd/service/*.mbt` / `tests/{core,corpus}/_test_helpers.mbt`。
+- **`moon.pkg` 依赖清理** — 移除 `cmd/main/moon.pkg` 未使用的 `core/json` + `core/math`，
+  `cmd/service/moon.pkg` 未使用的 `core/strconv` + `core/encoding/utf8`；`@ref.new(x)` →
+  `Ref(x)`（新 API，`@ref.Ref[T]` 注解保持不变）。
+- **测试包告警策略** — `tests/{core,corpus,feature}/moon.pkg` 增加
+  `warnings = "-test_unqualified_package"`，与 `core/prelude` 的官方做法一致
+  （`_test.mbt` 黑盒测试直呼同包 helper 是刻意设计，非隐患）。
+
+### Fixed
+- **`scripts/ci-check-test-helpers.ps1` 在本机 PowerShell 5.1 下解析崩溃** — 脚本是无 BOM 的
+  UTF-8 且含中文/长破折号，Windows PowerShell 5.1 按 OEM 码页（936）读取时字符串终止符被吞，
+  报 `UnexpectedToken`，会让 pre-commit 门禁误判失败。改为纯 ASCII（与 `smoke.ps1` 既有约定一致），
+  同步把 `0.1.20260724` 的版本化措辞替换为版本无关表述。`powershell 5.1` 与 `pwsh 7` 均实测通过。
+- **`/api/style_report` 空文本被误拒（P1 回归）** — handler 注释声明 `text` 可选，但
+  `validate_text_field` 强制非空，令 `{"text":""}`（"只出记忆库分布报告"的合法用法）返回
+  400 `field_empty`。新增 `validate_optional_text_field` / `validate_optional_text_field_or_send`
+  （仅拦超长、允许空串），`handle_style_report` 改用 `with_json_object` + 新校验器。
+  `scripts/smoke.ps1` 由此从 24/25 恢复 25/25。
+
+### Verified (2026-11-11, 该工具链实测)
+| 门禁 | 结果 |
+|---|---|
+| `moon check`（全包 · wasm-gc） | 0 error / 0 warning |
+| `moon check`（全包 · native） | 0 error / 0 warning |
+| `moon test --target wasm-gc` | 175 / 175 passed |
+| `moon build cmd/service --target native` | 成功产出 `service.exe` |
+| `scripts/smoke.ps1` | 25 / 25 passed |
+| 关键指标（未漂移） | Hit@3 = 0.8246；Modern Corpus Hit@3 = 0.7773；BENCH 5K/10K `pruned_acc = full_acc = 1600` |
+
+## [2026-08-26] — P11 架构扫描 + 深度评审 + cmd/service 多文件拆分
 
 ### Changed
 - **cmd/service/mcp.mbt 拆 4 文件**（P11-B commit B）— 440 行单文件按

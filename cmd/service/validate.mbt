@@ -47,6 +47,25 @@ pub fn validate_text_field(o : Map[String, Json], key : String) -> Result[String
   }
 }
 
+/// 验证可选字符串字段长度（允许空串 + ≤ MAX_TEXT_CHARS）
+///   与 validate_text_field 的差异：空串是合法语义（如 style_report 的 "只出分布报告"），
+///   仅拦截超长 DoS；字段缺失按 "" 处理。
+pub fn validate_optional_text_field(
+  o : Map[String, Json],
+  key : String,
+) -> Result[String, BodyFieldError] {
+  match o.get(key) {
+    Some(Json::String(s)) =>
+      if s.length() > MAX_TEXT_CHARS {
+        Err(TextTooLong(key, s.length()))
+      } else {
+        Ok(s)
+      }
+    Some(_) => Err(MissingField(key))  // 类型不符按缺失处理（统一 4xx）
+    None => Ok("")
+  }
+}
+
 /// 验证 Int 字段范围（≥ 0 且 ≤ MAX_INT_K）
 ///   default 仅在字段缺失时使用；类型不符返 OutOfRange。
 pub fn validate_int_field(
@@ -117,6 +136,22 @@ async fn validate_text_field_or_send(
   key : String,
 ) -> Bool {
   match validate_text_field(o, key) {
+    Ok(_) => true
+    Err(e) => {
+      let (code, ec, msg) = field_error_to_response(e)
+      send_error(conn, code, ec, msg)
+      false
+    }
+  }
+}
+
+/// 可选文本字段便捷入口（允许空串）
+async fn validate_optional_text_field_or_send(
+  conn : @http.ServerConnection,
+  o : Map[String, Json],
+  key : String,
+) -> Bool {
+  match validate_optional_text_field(o, key) {
     Ok(_) => true
     Err(e) => {
       let (code, ec, msg) = field_error_to_response(e)

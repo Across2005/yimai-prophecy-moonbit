@@ -92,21 +92,13 @@ async fn handle_style_check(body : &@io.Reader, conn : @http.ServerConnection) -
 
 // POST /api/style_report  {"text"?}  风格一致报告（记忆库分布 + 新译文偏离建议）
 async fn handle_style_report(body : &@io.Reader, conn : @http.ServerConnection) -> Unit {
-  let parsed = read_json_or_400(conn, body)
-  match parsed {
-    Some(Json::Object(o)) => {
-      // P1 加固：text 为可选项，有则校验 ≤ MAX_TEXT_CHARS
-      match o.get("text") {
-        Some(Json::String(_)) =>
-          if !(validate_text_field_or_send(conn, o, "text")) { return }
-        _ => ()  // 缺省或非字符串均放行（原行为）
-      }
-      let text = json_str(o, "text")
-      let result = engine_ref.val.style_report(text)
-      send_json(conn, 200, result.stringify())
-    }
-    _ => ()  // read_json_or_400 已发 4xx 响应
-  }
+  with_json_object(body, conn, async fn(o, conn) {
+    // P1 加固：text 可选；空串语义合法（只出记忆库分布报告），仅拦超长
+    if !(validate_optional_text_field_or_send(conn, o, "text")) { return }
+    let text = json_str(o, "text")
+    let result = engine_ref.val.style_report(text)
+    send_json(conn, 200, result.stringify())
+  })
 }
 
 // POST /api/back_align  {"source","target"}  回译 LCS 对齐（含字符级 ops 供热力图）
@@ -126,7 +118,7 @@ async fn handle_back_align(body : &@io.Reader, conn : @http.ServerConnection) ->
           let ops_json : Array[Json] = []
           for op in @lib.align_diff(source, target) {
             match op {
-              (k, i, j) => ops_json.push(@lib.arr_json([k.to_json(), i.to_json(), j.to_json()]))
+              (k, i, j) => ops_json.push(@lib.arr_json([@json.to_json(k), @json.to_json(i), @json.to_json(j)]))
             }
           }
           let score = match base.get("align_score") { Some(v) => v; None => @lib.num_json(0.0) }
@@ -168,13 +160,13 @@ async fn handle_metrics(conn : @http.ServerConnection) -> Unit {
     conn,
     200,
     @lib.obj([
-      ("tm_count", json_int(m, "tm_count", 0).to_json()),
-      ("term_count", json_int(m, "term_count", 0).to_json()),
-      ("total_memories", json_int(m, "total_memories", 0).to_json()),
-      ("term_coverage", json_num(m, "term_coverage", 0.0).to_json()),
-      ("predict_calls", json_int(s, "predict_calls", 0).to_json()),
-      ("avg_predictive_value", json_num(s, "avg_predictive_value", 0.0).to_json()),
-      ("hit_rate", json_num(s, "predict_hit_rate", 0.0).to_json()),
+      ("tm_count", @json.to_json(json_int(m, "tm_count", 0))),
+      ("term_count", @json.to_json(json_int(m, "term_count", 0))),
+      ("total_memories", @json.to_json(json_int(m, "total_memories", 0))),
+      ("term_coverage", @json.to_json(json_num(m, "term_coverage", 0.0))),
+      ("predict_calls", @json.to_json(json_int(s, "predict_calls", 0))),
+      ("avg_predictive_value", @json.to_json(json_num(s, "avg_predictive_value", 0.0))),
+      ("hit_rate", @json.to_json(json_num(s, "predict_hit_rate", 0.0))),
     ]).stringify(),
   )
 }
@@ -196,10 +188,10 @@ async fn handle_health(conn : @http.ServerConnection) -> Unit {
     200,
     @lib.obj([
       ("status", @lib.str_json(if last_ok { "ok" } else { "degraded" })),
-      ("tm_count", tm_count().to_json()),
-      ("uptime_seconds", uptime_s.to_json()),
-      ("last_save_status", last_ok.to_json()),
-      ("last_save_age_seconds", age_s.to_json()),
+      ("tm_count", @json.to_json(tm_count())),
+      ("uptime_seconds", @json.to_json(uptime_s)),
+      ("last_save_status", @json.to_json(last_ok)),
+      ("last_save_age_seconds", @json.to_json(age_s)),
       ("version", @lib.str_json(@lib.api_version)),
     ]).stringify(),
   )

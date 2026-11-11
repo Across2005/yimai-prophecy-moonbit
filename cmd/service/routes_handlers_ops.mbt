@@ -23,7 +23,7 @@ async fn handle_reward(body : &@io.Reader, conn : @http.ServerConnection) -> Uni
       if ok {
         let saved = save_store()
         if !saved { println("save_store: 落盘失败但内存态已更新") }
-        send_json(conn, 200, @lib.obj([("ok", true.to_json())]).stringify())
+        send_json(conn, 200, @lib.obj([("ok", @json.to_json(true))]).stringify())
       } else {
         // P1: 改用 send_error 统一错误出口（其它 handler 已迁移）
         send_error(conn, 404, "unknown_mid", "unknown mid")
@@ -134,7 +134,7 @@ async fn handle_distill_inject(body : &@io.Reader, conn : @http.ServerConnection
       // P1: BUG 修复：原版缺右括号 `}` 导致 JSON 非法；改用 @lib.obj
       send_json(conn, 200, @lib.obj([
         ("status", @lib.str_json("injected")),
-        ("keys", table.length().to_json()),
+        ("keys", @json.to_json(table.length())),
       ]).stringify())
     }
     _ => ()  // read_json_or_400 已发 4xx 响应

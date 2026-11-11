@@ -12,7 +12,7 @@
 async fn handle_tm_count(conn : @http.ServerConnection) -> Unit {
   let c = tm_count()
   // P1: 用 @lib.obj 替代字符串拼接（保持响应字段顺序与稳定性）
-  send_json(conn, 200, @lib.obj([("tm_count", c.to_json())]).stringify())
+  send_json(conn, 200, @lib.obj([("tm_count", @json.to_json(c))]).stringify())
 }
 
 // POST /api/fuzzy_match  {"query":"..","k":3,"threshold":0.5}
